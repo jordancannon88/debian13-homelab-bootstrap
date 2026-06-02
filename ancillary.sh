@@ -3,7 +3,8 @@
 #  Debian 13 Homelab Bootstrap — ancillary
 #  Installs extra/quality-of-life packages and sets up the fish shell.
 #
-#  - Installs btop, fish, and qemu-guest-agent (enabled; only active in a VM).
+#  - Installs btop, fish, and qemu-guest-agent (started only when run inside a
+#    QEMU/KVM guest with the guest-agent channel; otherwise left inactive).
 #  - fish shell: if harden.sh NEWLY created user(s) this run, fish is installed
 #    and made their default shell automatically. Otherwise it asks which current
 #    users should get fish as their default shell.
@@ -185,22 +186,29 @@ run apt-get install -y qemu-guest-agent
 # channel. So we do NOT 'enable' it (that just errors) — we only 'start' it when
 # we're actually a QEMU/KVM guest. On bare metal it simply stays inactive.
 if [[ "$DRY_RUN" == "1" ]]; then
-  dry "start qemu-guest-agent if this is a QEMU/KVM guest"
+  dry "start qemu-guest-agent only if the guest-agent channel is present"
   record "Guest agent" "[dry-run] would install qemu-guest-agent"
 else
   VIRT="$(systemd-detect-virt 2>/dev/null || true)"; [[ -n "$VIRT" ]] || VIRT="none"
-  if [[ -e /dev/virtio-ports/org.qemu.guest_agent.0 || "$VIRT" == "qemu" || "$VIRT" == "kvm" ]]; then
-    systemctl start qemu-guest-agent 2>/dev/null || true
+  if systemctl is-active --quiet qemu-guest-agent 2>/dev/null; then
+    log "qemu-guest-agent already active (virt: ${VIRT})."
+    record "Guest agent" "active (${VIRT})"
+  elif [[ -e /dev/virtio-ports/org.qemu.guest_agent.0 ]]; then
+    # Only start when the channel device exists, so the .device dependency is
+    # satisfiable (otherwise systemctl start fails with a dependency error).
+    systemctl start qemu-guest-agent >/dev/null 2>&1 || true
     if systemctl is-active --quiet qemu-guest-agent 2>/dev/null; then
-      log "qemu-guest-agent active (QEMU/KVM guest detected: ${VIRT})."
-      record "Guest agent" "active (${VIRT} guest)"
+      log "qemu-guest-agent started (virt: ${VIRT})."
+      record "Guest agent" "active (${VIRT})"
     else
-      note "qemu-guest-agent installed; it will activate when the host attaches the agent channel."
-      record "Guest agent" "installed (will auto-activate in guest)"
+      note "qemu-guest-agent installed; the guest-agent channel is present but it did not start."
+      record "Guest agent" "installed (start failed)"
     fi
   else
-    note "qemu-guest-agent installed but not started — this host is not a QEMU/KVM guest (virt: ${VIRT})."
-    record "Guest agent" "installed (not a VM: ${VIRT})"
+    # No virtio guest-agent channel: nothing to start. udev auto-activates the
+    # (static) service if/when the host ever attaches the channel.
+    note "qemu-guest-agent installed; no guest-agent channel attached (virt: ${VIRT}) — left inactive."
+    record "Guest agent" "installed (inactive; no agent channel)"
   fi
 fi
 
