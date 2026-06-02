@@ -626,3 +626,12 @@ else
 fi
 hr '═'
 printf '%s%s  Done. 🐳%s\n\n' "$BOLD" "$GRN" "$RESET"
+
+# One-line summary for init.sh's bootstrap report (actual runs only).
+if [[ "$DRY_RUN" != "1" ]]; then
+  if [[ "$SETUP_ROOTLESS" == "1" ]]; then _rootless="rootless for ${DOCKER_USER}"; else _rootless="root daemon"; fi
+  if [[ "$CREATE_OPT_DOCKER" == "1" ]]; then _opt="/opt/docker created (${EXAMPLE_APP})"; else _opt="/opt/docker skipped"; fi
+  mkdir -p /var/lib/homelab-bootstrap/summaries
+  printf 'Docker Engine + Compose installed; %s; %s\n' "$_rootless" "$_opt" \
+    > /var/lib/homelab-bootstrap/summaries/docker.sh
+fi
