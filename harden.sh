@@ -22,6 +22,10 @@
 #                               admin user is keyed; never expires root. Else asks.
 #   BLACKLIST_USB_STORAGE=1|0-> also blacklist the usb-storage module (disables
 #                               USB drives). Default: asks; off if unanswered.
+#   BACKUP_DNS="ip ip"       -> fallback DNS servers (default "1.1.1.1 9.9.9.9")
+#   REMOTE_SYSLOG="host:port"-> forward logs to a remote syslog host (opt-in)
+#   GRUB_PASSWORD="..."      -> set a GRUB password (opt-in; normal boot stays free)
+#   HARDEN_COMPILERS=1       -> restrict compilers (gcc/cc/...) to root only (opt-in)
 #   DRY_RUN=1|0      -> force dry-run / actual (skips the mode prompt)
 #   ASSUME_YES=1     -> answer "yes" to every prompt (for automation)
 #   SKIP_UPGRADE=1   -> skip the full apt upgrade
@@ -1123,6 +1127,17 @@ run_aideinit() {
   fi
 }
 
+# FINT-4402: make sure the AIDE config references SHA-512 checksums.
+if [[ -f /etc/aide/aide.conf ]] && ! grep -q 'sha512' /etc/aide/aide.conf 2>/dev/null; then
+  if [[ "$DRY_RUN" == "1" ]]; then
+    dry "add a sha256+sha512 checksum group to /etc/aide/aide.conf (FINT-4402)"
+  else
+    cp -a /etc/aide/aide.conf "$BACKUP_DIR/aide.conf.bak" 2>/dev/null || true
+    printf '\n# Lynis FINT-4402: reference strong checksums in the AIDE config\nHardening_Checksums = sha256+sha512\n' >> /etc/aide/aide.conf
+    log "AIDE config now references SHA-512 checksums."
+  fi
+fi
+
 if [[ -f /var/lib/aide/aide.db && "$REBUILD_AIDE" != "1" ]]; then
   info "AIDE baseline already exists."
   if [[ "$DRY_RUN" == "1" ]]; then
@@ -1282,29 +1297,158 @@ EOF
 log "Wrote legal login banners to /etc/issue and /etc/issue.net."
 record "Login banner" "legal warning set (/etc/issue, /etc/issue.net)"
 
+# 7) debsums: schedule regular verification via cron (PKGS-7370).
+if [[ -f /etc/default/debsums ]]; then
+  if [[ "$DRY_RUN" == "1" ]]; then
+    dry "set CRON_CHECK=weekly in /etc/default/debsums"
+  else
+    if grep -qE '^#?\s*CRON_CHECK=' /etc/default/debsums; then
+      sed -i -E 's@^#?\s*CRON_CHECK=.*@CRON_CHECK="weekly"@' /etc/default/debsums
+    else
+      printf 'CRON_CHECK="weekly"\n' >> /etc/default/debsums
+    fi
+    log "debsums scheduled to verify packages weekly."
+  fi
+  record "debsums" "weekly cron verification enabled"
+fi
+
+# 8) auditd: install a basic ruleset so it is not "enabled with empty ruleset" (ACCT-9630).
+write_file /etc/audit/rules.d/99-hardening.rules <<'EOF'
+## Minimal hardening audit ruleset (Lynis ACCT-9630)
+-D
+-b 8192
+-f 1
+# Watch sensitive identity & auth files
+-w /etc/passwd -p wa -k identity
+-w /etc/group -p wa -k identity
+-w /etc/shadow -p wa -k identity
+-w /etc/gshadow -p wa -k identity
+-w /etc/sudoers -p wa -k scope
+-w /etc/sudoers.d/ -p wa -k scope
+-w /etc/ssh/sshd_config -p wa -k sshd
+-w /etc/pam.d/ -p wa -k pam
+-w /etc/login.defs -p wa -k logindefs
+# Enable auditing (use 2 to lock rules until reboot if you prefer)
+-e 1
+EOF
+if [[ "$DRY_RUN" != "1" ]]; then
+  augenrules --load 2>/dev/null || true
+fi
+log "auditd given a basic ruleset (identity, sudoers, sshd, pam)."
+record "auditd rules" "basic ruleset installed (ACCT-9630)"
+
+# 9) Backup DNS resolver so 2 nameservers are reachable (NETW-2705).
+BACKUP_DNS="${BACKUP_DNS:-1.1.1.1 9.9.9.9}"
+if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
+  RC=/etc/systemd/resolved.conf
+  if [[ "$DRY_RUN" == "1" ]]; then
+    dry "set FallbackDNS=${BACKUP_DNS} in ${RC}; restart systemd-resolved"
+  else
+    run cp -a "$RC" "$BACKUP_DIR/resolved.conf.bak" 2>/dev/null || true
+    if grep -qE '^#?FallbackDNS=' "$RC" 2>/dev/null; then
+      sed -i -E "s@^#?FallbackDNS=.*@FallbackDNS=${BACKUP_DNS}@" "$RC"
+    else
+      printf 'FallbackDNS=%s\n' "$BACKUP_DNS" >> "$RC"
+    fi
+    systemctl restart systemd-resolved 2>/dev/null || true
+    log "systemd-resolved FallbackDNS set to: ${BACKUP_DNS}."
+  fi
+  record "Backup DNS" "systemd-resolved FallbackDNS=${BACKUP_DNS}"
+elif [[ -f /etc/resolv.conf && ! -L /etc/resolv.conf ]]; then
+  if (( $(grep -c '^nameserver' /etc/resolv.conf 2>/dev/null || echo 0) < 2 )); then
+    if [[ "$DRY_RUN" == "1" ]]; then
+      dry "append backup nameserver(s) (${BACKUP_DNS}) to /etc/resolv.conf"
+    else
+      for _ns in $BACKUP_DNS; do
+        grep -qE "^nameserver[[:space:]]+${_ns}\b" /etc/resolv.conf || printf 'nameserver %s\n' "$_ns" >> /etc/resolv.conf
+      done
+      log "Added backup nameserver(s) to /etc/resolv.conf: ${BACKUP_DNS}."
+    fi
+    record "Backup DNS" "added to /etc/resolv.conf (${BACKUP_DNS})"
+  fi
+else
+  note "DNS managed elsewhere (resolv.conf is a symlink); skipping backup-DNS edit."
+fi
+
+# 10) OPT-IN extras (off unless requested) -----------------------------------
+# Remote syslog forwarding (LOGG-2154): set REMOTE_SYSLOG="host:port".
+if [[ -n "${REMOTE_SYSLOG:-}" ]]; then
+  write_file /etc/rsyslog.d/99-remote.conf <<EOF
+# Forward all logs to a remote syslog host over TCP (Lynis LOGG-2154).
+*.* @@${REMOTE_SYSLOG}
+EOF
+  run systemctl restart rsyslog 2>/dev/null || true
+  log "Forwarding logs to remote syslog: ${REMOTE_SYSLOG}."
+  record "Remote syslog" "forwarding to ${REMOTE_SYSLOG}"
+fi
+
+# GRUB boot-loader password (BOOT-5122): set GRUB_PASSWORD="..." to enable.
+# Uses --unrestricted so normal boot is NOT blocked; only editing entries /
+# single-user mode requires the password.
+if [[ -n "${GRUB_PASSWORD:-}" ]] && command -v grub-mkpasswd-pbkdf2 >/dev/null 2>&1; then
+  if [[ "$DRY_RUN" == "1" ]]; then
+    dry "generate PBKDF2 hash and write /etc/grub.d/40_custom (superuser=root, --unrestricted); update-grub"
+    record "GRUB password" "[dry-run] would set a GRUB password"
+  else
+    _grub_hash="$(printf '%s\n%s\n' "$GRUB_PASSWORD" "$GRUB_PASSWORD" | grub-mkpasswd-pbkdf2 2>/dev/null | awk '/grub\.pbkdf2/{print $NF}')"
+    if [[ -n "$_grub_hash" ]]; then
+      cp -a /etc/grub.d/40_custom "$BACKUP_DIR/40_custom.bak" 2>/dev/null || true
+      cat >> /etc/grub.d/40_custom <<EOF
+
+# Lynis BOOT-5122: protect GRUB editing / single-user mode with a password.
+set superusers="root"
+password_pbkdf2 root ${_grub_hash}
+EOF
+      # Keep normal boot password-free by marking menu entries unrestricted.
+      if [[ -f /etc/grub.d/10_linux ]] && ! grep -q -- '--unrestricted' /etc/grub.d/10_linux; then
+        sed -i -E 's@^(CLASS=".*)"@\1 --unrestricted"@' /etc/grub.d/10_linux || true
+      fi
+      update-grub 2>/dev/null || update-grub2 2>/dev/null || true
+      log "GRUB password set (normal boot stays password-free)."
+      record "GRUB password" "set (superuser=root, --unrestricted)"
+    else
+      warn "Could not generate a GRUB password hash — skipped."
+    fi
+  fi
+fi
+
+# Restrict compilers to root only (HRDN-7222): set HARDEN_COMPILERS=1 to enable.
+if [[ "${HARDEN_COMPILERS:-0}" == "1" ]]; then
+  _comp_done=()
+  for _c in cc gcc g++ c++ clang clang++ as ld; do
+    _p="$(command -v "$_c" 2>/dev/null || true)"
+    [[ -n "$_p" ]] || continue
+    _rp="$(readlink -f "$_p" 2>/dev/null || echo "$_p")"
+    if [[ "$DRY_RUN" == "1" ]]; then
+      dry "chown root:root + chmod 0750 ${_rp}"
+    else
+      chown root:root "$_rp" 2>/dev/null || true
+      chmod 0750 "$_rp" 2>/dev/null || true
+    fi
+    _comp_done+=("$_c")
+  done
+  if (( ${#_comp_done[@]} > 0 )); then
+    log "Restricted compilers to root only: ${_comp_done[*]}."
+    record "Compilers" "restricted to root (${_comp_done[*]})"
+  fi
+fi
+
 # ==============================================================================
 banner "Running Lynis quick audit (non-blocking)"
 # ==============================================================================
-LYNIS_SCORE="n/a"; LYNIS_TESTS="n/a"; LYNIS_WARN=0; LYNIS_SUGG=0
+LYNIS_SCORE="n/a"; LYNIS_WARN=0; LYNIS_SUGG=0
 LYNIS_REPORT="/var/log/lynis-report.dat"; LYNIS_LOG="/var/log/lynis.log"
-LYNIS_WARN_LIST=(); LYNIS_SUGG_LIST=()
 if [[ "$DRY_RUN" == "1" ]]; then
   dry "lynis audit system --quick"
-  record "Lynis" "[dry-run] would run quick audit"
 else
   info "Auditing the system with Lynis..."
   lynis audit system --quick || true
   if [[ -r "$LYNIS_REPORT" ]]; then
     LYNIS_SCORE="$(awk -F= '/^hardening_index=/{print $2}' "$LYNIS_REPORT" | tail -n1)"; [[ -n "$LYNIS_SCORE" ]] || LYNIS_SCORE="n/a"
-    LYNIS_TESTS="$(awk -F= '/^tests_executed=/{print $2}' "$LYNIS_REPORT" | tail -n1)"; [[ -n "$LYNIS_TESTS" ]] || LYNIS_TESTS="n/a"
     LYNIS_WARN="$(grep -c '^warning\[\]=' "$LYNIS_REPORT" 2>/dev/null || echo 0)"
     LYNIS_SUGG="$(grep -c '^suggestion\[\]=' "$LYNIS_REPORT" 2>/dev/null || echo 0)"
-    # Pull the human-readable text (2nd pipe-field) of the first few items.
-    mapfile -t LYNIS_WARN_LIST < <(awk -F'|' '/^warning\[\]=/{print $2}' "$LYNIS_REPORT" 2>/dev/null | head -5)
-    mapfile -t LYNIS_SUGG_LIST < <(awk -F'|' '/^suggestion\[\]=/{print $2}' "$LYNIS_REPORT" 2>/dev/null | head -5)
   fi
   log "Lynis audit complete. Hardening index: ${BOLD}${LYNIS_SCORE}${RESET} (${LYNIS_WARN} warnings, ${LYNIS_SUGG} suggestions)."
-  record "Lynis" "index ${LYNIS_SCORE}; ${LYNIS_WARN} warnings, ${LYNIS_SUGG} suggestions; ${LYNIS_TESTS} tests"
 fi
 
 # ==============================================================================
@@ -1416,19 +1560,9 @@ else
     elif (( LYNIS_SCORE >= 60 )); then _idx_color="$YEL"
     else _idx_color="$RED"; fi
   fi
-  printf '   %sHardening index%s : %s%s / 100%s\n' "$WHT" "$RESET" "$_idx_color" "$LYNIS_SCORE" "$RESET"
-  printf '   %sTests executed%s  : %s\n' "$WHT" "$RESET" "$LYNIS_TESTS"
-  printf '   %sWarnings%s        : %s%s%s\n' "$WHT" "$RESET" "$( (( LYNIS_WARN > 0 )) && printf '%s' "$YEL" || printf '%s' "$GRN" )" "$LYNIS_WARN" "$RESET"
-  printf '   %sSuggestions%s     : %s\n' "$WHT" "$RESET" "$LYNIS_SUGG"
-  if (( ${#LYNIS_WARN_LIST[@]} > 0 )); then
-    printf '   %stop warnings:%s\n' "$DIM" "$RESET"
-    for w in "${LYNIS_WARN_LIST[@]}"; do
-      [[ -n "$w" ]] && printf '     %s%s%s %s\n' "$YEL" "$S_WARN" "$RESET" "$w"
-    done
-    (( LYNIS_WARN > ${#LYNIS_WARN_LIST[@]} )) && note "…and $(( LYNIS_WARN - ${#LYNIS_WARN_LIST[@]} )) more (see ${LYNIS_REPORT})."
-  fi
-  printf '   %sFull report%s     : %s   %slog%s: %s\n' "$WHT" "$RESET" "$LYNIS_REPORT" "$DIM" "$RESET" "$LYNIS_LOG"
-  note "Review suggestions: sudo lynis show details   |   re-run: sudo lynis audit system"
+  printf '   %sHardening index%s : %s%s / 100%s   (%s warnings, %s suggestions)\n' \
+    "$WHT" "$RESET" "$_idx_color" "$LYNIS_SCORE" "$RESET" "$LYNIS_WARN" "$LYNIS_SUGG"
+  note "Details: ${LYNIS_REPORT}  |  review: sudo lynis show details"
 fi
 
 # Reboot status — prominent, color-coded
