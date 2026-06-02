@@ -65,8 +65,8 @@ sudo ./init.sh
 
 ```bash
 sudo ./harden.sh     # 1️⃣  harden the system
-sudo ./docker.sh     # 2️⃣  install Docker + Compose (rootless)
-sudo ./ancillary.sh  # 3️⃣  extra packages (btop, qemu-guest-agent) + fish shell
+sudo ./ancillary.sh  # 2️⃣  extra packages (btop, qemu-guest-agent) + fish shell
+sudo ./docker.sh     # 3️⃣  install Docker + Compose (rootless)
 ```
 
 ---
