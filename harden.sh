@@ -12,6 +12,9 @@
 #  Environment overrides:
 #   ADMIN_USER, SSH_PORT, ALLOW_HTTP, ALLOW_HTTPS, ALLOW_SSH_CIDRS,
 #   ALLOW_SSH_PORT_22, PUBKEY, ENABLE_SSH_2FA
+#   ALLOW_TCP_PORTS="8080 8096" -> open extra TCP ports (e.g. published container
+#                                  ports — rootless Docker ports need this!)
+#   ALLOW_UDP_PORTS="51820"     -> open extra UDP ports
 #   ADMIN_USERS="u1 u2 ..."  -> admin users to create/harden (default: asks for one)
 #   PUBKEY_<user>="ssh-..."  -> SSH key for a specific user (PUBKEY = primary user)
 #   CREATE_<user>=1|0        -> auto-answer the "create missing user?" prompt
@@ -68,6 +71,10 @@ if [[ -n "${SSH_PORT+x}" ]]; then SSH_PORT_EXPLICIT=1; else SSH_PORT_EXPLICIT=0;
 SSH_PORT="${SSH_PORT:-22}"
 ALLOW_HTTP="${ALLOW_HTTP:-0}"               # 1 to allow TCP/80
 ALLOW_HTTPS="${ALLOW_HTTPS:-0}"             # 1 to allow TCP/443
+# Extra ports to open in the firewall (e.g. for published container ports).
+# Space/comma separated, e.g. ALLOW_TCP_PORTS="8080 8096 32400".
+ALLOW_TCP_PORTS="${ALLOW_TCP_PORTS:-}"
+ALLOW_UDP_PORTS="${ALLOW_UDP_PORTS:-}"
 ALLOW_SSH_CIDRS="${ALLOW_SSH_CIDRS:-}"      # e.g. "1.2.3.4/32,5.6.7.0/24" ; empty = any
 ALLOW_SSH_PORT_22="${ALLOW_SSH_PORT_22:-0}" # keep TCP/22 allowed too (safety)
 PUBKEY="${PUBKEY:-}"                        # paste your pubkey string
@@ -1000,6 +1007,21 @@ HTTPS_RULE=""
 [[ "$ALLOW_HTTP"  == "1" ]] && HTTP_RULE="    tcp dport 80  ct state new accept"
 [[ "$ALLOW_HTTPS" == "1" ]] && HTTPS_RULE="    tcp dport 443 ct state new accept"
 
+# Extra TCP/UDP ports (e.g. published container ports). Accept space- or
+# comma-separated lists; emit one accept rule per port.
+EXTRA_PORT_RULES=""
+emit_port_rules() {  # $1=proto (tcp|udp)  $2=list
+  local proto="$1" list="$2" p
+  list="${list//,/ }"
+  for p in $list; do
+    [[ "$p" =~ ^[0-9]+$ ]] && (( p >= 1 && p <= 65535 )) || continue
+    EXTRA_PORT_RULES+="    ${proto} dport ${p} ct state new accept"$'\n'
+  done
+}
+emit_port_rules tcp "$ALLOW_TCP_PORTS"
+emit_port_rules udp "$ALLOW_UDP_PORTS"
+EXTRA_PORT_RULES="${EXTRA_PORT_RULES%$'\n'}"
+
 # Docker-compatible firewall: flush ONLY our own table (so we never clobber
 # Docker's iptables-nft tables), and don't drop the forward hook (Docker
 # manages forwarding via its own chains + DOCKER-USER). See Docker prereqs.
@@ -1040,6 +1062,7 @@ table inet filter {
 ${SSH_ALLOW_RULES}
 ${HTTP_RULE}
 ${HTTPS_RULE}
+${EXTRA_PORT_RULES}
 
     # Optional log (comment out if too noisy)
     # counter log prefix "nftables-drop: " flags all drop
@@ -1065,6 +1088,8 @@ log "Firewall configured: default-drop input, SSH allowed, established/related k
 note "SSH allowed on: ${SSH_PORT}$( [[ $ALLOW_SSH_PORT_22 == 1 ]] && echo ' + 22' )  | sources: ${ALLOW_SSH_CIDRS:-any}"
 [[ -n "$HTTP_RULE"  ]] && note "HTTP/80 allowed"
 [[ -n "$HTTPS_RULE" ]] && note "HTTPS/443 allowed"
+[[ -n "$ALLOW_TCP_PORTS" ]] && note "Extra TCP ports allowed: ${ALLOW_TCP_PORTS//,/ }"
+[[ -n "$ALLOW_UDP_PORTS" ]] && note "Extra UDP ports allowed: ${ALLOW_UDP_PORTS//,/ }"
 if [[ "$DOCKER_COMPAT" == "1" ]]; then
   note "Docker-compatible: forward=accept, scoped flush (Docker's iptables-nft rules preserved)."
   record "Firewall" "nftables (Docker-compat); input deny-by-default, forward=accept, SSH=${SSH_PORT}$( [[ $ALLOW_SSH_PORT_22 == 1 ]] && echo '+22' ), HTTP=$ALLOW_HTTP, HTTPS=$ALLOW_HTTPS"
