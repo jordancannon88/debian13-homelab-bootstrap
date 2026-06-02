@@ -234,3 +234,11 @@ if (( ${#FISH_TARGETS[@]} > 0 )); then
   printf '   %s•%s  Launch the resource monitor with: %sbtop%s\n' "$BOLD" "$RESET" "$DIM" "$RESET"
 fi
 printf '%s%s  Done. 🐟%s\n\n' "$BOLD" "$GRN" "$RESET"
+
+# One-line summary for init.sh's bootstrap report (actual runs only).
+if [[ "$DRY_RUN" != "1" ]]; then
+  if (( ${#FISH_TARGETS[@]} > 0 )); then _fish="fish default for: ${FISH_TARGETS[*]}"; else _fish="fish: no users changed"; fi
+  mkdir -p /var/lib/homelab-bootstrap/summaries
+  printf 'installed %s, qemu-guest-agent; %s\n' "${ANCILLARY_PKGS[*]}" "$_fish" \
+    > /var/lib/homelab-bootstrap/summaries/ancillary.sh
+fi
