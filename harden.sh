@@ -12,11 +12,13 @@
 #  Environment overrides:
 #   ADMIN_USER, SSH_PORT, ALLOW_HTTP, ALLOW_HTTPS, ALLOW_SSH_CIDRS,
 #   ALLOW_SSH_PORT_22, PUBKEY, ENABLE_SSH_2FA
-#   ADMIN_USERS="u1 u2 ..."  -> admin users to create/harden (default "admin jordan")
+#   ADMIN_USERS="u1 u2 ..."  -> admin users to create/harden (default: asks for one)
 #   PUBKEY_<user>="ssh-..."  -> SSH key for a specific user (PUBKEY = primary user)
 #   CREATE_<user>=1|0        -> auto-answer the "create missing user?" prompt
 #                               (existing users are always hardened; the primary
 #                                admin is always created if missing)
+#   DISABLE_ADMIN_LOGIN=1|0  -> disable the primary admin's login after keys are
+#                               set (only if another admin user is keyed); else asks
 #   DRY_RUN=1|0      -> force dry-run / actual (skips the mode prompt)
 #   ASSUME_YES=1     -> answer "yes" to every prompt (for automation)
 #   SKIP_UPGRADE=1   -> skip the full apt upgrade
@@ -63,6 +65,9 @@ ALLOW_SSH_CIDRS="${ALLOW_SSH_CIDRS:-}"      # e.g. "1.2.3.4/32,5.6.7.0/24" ; emp
 ALLOW_SSH_PORT_22="${ALLOW_SSH_PORT_22:-0}" # keep TCP/22 allowed too (safety)
 PUBKEY="${PUBKEY:-}"                        # paste your pubkey string
 ENABLE_SSH_2FA="${ENABLE_SSH_2FA:-0}"       # 1 to enable TOTP for SSH
+# Disable login for the primary admin user once another admin has a key (tighter
+# security). Empty = ask. Only ever applied if a DIFFERENT admin user is keyed.
+DISABLE_ADMIN_LOGIN="${DISABLE_ADMIN_LOGIN:-}"
 
 # Docker compatibility (firewall + sysctl). Empty = auto-detect / prompt.
 # See https://docs.docker.com/engine/install/debian/#prerequisites
@@ -525,6 +530,27 @@ for u in "${ADMIN_USER_LIST[@]}"; do
   fi
 done
 
+# --- Optional: disable the primary admin's login (tighter security) ----------
+# Only offered/allowed when a DIFFERENT admin user will have a usable SSH key,
+# so disabling the primary can never lock you out. Applied after keys are set.
+DISABLE_ADMIN=0
+OTHER_KEYED_USER=""
+for u in "${ADMIN_USER_LIST[@]}"; do
+  [[ "$u" == "$ADMIN_USER" ]] && continue
+  if [[ -n "${USER_PUBKEY[$u]:-}" || "${USER_HASKEY[$u]:-0}" == "1" ]]; then
+    OTHER_KEYED_USER="$u"; break
+  fi
+done
+if [[ -n "$OTHER_KEYED_USER" ]]; then
+  if [[ -n "$DISABLE_ADMIN_LOGIN" ]]; then
+    [[ "$DISABLE_ADMIN_LOGIN" == "1" ]] && DISABLE_ADMIN=1
+  elif confirm "Disable login for the primary admin '$ADMIN_USER' once keys are set (tighter security; '$OTHER_KEYED_USER' keeps access)?" N; then
+    DISABLE_ADMIN=1
+  fi
+elif [[ "$DISABLE_ADMIN_LOGIN" == "1" ]]; then
+  warn "Ignoring DISABLE_ADMIN_LOGIN — no other admin user has a key (disabling '$ADMIN_USER' would lock you out)."
+fi
+
 # --- Detect a likely re-run (idempotency awareness) -------------------------
 RERUN_NOTES=()
 if grep -qiE "^\s*Port\s+${SSH_PORT}\b" /etc/ssh/sshd_config 2>/dev/null; then
@@ -571,6 +597,10 @@ if [[ "$key_login_ok" -eq 0 ]]; then
 elif (( ${#NO_KEY_USERS[@]} > 0 )); then
   printf '   %s%s%s These admin users will have NO SSH key (cannot log in): %s%s%s\n' \
     "$YEL" "$S_WARN" "$RESET" "$BOLD" "${NO_KEY_USERS[*]}" "$RESET"
+fi
+if [[ "$DISABLE_ADMIN" -eq 1 ]]; then
+  printf '   %s%s%s Login for %s%s%s will be %sDISABLED%s after keys are set — only %s%s%s can log in.\n' \
+    "$YEL" "$S_WARN" "$RESET" "$BOLD" "$ADMIN_USER" "$RESET" "$BOLD" "$RESET" "$BOLD" "$OTHER_KEYED_USER" "$RESET"
 fi
 
 # Re-run awareness
@@ -757,6 +787,20 @@ setup_admin_user() {
 for u in "${ADMIN_USER_LIST[@]}"; do
   setup_admin_user "$u"
 done
+
+# Optionally disable the primary admin's login now that keys are in place.
+# (Gated earlier on a DIFFERENT admin user having a usable key — no lockout.)
+if [[ "$DISABLE_ADMIN" -eq 1 ]]; then
+  info "Disabling login for primary admin '${BOLD}${ADMIN_USER}${RESET}' (tighter security)..."
+  # Lock the password AND expire the account: an expired account is rejected by
+  # PAM, which blocks ALL logins including SSH public-key auth.
+  run usermod --lock --expiredate 1 "$ADMIN_USER"
+  warn "Login for '$ADMIN_USER' is now DISABLED — log in as '$OTHER_KEYED_USER' instead."
+  note "Reverse it (as root / via $OTHER_KEYED_USER): sudo usermod --unlock --expiredate '' $ADMIN_USER"
+  record "Admin lockdown" "login DISABLED for $ADMIN_USER (locked + expired); use $OTHER_KEYED_USER"
+else
+  record "Admin lockdown" "not applied ($ADMIN_USER login left enabled)"
+fi
 
 # ==============================================================================
 banner "Configuring unattended-upgrades"
@@ -1234,8 +1278,16 @@ else
   printf '%s%s  ⏭ NEXT STEPS (do not skip)%s\n' "$BOLD" "$MAG" "$RESET"
   printf '   %s1.%s KEEP THIS SESSION OPEN. From another terminal, test a NEW login as an admin user:\n' "$BOLD" "$RESET"
   for u in "${ADMIN_USER_LIST[@]}"; do
+    if [[ "$DISABLE_ADMIN" -eq 1 && "$u" == "$ADMIN_USER" ]]; then
+      printf '        %s(%s login is DISABLED — use the user below instead)%s\n' "$DIM" "$u" "$RESET"
+      continue
+    fi
     printf '        %sssh -p %s %s@<host>%s\n' "$DIM" "$SSH_PORT" "$u" "$RESET"
   done
+  if [[ "$DISABLE_ADMIN" -eq 1 ]]; then
+    printf '   %s%s%s You MUST confirm %s%s%s can log in before disconnecting — %s%s%s login is now disabled.\n' \
+      "$YEL" "$S_WARN" "$RESET" "$BOLD" "$OTHER_KEYED_USER" "$RESET" "$BOLD" "$ADMIN_USER" "$RESET"
+  fi
   printf '   %s2.%s Only close this session AFTER a new SSH connection succeeds.\n' "$BOLD" "$RESET"
   if [[ "$ENABLE_SSH_2FA" == "1" ]]; then
     printf '   %s3.%s Enroll TOTP for each user, e.g.: %ssudo -u %s -H google-authenticator%s\n' "$BOLD" "$RESET" "$DIM" "$ADMIN_USER" "$RESET"
