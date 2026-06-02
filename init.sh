@@ -26,7 +26,7 @@ REPO_RAW_BASE="${REPO_RAW_BASE:-https://raw.githubusercontent.com/jordancannon88
 ASSUME_YES="${ASSUME_YES:-0}"
 
 # Scripts offered, in order.
-SCRIPTS=(harden.sh docker.sh)
+SCRIPTS=(harden.sh docker.sh ancillary.sh)
 
 # ==============================================================================
 #  Output helpers — colors & banners
@@ -64,8 +64,9 @@ confirm() {
 
 describe() {
   case "$1" in
-    harden.sh) printf 'system hardening (users, SSH, firewall, fail2ban, sysctl, AppArmor, AIDE)';;
-    docker.sh) printf 'Docker Engine + Compose + rootless setup + /opt/docker layout';;
+    harden.sh)    printf 'system hardening (users, SSH, firewall, fail2ban, sysctl, AppArmor, AIDE)';;
+    docker.sh)    printf 'Docker Engine + Compose + rootless setup + /opt/docker layout';;
+    ancillary.sh) printf 'extra packages (btop) + fish shell for your user(s)';;
     *)         printf 'bootstrap script';;
   esac
 }

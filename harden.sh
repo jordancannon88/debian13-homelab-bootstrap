@@ -17,8 +17,9 @@
 #   CREATE_<user>=1|0        -> auto-answer the "create missing user?" prompt
 #                               (existing users are always hardened; the primary
 #                                admin is always created if missing)
-#   DISABLE_ADMIN_LOGIN=1|0  -> disable the primary admin's login after keys are
-#                               set (only if another admin user is keyed); else asks
+#   DISABLE_ROOT_LOGIN=1|0   -> lock the root account password (root SSH is off
+#                               regardless; sudo still works). Only applied if an
+#                               admin user is keyed; never expires root. Else asks.
 #   DRY_RUN=1|0      -> force dry-run / actual (skips the mode prompt)
 #   ASSUME_YES=1     -> answer "yes" to every prompt (for automation)
 #   SKIP_UPGRADE=1   -> skip the full apt upgrade
@@ -65,9 +66,10 @@ ALLOW_SSH_CIDRS="${ALLOW_SSH_CIDRS:-}"      # e.g. "1.2.3.4/32,5.6.7.0/24" ; emp
 ALLOW_SSH_PORT_22="${ALLOW_SSH_PORT_22:-0}" # keep TCP/22 allowed too (safety)
 PUBKEY="${PUBKEY:-}"                        # paste your pubkey string
 ENABLE_SSH_2FA="${ENABLE_SSH_2FA:-0}"       # 1 to enable TOTP for SSH
-# Disable login for the primary admin user once another admin has a key (tighter
-# security). Empty = ask. Only ever applied if a DIFFERENT admin user is keyed.
-DISABLE_ADMIN_LOGIN="${DISABLE_ADMIN_LOGIN:-}"
+# Lock the root account password for tighter security (root SSH is disabled
+# regardless; sudo still works). Empty = ask. Only applied if an admin user has
+# a key so a path to root remains. Locks only — never expires root.
+DISABLE_ROOT_LOGIN="${DISABLE_ROOT_LOGIN:-}"
 
 # Docker compatibility (firewall + sysctl). Empty = auto-detect / prompt.
 # See https://docs.docker.com/engine/install/debian/#prerequisites
@@ -87,6 +89,10 @@ DRY_RUN="${DRY_RUN:-}"   # resolved later in choose_run_mode
 
 START_TS="$(date +%s)"
 BACKUP_DIR="/root/hardening-backups/$(date +%F-%H%M%S)"
+
+# State shared with ancillary.sh: usernames this run NEWLY created.
+STATE_DIR="/var/lib/homelab-bootstrap"
+CREATED_USERS_FILE="$STATE_DIR/created-users"
 
 # ==============================================================================
 #  Output helpers — colors, banners, steps, and a running recap log
@@ -530,25 +536,32 @@ for u in "${ADMIN_USER_LIST[@]}"; do
   fi
 done
 
-# --- Optional: disable the primary admin's login (tighter security) ----------
-# Only offered/allowed when a DIFFERENT admin user will have a usable SSH key,
-# so disabling the primary can never lock you out. Applied after keys are set.
-DISABLE_ADMIN=0
-OTHER_KEYED_USER=""
+# --- Optional: lock the ROOT account (tighter security) ----------------------
+# Root SSH is already disabled (PermitRootLogin no). This also LOCKS root's
+# password so console/su password login as root is refused; sudo still works.
+# Only offered/allowed when at least one admin user has a usable SSH key (they
+# all get sudo), so you keep a path to root. We LOCK the password only — never
+# expire root, as an expired account can make sudo itself fail.
+LOCK_ROOT_NOW=0
+ROOT_ALREADY_LOCKED=0
+if [[ "$(passwd -S root 2>/dev/null | awk '{print $2}')" == "L" ]]; then
+  ROOT_ALREADY_LOCKED=1
+fi
+# Pick a keyed admin user to name in the messaging.
+KEYED_ADMIN=""
 for u in "${ADMIN_USER_LIST[@]}"; do
-  [[ "$u" == "$ADMIN_USER" ]] && continue
-  if [[ -n "${USER_PUBKEY[$u]:-}" || "${USER_HASKEY[$u]:-0}" == "1" ]]; then
-    OTHER_KEYED_USER="$u"; break
-  fi
+  if [[ -n "${USER_PUBKEY[$u]:-}" || "${USER_HASKEY[$u]:-0}" == "1" ]]; then KEYED_ADMIN="$u"; break; fi
 done
-if [[ -n "$OTHER_KEYED_USER" ]]; then
-  if [[ -n "$DISABLE_ADMIN_LOGIN" ]]; then
-    [[ "$DISABLE_ADMIN_LOGIN" == "1" ]] && DISABLE_ADMIN=1
-  elif confirm "Disable login for the primary admin '$ADMIN_USER' once keys are set (tighter security; '$OTHER_KEYED_USER' keeps access)?" N; then
-    DISABLE_ADMIN=1
+if [[ "$ROOT_ALREADY_LOCKED" -eq 1 ]]; then
+  : # nothing to do; reported in the step
+elif [[ "$key_login_ok" -eq 1 ]]; then
+  if [[ -n "$DISABLE_ROOT_LOGIN" ]]; then
+    [[ "$DISABLE_ROOT_LOGIN" == "1" ]] && LOCK_ROOT_NOW=1
+  elif confirm "Lock the root account password (root SSH already off; sudo via '$KEYED_ADMIN' still works)?" N; then
+    LOCK_ROOT_NOW=1
   fi
-elif [[ "$DISABLE_ADMIN_LOGIN" == "1" ]]; then
-  warn "Ignoring DISABLE_ADMIN_LOGIN — no other admin user has a key (disabling '$ADMIN_USER' would lock you out)."
+elif [[ "$DISABLE_ROOT_LOGIN" == "1" ]]; then
+  warn "Ignoring DISABLE_ROOT_LOGIN — no admin user has a key, so locking root could leave no path to root."
 fi
 
 # --- Detect a likely re-run (idempotency awareness) -------------------------
@@ -598,9 +611,11 @@ elif (( ${#NO_KEY_USERS[@]} > 0 )); then
   printf '   %s%s%s These admin users will have NO SSH key (cannot log in): %s%s%s\n' \
     "$YEL" "$S_WARN" "$RESET" "$BOLD" "${NO_KEY_USERS[*]}" "$RESET"
 fi
-if [[ "$DISABLE_ADMIN" -eq 1 ]]; then
-  printf '   %s%s%s Login for %s%s%s will be %sDISABLED%s after keys are set — only %s%s%s can log in.\n' \
-    "$YEL" "$S_WARN" "$RESET" "$BOLD" "$ADMIN_USER" "$RESET" "$BOLD" "$RESET" "$BOLD" "$OTHER_KEYED_USER" "$RESET"
+if [[ "$LOCK_ROOT_NOW" -eq 1 ]]; then
+  printf '   %s%s%s The %sroot%s account password will be %sLOCKED%s (sudo via %s%s%s still works; root SSH already off).\n' \
+    "$YEL" "$S_WARN" "$RESET" "$BOLD" "$RESET" "$BOLD" "$RESET" "$BOLD" "$KEYED_ADMIN" "$RESET"
+elif [[ "$ROOT_ALREADY_LOCKED" -eq 1 ]]; then
+  printf '   %s%s%s The root account is already locked (no change).\n' "$CYN" "$S_INFO" "$RESET"
 fi
 
 # Re-run awareness
@@ -746,6 +761,13 @@ setup_admin_user() {
     run usermod -aG sudo "$user"
     log "Created '$user' and added to the sudo group."
     record "User:$user" "created (disabled-password) + sudo"
+    # Record newly-created users so ancillary.sh can target them (e.g. fish shell).
+    if [[ "$DRY_RUN" == "1" ]]; then
+      dry "record newly-created user '$user' -> $CREATED_USERS_FILE (for ancillary.sh)"
+    else
+      mkdir -p "$STATE_DIR"
+      grep -qxF "$user" "$CREATED_USERS_FILE" 2>/dev/null || printf '%s\n' "$user" >> "$CREATED_USERS_FILE"
+    fi
   else
     if id -nG "$user" | tr ' ' '\n' | grep -qx sudo; then
       log "User '$user' already exists and is in sudo."
@@ -788,18 +810,21 @@ for u in "${ADMIN_USER_LIST[@]}"; do
   setup_admin_user "$u"
 done
 
-# Optionally disable the primary admin's login now that keys are in place.
-# (Gated earlier on a DIFFERENT admin user having a usable key — no lockout.)
-if [[ "$DISABLE_ADMIN" -eq 1 ]]; then
-  info "Disabling login for primary admin '${BOLD}${ADMIN_USER}${RESET}' (tighter security)..."
-  # Lock the password AND expire the account: an expired account is rejected by
-  # PAM, which blocks ALL logins including SSH public-key auth.
-  run usermod --lock --expiredate 1 "$ADMIN_USER"
-  warn "Login for '$ADMIN_USER' is now DISABLED — log in as '$OTHER_KEYED_USER' instead."
-  note "Reverse it (as root / via $OTHER_KEYED_USER): sudo usermod --unlock --expiredate '' $ADMIN_USER"
-  record "Admin lockdown" "login DISABLED for $ADMIN_USER (locked + expired); use $OTHER_KEYED_USER"
+# Optionally lock the ROOT account now that an admin user with sudo + key exists.
+# (Gated earlier on key_login_ok — locking root can never remove the sudo path.)
+if [[ "$ROOT_ALREADY_LOCKED" -eq 1 ]]; then
+  log "root account password is already locked (no change)."
+  record "Root lockdown" "already locked (no change)"
+elif [[ "$LOCK_ROOT_NOW" -eq 1 ]]; then
+  info "Locking the root account password (tighter security)..."
+  # Lock the password ONLY. Do NOT expire root — an expired account can break
+  # sudo (PAM account check), which would remove every path to root.
+  run passwd -l root
+  warn "root password is now LOCKED — use '$KEYED_ADMIN' (sudo) for admin tasks. Root SSH is already disabled."
+  note "Reverse it (via sudo): sudo passwd -u root"
+  record "Root lockdown" "root password LOCKED (sudo via $KEYED_ADMIN; not expired)"
 else
-  record "Admin lockdown" "not applied ($ADMIN_USER login left enabled)"
+  record "Root lockdown" "not applied (root password left as-is; root SSH already disabled)"
 fi
 
 # ==============================================================================
@@ -1278,17 +1303,13 @@ else
   printf '%s%s  ⏭ NEXT STEPS (do not skip)%s\n' "$BOLD" "$MAG" "$RESET"
   printf '   %s1.%s KEEP THIS SESSION OPEN. From another terminal, test a NEW login as an admin user:\n' "$BOLD" "$RESET"
   for u in "${ADMIN_USER_LIST[@]}"; do
-    if [[ "$DISABLE_ADMIN" -eq 1 && "$u" == "$ADMIN_USER" ]]; then
-      printf '        %s(%s login is DISABLED — use the user below instead)%s\n' "$DIM" "$u" "$RESET"
-      continue
-    fi
     printf '        %sssh -p %s %s@<host>%s\n' "$DIM" "$SSH_PORT" "$u" "$RESET"
   done
-  if [[ "$DISABLE_ADMIN" -eq 1 ]]; then
-    printf '   %s%s%s You MUST confirm %s%s%s can log in before disconnecting — %s%s%s login is now disabled.\n' \
-      "$YEL" "$S_WARN" "$RESET" "$BOLD" "$OTHER_KEYED_USER" "$RESET" "$BOLD" "$ADMIN_USER" "$RESET"
-  fi
   printf '   %s2.%s Only close this session AFTER a new SSH connection succeeds.\n' "$BOLD" "$RESET"
+  if [[ "$LOCK_ROOT_NOW" -eq 1 || "$ROOT_ALREADY_LOCKED" -eq 1 ]]; then
+    printf '   %s%s%s root password is locked — use %s%s%s + %ssudo%s for root tasks (reverse: %ssudo passwd -u root%s).\n' \
+      "$YEL" "$S_WARN" "$RESET" "$BOLD" "${KEYED_ADMIN:-an admin user}" "$RESET" "$BOLD" "$RESET" "$DIM" "$RESET"
+  fi
   if [[ "$ENABLE_SSH_2FA" == "1" ]]; then
     printf '   %s3.%s Enroll TOTP for each user, e.g.: %ssudo -u %s -H google-authenticator%s\n' "$BOLD" "$RESET" "$DIM" "$ADMIN_USER" "$RESET"
   fi
