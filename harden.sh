@@ -1,0 +1,1183 @@
+#!/usr/bin/env bash
+# ==============================================================================
+#  Debian 13 Hardening (All-In-One)
+#  Safe, idempotent, with backups. Run as root.
+#
+#  Features:
+#   - Rich, colorful, easy-to-read progress output + full end-of-run recap
+#   - DRY-RUN mode: preview every action and change nothing
+#   - Interactive pre-flight that surfaces every gotcha and asks to proceed
+#   - Idempotent: safe to re-run; guards prevent destructive re-work
+#
+#  Environment overrides:
+#   ADMIN_USER, SSH_PORT, ALLOW_HTTP, ALLOW_HTTPS, ALLOW_SSH_CIDRS,
+#   ALLOW_SSH_PORT_22, PUBKEY, ENABLE_SSH_2FA
+#   ADMIN_USERS="u1 u2 ..."  -> admin users to create/harden (default "admin jordan")
+#   PUBKEY_<user>="ssh-..."  -> SSH key for a specific user (PUBKEY = primary user)
+#   CREATE_<user>=1|0        -> auto-answer the "create missing user?" prompt
+#                               (existing users are always hardened; the primary
+#                                admin is always created if missing)
+#   DRY_RUN=1|0      -> force dry-run / actual (skips the mode prompt)
+#   ASSUME_YES=1     -> answer "yes" to every prompt (for automation)
+#   SKIP_UPGRADE=1   -> skip the full apt upgrade
+#   REBUILD_AIDE=1   -> force-rebuild the AIDE baseline even if present
+#   DOCKER_COMPAT=1|0-> force Docker-compatible firewall/sysctl (else auto/prompt)
+#                       (see https://docs.docker.com/engine/install/debian/#prerequisites)
+# ==============================================================================
+
+set -euo pipefail
+
+# Ensure the admin sbin paths are present — adduser, usermod, sshd, nft, sysctl,
+# aa-status, aideinit, etc. live in /usr/sbin and /sbin, which some non-login
+# shells / sudo configs drop from PATH (causes "adduser: command not found").
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+
+# =======================
+# Config (env overridable)
+# =======================
+ADMIN_USER="${ADMIN_USER:-admin}"
+# Admin users to create/harden identically (disabled-password + sudo + SSH key).
+# Override with ADMIN_USERS="user1 user2 ...". ADMIN_USER stays the primary
+# (used for the SSH re-login hint). Per-user keys: PUBKEY (primary) or PUBKEY_<user>.
+ADMIN_USERS="${ADMIN_USERS:-$ADMIN_USER jordan}"
+read -ra ADMIN_USER_LIST <<< "$ADMIN_USERS"
+# De-duplicate while preserving order.
+_seen=" "; _dedup=()
+for _u in "${ADMIN_USER_LIST[@]}"; do
+  [[ "$_seen" == *" $_u "* ]] && continue
+  _dedup+=("$_u"); _seen+="$_u "
+done
+ADMIN_USER_LIST=("${_dedup[@]}")
+ADMIN_USER="${ADMIN_USER_LIST[0]}"
+declare -A USER_EXISTS USER_HASKEY USER_PUBKEY
+
+# Was SSH_PORT explicitly provided? (decide before applying the default)
+if [[ -n "${SSH_PORT+x}" ]]; then SSH_PORT_EXPLICIT=1; else SSH_PORT_EXPLICIT=0; fi
+SSH_PORT="${SSH_PORT:-22}"
+ALLOW_HTTP="${ALLOW_HTTP:-0}"               # 1 to allow TCP/80
+ALLOW_HTTPS="${ALLOW_HTTPS:-0}"             # 1 to allow TCP/443
+ALLOW_SSH_CIDRS="${ALLOW_SSH_CIDRS:-}"      # e.g. "1.2.3.4/32,5.6.7.0/24" ; empty = any
+ALLOW_SSH_PORT_22="${ALLOW_SSH_PORT_22:-0}" # keep TCP/22 allowed too (safety)
+PUBKEY="${PUBKEY:-}"                        # paste your pubkey string
+ENABLE_SSH_2FA="${ENABLE_SSH_2FA:-0}"       # 1 to enable TOTP for SSH
+
+# Docker compatibility (firewall + sysctl). Empty = auto-detect / prompt.
+# See https://docs.docker.com/engine/install/debian/#prerequisites
+if [[ -n "${DOCKER_COMPAT+x}" ]]; then DOCKER_COMPAT_EXPLICIT=1; else DOCKER_COMPAT_EXPLICIT=0; fi
+DOCKER_COMPAT="${DOCKER_COMPAT:-}"
+# Packages Docker's prerequisites say to remove before installing Docker Engine
+DOCKER_CONFLICT_PKGS=(docker.io docker-compose docker-doc podman-docker containerd runc)
+FOUND_CONFLICTS=()
+
+ASSUME_YES="${ASSUME_YES:-0}"
+SKIP_UPGRADE="${SKIP_UPGRADE:-0}"
+REBUILD_AIDE="${REBUILD_AIDE:-0}"
+
+# Was DRY_RUN explicitly provided? (decide before applying a default)
+if [[ -n "${DRY_RUN+x}" ]]; then DRY_RUN_EXPLICIT=1; else DRY_RUN_EXPLICIT=0; fi
+DRY_RUN="${DRY_RUN:-}"   # resolved later in choose_run_mode
+
+START_TS="$(date +%s)"
+BACKUP_DIR="/root/hardening-backups/$(date +%F-%H%M%S)"
+
+# ==============================================================================
+#  Output helpers — colors, banners, steps, and a running recap log
+# ==============================================================================
+if [[ -t 1 ]]; then
+  BOLD=$'\033[1m';  DIM=$'\033[2m';   RESET=$'\033[0m'
+  RED=$'\033[1;31m'; GRN=$'\033[1;32m'; YEL=$'\033[1;33m'
+  BLU=$'\033[1;34m'; MAG=$'\033[1;35m'; CYN=$'\033[1;36m'; WHT=$'\033[1;37m'
+else
+  BOLD=''; DIM=''; RESET=''; RED=''; GRN=''; YEL=''; BLU=''; MAG=''; CYN=''; WHT=''
+fi
+
+S_OK="✔"; S_INFO="•"; S_WARN="!"; S_ERR="✗"; S_STEP="▸"
+
+STEP_NO=0
+TOTAL_STEPS=13
+SUMMARY=()        # collected lines for the final recap
+WARNINGS=()       # collected warnings for the final recap
+
+record()        { SUMMARY+=("$1"$'\t'"$2"); }
+remember_warn() { WARNINGS+=("$1"); }
+
+hr() {
+  local ch="${1:-─}" width=72 line=""
+  printf -v line '%*s' "$width" ''
+  printf '%s%s%s\n' "$DIM" "${line// /$ch}" "$RESET"
+}
+
+banner() {
+  STEP_NO=$((STEP_NO + 1))
+  printf '\n'
+  hr '═'
+  printf '%s%s STEP %d/%d %s %s%s\n' "$BOLD$CYN" "$S_STEP" "$STEP_NO" "$TOTAL_STEPS" "│" "$*" "$RESET"
+  hr '═'
+}
+
+header() {
+  printf '\n'
+  hr '═'
+  printf '%s%s %s%s\n' "$BOLD$CYN" "$S_STEP" "$*" "$RESET"
+  hr '═'
+}
+
+log()  { printf '%s%s%s %s\n'  "$GRN"  "$S_OK"   "$RESET" "$*"; }
+info() { printf '%s%s%s %s\n'  "$BLU"  "$S_INFO" "$RESET" "$*"; }
+warn() { printf '%s%s %s%s\n'  "$YEL"  "$S_WARN" "$*" "$RESET"; remember_warn "$*"; }
+err()  { printf '%s%s %s%s\n'  "$RED"  "$S_ERR" "$*" "$RESET" >&2; }
+note() { printf '   %s%s%s\n'  "$DIM"  "$*" "$RESET"; }
+dry()  { printf '   %s[dry-run]%s %s\n' "$MAG" "$RESET" "$*"; }
+
+# ------------------------------------------------------------------------------
+#  Action wrappers — the heart of dry-run. In dry-run they PRINT; otherwise RUN.
+# ------------------------------------------------------------------------------
+# run CMD [ARGS...]   — execute a command, or preview it
+run() {
+  if [[ "$DRY_RUN" == "1" ]]; then
+    dry "$*"
+    return 0
+  fi
+  "$@"
+}
+
+# write_file PATH  (content on stdin)  — write a file, or preview it
+write_file() {
+  local path="$1"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    dry "write ${BOLD}${path}${RESET}:"
+    sed 's/^/        │ /'
+    return 0
+  fi
+  cat > "$path"
+}
+
+# append_line FILE LINE  — append a line if not already present, or preview it
+append_line() {
+  local f="$1" line="$2"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    dry "append to ${f}: ${line}"
+    return 0
+  fi
+  printf '%s\n' "$line" >> "$f"
+}
+
+# Interactivity: a real terminal is needed to prompt. ASSUME_YES bypasses prompts.
+INTERACTIVE=0
+if [[ "$ASSUME_YES" != "1" && -r /dev/tty ]]; then
+  INTERACTIVE=1
+fi
+
+# confirm "Question?" [default Y|N]  -> returns 0 for yes, 1 for no
+confirm() {
+  local prompt="$1" default="${2:-N}" reply hint
+  if [[ "$default" =~ ^[Yy]$ ]]; then hint="[Y/n]"; else hint="[y/N]"; fi
+
+  if [[ "$ASSUME_YES" == "1" ]]; then
+    info "auto-confirm (ASSUME_YES=1): ${prompt} → yes"
+    return 0
+  fi
+  if [[ "$INTERACTIVE" -eq 0 ]]; then
+    info "non-interactive: ${prompt} → using default (${default})"
+    [[ "$default" =~ ^[Yy] ]]
+    return
+  fi
+
+  printf '%s%s %s %s%s ' "$YEL" "$S_WARN" "$prompt" "$hint" "$RESET" > /dev/tty
+  read -r reply < /dev/tty || reply=""
+  reply="${reply:-$default}"
+  [[ "$reply" =~ ^[Yy] ]]
+}
+
+require_root() {
+  if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+    err "Run as root."
+    exit 1
+  fi
+}
+
+# valid_pubkey "<key line>" -> 0 if it looks like a valid SSH public key
+valid_pubkey() {
+  local key="$1" tmp
+  # Structural sanity: "<type> <base64>[ comment]"
+  [[ "$key" =~ ^(ssh-rsa|ssh-ed25519|ssh-dss|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com)[[:space:]]+[A-Za-z0-9+/=]+ ]] || return 1
+  # Authoritative check via ssh-keygen when available
+  if command -v ssh-keygen >/dev/null 2>&1; then
+    tmp="$(mktemp)"
+    printf '%s\n' "$key" > "$tmp"
+    if ssh-keygen -l -f "$tmp" >/dev/null 2>&1; then rm -f "$tmp"; return 0; fi
+    rm -f "$tmp"; return 1
+  fi
+  return 0
+}
+
+# prompt_for_pubkey <user> -> interactively read & validate a key, store it in
+# USER_PUBKEY[<user>] on success.
+prompt_for_pubkey() {
+  local user="$1"
+  [[ "$INTERACTIVE" -eq 1 ]] || return 0   # cannot prompt without a TTY
+  local key fp tmp haskey="${USER_HASKEY[$user]:-0}"
+  while true; do
+    printf '\n%s%sSSH key setup — paste the PUBLIC key to authorize for %s%s%s\n' \
+      "$BOLD" "$WHT" "$BOLD" "$user" "$RESET" > /dev/tty
+    note "No key yet? On YOUR machine (not this server) run:" > /dev/tty
+    printf '        %sssh-keygen -t ed25519 -C "admin@cannon.dev"%s\n' "$CYN" "$RESET" > /dev/tty
+    note "then paste the contents of ~/.ssh/id_ed25519.pub (the line below), e.g.:" > /dev/tty
+    note "  ssh-ed25519 AAAAC3Nza... user@host" > /dev/tty
+    if [[ "$haskey" -eq 1 ]]; then
+      printf '   %s(press Enter to keep %s'\''s existing authorized_keys)%s\n' "$DIM" "$user" "$RESET" > /dev/tty
+    else
+      printf '   %s(press Enter to skip — %s will have NO key)%s\n' "$DIM" "$user" "$RESET" > /dev/tty
+    fi
+    printf '%s%s %s key> %s' "$YEL" "$S_INFO" "$user" "$RESET" > /dev/tty
+    IFS= read -r key < /dev/tty || key=""
+    # Trim surrounding whitespace
+    key="${key#"${key%%[![:space:]]*}"}"
+    key="${key%"${key##*[![:space:]]}"}"
+
+    if [[ -z "$key" ]]; then
+      return 0   # user chose to skip / keep existing
+    fi
+    if valid_pubkey "$key"; then
+      USER_PUBKEY[$user]="$key"
+      if command -v ssh-keygen >/dev/null 2>&1; then
+        tmp="$(mktemp)"; printf '%s\n' "$key" > "$tmp"
+        fp="$(ssh-keygen -l -f "$tmp" 2>/dev/null)"; rm -f "$tmp"
+        printf '%s%s%s Accepted key for %s — %s%s%s\n' "$GRN" "$S_OK" "$RESET" "$user" "$DIM" "$fp" "$RESET" > /dev/tty
+      else
+        printf '%s%s%s Accepted key for %s.\n' "$GRN" "$S_OK" "$RESET" "$user" > /dev/tty
+      fi
+      return 0
+    fi
+    printf '%s%s That does not look like a valid SSH public key — try again.%s\n' \
+      "$RED" "$S_ERR" "$RESET" > /dev/tty
+  done
+}
+
+# choose_run_mode — resolves DRY_RUN. Asks the user on first run.
+choose_run_mode() {
+  if [[ "$DRY_RUN_EXPLICIT" == "1" ]]; then
+    [[ "$DRY_RUN" == "1" ]] && DRY_RUN=1 || DRY_RUN=0
+    return
+  fi
+  if [[ "$INTERACTIVE" -eq 0 ]]; then
+    if [[ "$ASSUME_YES" == "1" ]]; then
+      DRY_RUN=0
+    else
+      DRY_RUN=1
+    fi
+    return
+  fi
+
+  local choice=""
+  printf '\n%s%sHow do you want to run the hardening script?%s\n' "$BOLD" "$WHT" "$RESET" > /dev/tty
+  printf '   %s[1]%s %sDry run%s — preview every action, change %sNOTHING%s (recommended first)\n' \
+    "$BOLD" "$RESET" "$GRN" "$RESET" "$BOLD" "$RESET" > /dev/tty
+  printf '   %s[2]%s %sActual run%s — apply all changes to this system\n' \
+    "$BOLD" "$RESET" "$RED" "$RESET" > /dev/tty
+  printf '%s%s Choose 1 or 2 [default: 1]: %s' "$YEL" "$S_WARN" "$RESET" > /dev/tty
+  read -r choice < /dev/tty || choice=""
+  case "${choice:-1}" in
+    2) DRY_RUN=0 ;;
+    *) DRY_RUN=1 ;;
+  esac
+}
+
+# prompt_for_ssh_port — ask which port sshd should listen on (default 22)
+prompt_for_ssh_port() {
+  [[ "$SSH_PORT_EXPLICIT" == "1" ]] && return 0   # env override wins
+  [[ "$INTERACTIVE" -eq 1 ]] || return 0          # cannot prompt without a TTY
+  local p
+  while true; do
+    printf '\n%s%sWhich port should SSH (sshd) listen on?%s\n' "$BOLD" "$WHT" "$RESET" > /dev/tty
+    printf '   %s(22 = default; a high port like 2222 reduces drive-by scans)%s\n' "$DIM" "$RESET" > /dev/tty
+    printf '%s%s Port [default: %s]: %s' "$YEL" "$S_INFO" "$SSH_PORT" "$RESET" > /dev/tty
+    read -r p < /dev/tty || p=""
+    p="${p:-$SSH_PORT}"
+    if [[ "$p" =~ ^[0-9]+$ ]] && (( p >= 1 && p <= 65535 )); then
+      SSH_PORT="$p"
+      printf '%s%s%s Using SSH port %s%s%s\n' "$GRN" "$S_OK" "$RESET" "$BOLD" "$SSH_PORT" "$RESET" > /dev/tty
+      return 0
+    fi
+    printf '%s%s Invalid port — enter a number between 1 and 65535.%s\n' "$RED" "$S_ERR" "$RESET" > /dev/tty
+  done
+}
+
+# detect_docker_conflicts — populate FOUND_CONFLICTS with installed conflicting pkgs
+detect_docker_conflicts() {
+  FOUND_CONFLICTS=()
+  local p
+  for p in "${DOCKER_CONFLICT_PKGS[@]}"; do
+    if dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "install ok installed"; then
+      FOUND_CONFLICTS+=("$p")
+    fi
+  done
+}
+
+# prompt_for_docker — resolve DOCKER_COMPAT (Docker-friendly firewall/sysctl)
+prompt_for_docker() {
+  # Detect existing/intended Docker
+  DOCKER_DETECTED=0
+  if command -v docker >/dev/null 2>&1 || [[ -d /var/lib/docker ]] \
+     || systemctl list-unit-files 2>/dev/null | grep -q '^docker\.service'; then
+    DOCKER_DETECTED=1
+  fi
+
+  if [[ "$DOCKER_COMPAT_EXPLICIT" == "1" ]]; then
+    [[ "$DOCKER_COMPAT" == "1" ]] && DOCKER_COMPAT=1 || DOCKER_COMPAT=0
+    return 0
+  fi
+  if [[ "$INTERACTIVE" -ne 1 ]]; then
+    DOCKER_COMPAT="$DOCKER_DETECTED"   # auto: match what we detected
+    return 0
+  fi
+
+  if [[ "$DOCKER_DETECTED" -eq 1 ]]; then
+    if confirm "Docker detected — keep the firewall & sysctl Docker-compatible?" Y; then
+      DOCKER_COMPAT=1; else DOCKER_COMPAT=0; fi
+  else
+    if confirm "Will this host run Docker (adjust firewall & sysctl to its prerequisites)?" N; then
+      DOCKER_COMPAT=1; else DOCKER_COMPAT=0; fi
+  fi
+}
+
+# ==============================================================================
+#  Intro splash
+# ==============================================================================
+clear 2>/dev/null || true
+printf '%s' "$BOLD$MAG"
+cat <<'EOF'
+  ██   ██  █████  ██████  ██████  ███████ ███    ██
+  ██   ██ ██   ██ ██   ██ ██   ██ ██      ████   ██
+  ███████ ███████ ██████  ██   ██ █████   ██ ██  ██
+  ██   ██ ██   ██ ██   ██ ██   ██ ██      ██  ██ ██
+  ██   ██ ██   ██ ██   ██ ██████  ███████ ██   ████
+EOF
+printf '%s' "$RESET"
+printf '%s        Debian 13 Hardening  •  AIO  •  safe / idempotent / backed-up%s\n' "$DIM" "$RESET"
+hr '─'
+
+require_root
+
+# Basic sanity
+if ! command -v apt >/dev/null 2>&1; then
+  err "This script targets Debian-like systems with apt."
+  exit 1
+fi
+
+# Decide dry-run vs actual BEFORE anything else happens.
+choose_run_mode
+
+# Ask which SSH port to use (defaults to 22).
+prompt_for_ssh_port
+
+# Ask whether to keep the firewall/sysctl Docker-compatible (per Docker prereqs).
+prompt_for_docker
+
+# When SSH stays on 22 there is no separate "port 22 fallback" to manage.
+if [[ "$SSH_PORT" == "22" ]]; then
+  ALLOW_SSH_PORT_22=0
+fi
+
+if [[ "$DRY_RUN" == "1" ]]; then
+  MODE_LABEL="${MAG}DRY RUN (no changes will be made)${RESET}"
+else
+  MODE_LABEL="${RED}ACTUAL RUN (changes WILL be applied)${RESET}"
+fi
+
+info "Mode         : ${BOLD}${MODE_LABEL}"
+info "Run date     : $(date '+%Y-%m-%d %H:%M:%S %Z')"
+info "Hostname     : $(hostname -f 2>/dev/null || hostname)"
+info "Backup dir   : ${BOLD}${BACKUP_DIR}${RESET}"
+info "Admin users  : ${BOLD}${ADMIN_USER_LIST[*]}${RESET}"
+info "SSH port     : ${BOLD}${SSH_PORT}${RESET}   (also allow 22: ${ALLOW_SSH_PORT_22})"
+info "SSH sources  : ${BOLD}${ALLOW_SSH_CIDRS:-<any>}${RESET}"
+info "HTTP / HTTPS : 80=${ALLOW_HTTP}  443=${ALLOW_HTTPS}"
+info "SSH 2FA      : ${ENABLE_SSH_2FA}"
+hr '─'
+
+# Create the backup directory (only for an actual run)
+run mkdir -p "$BACKUP_DIR"
+
+# ==============================================================================
+#  PRE-FLIGHT — detect state, surface every gotcha, and ask before proceeding
+# ==============================================================================
+header "Pre-flight checks & gotchas"
+
+# --- Resolve which admin users to set up ------------------------------------
+# Existing users are always hardened. A MISSING user is created automatically
+# if it is the primary admin; for any other missing user (e.g. jordan) we ask.
+EFFECTIVE_USERS=()
+for u in "${ADMIN_USER_LIST[@]}"; do
+  if id "$u" >/dev/null 2>&1; then
+    EFFECTIVE_USERS+=("$u"); continue            # exists → always harden
+  fi
+  if [[ "$u" == "$ADMIN_USER" ]]; then
+    EFFECTIVE_USERS+=("$u"); continue            # primary admin → always create
+  fi
+  cvar="CREATE_${u}"
+  if [[ -n "${!cvar:-}" ]]; then
+    [[ "${!cvar}" == "1" ]] && _do=1 || _do=0
+  elif confirm "User '$u' does not exist — create it?" Y; then
+    _do=1
+  else
+    _do=0
+  fi
+  if [[ "$_do" -eq 1 ]]; then
+    EFFECTIVE_USERS+=("$u")
+  else
+    note "Skipping '$u' — it does not exist and you chose not to create it."
+    record "User:$u" "skipped (absent; not created)"
+  fi
+done
+ADMIN_USER_LIST=("${EFFECTIVE_USERS[@]}")
+
+# --- Per-user: detect existence + existing key, resolve/prompt for a key -----
+# At least one admin user must end up with a key (password auth is disabled).
+key_login_ok=0
+NO_KEY_USERS=()
+for u in "${ADMIN_USER_LIST[@]}"; do
+  USER_EXISTS[$u]=0; USER_HASKEY[$u]=0
+  if id "$u" >/dev/null 2>&1; then
+    USER_EXISTS[$u]=1
+    uh="$(getent passwd "$u" | cut -d: -f6)"
+    [[ -n "$uh" && -s "${uh}/.ssh/authorized_keys" ]] && USER_HASKEY[$u]=1
+  fi
+  # Key from env: PUBKEY_<user>, or PUBKEY for the primary user.
+  envvar="PUBKEY_${u}"
+  if [[ -n "${!envvar:-}" ]]; then
+    USER_PUBKEY[$u]="${!envvar}"
+  elif [[ "$u" == "$ADMIN_USER" && -n "${PUBKEY:-}" ]]; then
+    USER_PUBKEY[$u]="$PUBKEY"
+  fi
+  # Otherwise offer to paste one now (before the lockout check).
+  [[ -z "${USER_PUBKEY[$u]:-}" ]] && prompt_for_pubkey "$u"
+  # Track login viability + users that will have no key.
+  if [[ -n "${USER_PUBKEY[$u]:-}" || "${USER_HASKEY[$u]}" == "1" ]]; then
+    key_login_ok=1
+  else
+    NO_KEY_USERS+=("$u")
+  fi
+done
+
+# --- Detect a likely re-run (idempotency awareness) -------------------------
+RERUN_NOTES=()
+if grep -qiE "^\s*Port\s+${SSH_PORT}\b" /etc/ssh/sshd_config 2>/dev/null; then
+  RERUN_NOTES+=("sshd already configured for port ${SSH_PORT}")
+fi
+if [[ -f /etc/nftables.conf ]] && grep -q "deny-by-default\|flush ruleset" /etc/nftables.conf 2>/dev/null; then
+  RERUN_NOTES+=("/etc/nftables.conf already present")
+fi
+if [[ -f /var/lib/aide/aide.db ]]; then
+  RERUN_NOTES+=("AIDE baseline already exists")
+fi
+
+# --- Build the gotcha list --------------------------------------------------
+info "Reviewing the changes this script will make:"
+echo
+printf '   %s%sCHANGES & GOTCHAS%s\n' "$BOLD" "$WHT" "$RESET"
+printf '   %s%s%s SSH will move to port %s%s%s — update your client and any cloud/VPC firewall.\n' \
+  "$YEL" "$S_WARN" "$RESET" "$BOLD" "$SSH_PORT" "$RESET"
+printf '   %s%s%s Root SSH login and password authentication will be %sDISABLED%s.\n' \
+  "$YEL" "$S_WARN" "$RESET" "$BOLD" "$RESET"
+printf '   %s%s%s Firewall switches to %sdeny-by-default%s — only SSH%s will be reachable.\n' \
+  "$YEL" "$S_WARN" "$RESET" "$BOLD" "$RESET" \
+  "$( { [[ $ALLOW_HTTP == 1 ]] && printf ', HTTP'; [[ $ALLOW_HTTPS == 1 ]] && printf ', HTTPS'; } )"
+printf '   %s%s%s fail2ban will ban an IP after 5 failed SSH logins for 1 hour.\n' \
+  "$YEL" "$S_WARN" "$RESET"
+if [[ "$ALLOW_SSH_PORT_22" != "1" && "$SSH_PORT" != "22" ]]; then
+  printf '   %s%s%s Port 22 will be %sCLOSED%s once the new firewall loads.\n' \
+    "$YEL" "$S_WARN" "$RESET" "$BOLD" "$RESET"
+fi
+if [[ "$SKIP_UPGRADE" != "1" ]]; then
+  printf '   %s%s%s A full system upgrade will run — slow, and a reboot may be required after.\n' \
+    "$YEL" "$S_WARN" "$RESET"
+fi
+if [[ "$ENABLE_SSH_2FA" == "1" ]]; then
+  printf '   %s%s%s TOTP 2FA will be required; you must enroll with google-authenticator after.\n' \
+    "$YEL" "$S_WARN" "$RESET"
+fi
+
+# The big one: lockout risk — no admin user will have a usable key.
+if [[ "$key_login_ok" -eq 0 ]]; then
+  printf '   %s%s%s %sLOCKOUT RISK:%s no SSH key for any admin user (%s) —\n' \
+    "$RED" "$S_ERR" "$RESET" "$BOLD$RED" "$RESET" "${ADMIN_USER_LIST[*]}"
+  printf '        with password auth disabled you may be unable to log back in.\n'
+elif (( ${#NO_KEY_USERS[@]} > 0 )); then
+  printf '   %s%s%s These admin users will have NO SSH key (cannot log in): %s%s%s\n' \
+    "$YEL" "$S_WARN" "$RESET" "$BOLD" "${NO_KEY_USERS[*]}" "$RESET"
+fi
+
+# Re-run awareness
+if (( ${#RERUN_NOTES[@]} > 0 )); then
+  echo
+  printf '   %s%sLOOKS LIKE A RE-RUN (safe — script is idempotent):%s\n' "$BOLD" "$CYN" "$RESET"
+  for n in "${RERUN_NOTES[@]}"; do
+    printf '   %s%s%s %s\n' "$CYN" "$S_INFO" "$RESET" "$n"
+  done
+fi
+
+# --- Docker compatibility (per docs.docker.com prerequisites) ---------------
+if [[ "$DOCKER_COMPAT" == "1" ]]; then
+  echo
+  printf '   %s%sDOCKER COMPATIBILITY (firewall/sysctl tuned to Docker prereqs)%s\n' "$BOLD" "$CYN" "$RESET"
+  printf '   %s%s%s IPv4 forwarding kept %sENABLED%s and the FORWARD chain is %snot dropped%s (Docker needs both).\n' \
+    "$CYN" "$S_INFO" "$RESET" "$BOLD" "$RESET" "$BOLD" "$RESET"
+  printf '   %s%s%s nftables flushes only its own %sinet filter%s table, leaving Docker'\''s iptables-nft rules intact.\n' \
+    "$CYN" "$S_INFO" "$RESET" "$BOLD" "$RESET"
+  printf '   %s%s%s Heads-up: published ports (docker run -p) DNAT in prerouting and %sbypass%s these input rules —\n' \
+    "$YEL" "$S_WARN" "$RESET" "$BOLD" "$RESET"
+  printf '        filter container traffic via the %sDOCKER-USER%s iptables chain or bind to 127.0.0.1.\n' "$BOLD" "$RESET"
+  printf '   %s%s%s Docker supports only iptables-nft/iptables-legacy; keep host rules in the nft %sinet%s table only.\n' \
+    "$YEL" "$S_WARN" "$RESET" "$BOLD" "$RESET"
+
+  detect_docker_conflicts
+  if (( ${#FOUND_CONFLICTS[@]} > 0 )); then
+    warn "Conflicting packages present (Docker prereqs say remove before installing Docker): ${FOUND_CONFLICTS[*]}"
+  else
+    log "No conflicting Docker packages installed (docker.io, containerd, runc, ...)."
+  fi
+fi
+echo
+
+# --- Targeted prompts driven by the gotchas above ---------------------------
+# In dry-run we skip the destructive guards (nothing changes) but still apply
+# sensible defaults so the preview reflects a realistic actual run.
+
+PURGE_CONFLICTS=0
+if [[ "$DRY_RUN" == "1" ]]; then
+  info "Dry run: skipping destructive confirmations; previewing actions only."
+  [[ "$ALLOW_SSH_PORT_22" != "1" && "$SSH_PORT" != "22" ]] && { ALLOW_SSH_PORT_22=1; note "Preview assumes port 22 kept open (fallback default)."; }
+  DO_UPGRADE=1; [[ "$SKIP_UPGRADE" == "1" ]] && DO_UPGRADE=0
+  (( ${#FOUND_CONFLICTS[@]} > 0 )) && note "Would offer to remove conflicting packages: ${FOUND_CONFLICTS[*]}"
+else
+  # 1) Offer to keep port 22 open as a safety net (only if we moved off 22).
+  if [[ "$ALLOW_SSH_PORT_22" != "1" && "$SSH_PORT" != "22" ]]; then
+    if confirm "Keep port 22 open as a fallback during this change (recommended)?" Y; then
+      ALLOW_SSH_PORT_22=1
+      log "Port 22 will be kept open as a fallback."
+    else
+      note "Port 22 will be closed. Make sure ${SSH_PORT} works before disconnecting."
+    fi
+  fi
+
+  # 2) Lockout guard — require explicit acknowledgement, or abort.
+  if [[ "$key_login_ok" -eq 0 ]]; then
+    warn "No usable SSH key for any admin user (${ADMIN_USER_LIST[*]})."
+    if ! confirm "Continue anyway with password auth DISABLED (high lockout risk)?" N; then
+      err "Aborting. Re-run with PUBKEY=\"ssh-ed25519 AAAA...\" to install a key first."
+      exit 1
+    fi
+    warn "Proceeding without a key — you accepted the lockout risk."
+  fi
+
+  # 3) Upgrade choice.
+  DO_UPGRADE=1
+  [[ "$SKIP_UPGRADE" == "1" ]] && DO_UPGRADE=0
+  if [[ "$DO_UPGRADE" -eq 1 ]]; then
+    confirm "Run a full system upgrade now (can be slow; reboot may be needed)?" Y || DO_UPGRADE=0
+  fi
+  [[ "$DO_UPGRADE" -eq 0 ]] && note "Full upgrade will be skipped."
+
+  # 3b) Offer to remove Docker-conflicting packages (Docker prereq).
+  if [[ "$DOCKER_COMPAT" == "1" ]] && (( ${#FOUND_CONFLICTS[@]} > 0 )); then
+    if confirm "Remove conflicting packages now (${FOUND_CONFLICTS[*]})?" N; then
+      PURGE_CONFLICTS=1
+    else
+      note "Leaving them in place — remove manually before installing Docker Engine."
+    fi
+  fi
+
+  # 4) Master confirmation.
+  echo
+  if ! confirm "Proceed with hardening using the settings above?" N; then
+    err "Aborted by user. No changes made."
+    exit 1
+  fi
+  log "Confirmed — beginning hardening."
+fi
+
+# ==============================================================================
+banner "Updating packages"
+# ==============================================================================
+export DEBIAN_FRONTEND=noninteractive
+info "Refreshing package lists..."
+run apt update
+if [[ "$DO_UPGRADE" -eq 1 ]]; then
+  info "Applying full upgrade (this can take a while)..."
+  run apt -y full-upgrade
+  log "System packages updated."
+  record "Packages" "apt update + full-upgrade completed"
+else
+  log "Package lists refreshed (full upgrade skipped)."
+  record "Packages" "apt update only (full upgrade skipped)"
+fi
+
+# ==============================================================================
+banner "Installing core security tools"
+# ==============================================================================
+CORE_PKGS=(
+  openssh-server sudo vim gnupg lsb-release ca-certificates
+  nftables fail2ban aide apparmor apparmor-utils
+  unattended-upgrades apt-listchanges
+  rsyslog rsyslog-gnutls logwatch
+  lynis needrestart
+)
+info "Ensuring packages installed: ${DIM}${CORE_PKGS[*]}${RESET}"
+run apt -y install "${CORE_PKGS[@]}"
+log "Core tools present (${#CORE_PKGS[@]} packages)."
+record "Core tools" "${#CORE_PKGS[@]} packages ensured (nftables, fail2ban, aide, apparmor, lynis, ...)"
+
+# Remove Docker-conflicting packages if the operator opted in (Docker prereq).
+if [[ "${PURGE_CONFLICTS:-0}" == "1" ]]; then
+  info "Removing conflicting Docker packages: ${DIM}${FOUND_CONFLICTS[*]}${RESET}"
+  run apt -y purge "${FOUND_CONFLICTS[@]}"
+  run apt -y autoremove
+  log "Conflicting packages removed."
+  record "Docker prereq" "Removed conflicting packages: ${FOUND_CONFLICTS[*]}"
+fi
+
+# ==============================================================================
+banner "Creating admin users + sudo + SSH keys"
+# ==============================================================================
+# setup_admin_user <user> — create (disabled-password) or update, ensure sudo,
+# and install the resolved SSH key. Identical hardening for every admin user.
+setup_admin_user() {
+  local user="$1" key="${USER_PUBKEY[$1]:-}" home auth
+  # 1) Create or ensure the account + sudo membership.
+  if ! id "$user" >/dev/null 2>&1; then
+    info "Creating admin user: ${BOLD}${user}${RESET}"
+    run adduser --disabled-password --gecos "" "$user"
+    run usermod -aG sudo "$user"
+    log "Created '$user' and added to the sudo group."
+    record "User:$user" "created (disabled-password) + sudo"
+  else
+    if id -nG "$user" | tr ' ' '\n' | grep -qx sudo; then
+      log "User '$user' already exists and is in sudo."
+    else
+      run usermod -aG sudo "$user"
+      log "User '$user' existed; added to the sudo group."
+    fi
+    record "User:$user" "existed (sudo ensured)"
+  fi
+
+  # 2) Install the SSH key (idempotent), or report the existing/none state.
+  if [[ -n "$key" ]]; then
+    info "Installing SSH public key for $user"
+    if [[ "$DRY_RUN" == "1" ]]; then
+      dry "ensure ~${user}/.ssh (700) and authorized_keys (600) contain the provided key"
+      record "Key:$user" "[dry-run] would install/verify"
+    else
+      home="$(getent passwd "$user" | cut -d: -f6)"
+      install -d -m 700 -o "$user" -g "$user" "$home/.ssh"
+      auth="$home/.ssh/authorized_keys"
+      touch "$auth"; chown "$user:$user" "$auth"; chmod 600 "$auth"
+      if ! grep -qF "$key" "$auth"; then
+        printf '%s\n' "$key" >> "$auth"
+        log "Public key installed to $auth"
+      else
+        log "Public key already present for $user (no change)."
+      fi
+      record "Key:$user" "installed/verified"
+    fi
+  elif [[ "${USER_HASKEY[$user]}" == "1" ]]; then
+    log "Existing authorized_keys found for $user (no new key needed)."
+    record "Key:$user" "existing key reused"
+  else
+    warn "No key for '$user' — it cannot log in via SSH."
+    record "Key:$user" "NONE (no SSH login)"
+  fi
+}
+
+for u in "${ADMIN_USER_LIST[@]}"; do
+  setup_admin_user "$u"
+done
+
+# ==============================================================================
+banner "Configuring unattended-upgrades"
+# ==============================================================================
+info "Enabling automatic security updates..."
+run dpkg-reconfigure -f noninteractive unattended-upgrades
+write_file /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::AutocleanInterval "7";
+APT::Periodic::Unattended-Upgrade "1";
+EOF
+log "Unattended-upgrades enabled (daily lists + automatic security upgrades)."
+record "Auto-upgrades" "Enabled via /etc/apt/apt.conf.d/20auto-upgrades"
+
+# ==============================================================================
+banner "Enabling persistent journald logs"
+# ==============================================================================
+run mkdir -p /var/log/journal
+if [[ -f /etc/systemd/journald.conf ]]; then
+  run cp -a /etc/systemd/journald.conf "$BACKUP_DIR"/journald.conf.bak
+  run sed -i 's/^#\?Storage=.*/Storage=persistent/g' /etc/systemd/journald.conf
+  note "Backed up journald.conf -> $BACKUP_DIR/journald.conf.bak"
+fi
+run systemctl restart systemd-journald
+log "journald now stores logs persistently in /var/log/journal."
+record "journald" "Persistent storage enabled"
+
+# ==============================================================================
+banner "Hardening SSH"
+# ==============================================================================
+SSHD_CFG="/etc/ssh/sshd_config"
+run cp -a "$SSHD_CFG" "$BACKUP_DIR/sshd_config.bak"
+note "Backed up sshd_config -> $BACKUP_DIR/sshd_config.bak"
+
+# ensure config lines (append or replace) — idempotent, dry-run aware
+ensure_sshd_opt () {
+  local key="$1" val="$2"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    note "${key} ${DIM}->${RESET} ${BOLD}${val}${RESET} ${MAG}[dry-run]${RESET}"
+    return 0
+  fi
+  if grep -qiE "^\s*#?\s*${key}\b" "$SSHD_CFG"; then
+    sed -i -E "s@^\s*#?\s*(${key})\b.*@\1 ${val}@i" "$SSHD_CFG"
+  else
+    echo "${key} ${val}" >> "$SSHD_CFG"
+  fi
+  note "${key} ${DIM}->${RESET} ${BOLD}${val}${RESET}"
+}
+
+info "Applying hardened sshd options..."
+ensure_sshd_opt Port "$SSH_PORT"
+ensure_sshd_opt PermitRootLogin "no"
+ensure_sshd_opt PasswordAuthentication "no"
+ensure_sshd_opt ChallengeResponseAuthentication "no"
+ensure_sshd_opt PubkeyAuthentication "yes"
+ensure_sshd_opt AuthorizedKeysFile ".ssh/authorized_keys"
+ensure_sshd_opt X11Forwarding "no"
+ensure_sshd_opt AllowTcpForwarding "no"
+ensure_sshd_opt LoginGraceTime "30"
+ensure_sshd_opt ClientAliveInterval "300"
+ensure_sshd_opt ClientAliveCountMax "2"
+ensure_sshd_opt MaxAuthTries "3"
+
+SSH_2FA_NOTE="disabled"
+if [[ "$ENABLE_SSH_2FA" == "1" ]]; then
+  info "Enabling SSH TOTP (Google Authenticator)..."
+  run apt -y install libpam-google-authenticator
+  PAM_SSHD="/etc/pam.d/sshd"
+  run cp -a "$PAM_SSHD" "$BACKUP_DIR/sshd.pam.bak"
+  if [[ "$DRY_RUN" == "1" ]] || ! grep -q 'pam_google_authenticator.so' "$PAM_SSHD" 2>/dev/null; then
+    append_line "$PAM_SSHD" "auth required pam_google_authenticator.so nullok"
+  fi
+  ensure_sshd_opt AuthenticationMethods "publickey,keyboard-interactive"
+  warn "Each admin user must enroll TOTP: run 'google-authenticator' as ${ADMIN_USER_LIST[*]}."
+  SSH_2FA_NOTE="ENABLED (publickey + TOTP)"
+fi
+
+# Validate sshd config before reload
+if [[ "$DRY_RUN" == "1" ]]; then
+  dry "sshd -t  (validate config)  &&  systemctl reload ssh"
+else
+  info "Validating sshd configuration (sshd -t)..."
+  if ! sshd -t; then
+    err "sshd config test FAILED — restoring backup and aborting."
+    cp -a "$BACKUP_DIR/sshd_config.bak" "$SSHD_CFG"
+    exit 1
+  fi
+  log "sshd config valid."
+  systemctl reload ssh || systemctl restart ssh
+fi
+log "SSH hardened on port ${BOLD}${SSH_PORT}${RESET}."
+record "SSH" "port=$SSH_PORT, root login off, password auth off, 2FA: $SSH_2FA_NOTE"
+
+# ==============================================================================
+banner "Configuring nftables firewall (deny-by-default)"
+# ==============================================================================
+NFT_CONF="/etc/nftables.conf"
+if [[ -f "$NFT_CONF" ]]; then
+  run cp -a "$NFT_CONF" "$BACKUP_DIR/nftables.conf.bak"
+  note "Backed up nftables.conf -> $BACKUP_DIR/nftables.conf.bak"
+fi
+
+# --- Build SSH allow rules (emits REAL newlines) ----------------------------
+emit_ssh_rule() {
+  local cidr="$1" port="$2"
+  if [[ -n "$cidr" ]]; then
+    printf '    ip saddr %s tcp dport %s ct state new accept\n' "$cidr" "$port"
+    printf '    ip6 saddr %s tcp dport %s ct state new accept\n' "$cidr" "$port"
+  else
+    printf '    tcp dport %s ct state new accept\n' "$port"
+  fi
+}
+
+build_ssh_rules_for_port() {
+  local port="$1"
+  if [[ -n "$ALLOW_SSH_CIDRS" ]]; then
+    local c; IFS=',' read -ra CIDRS <<< "$ALLOW_SSH_CIDRS"
+    for c in "${CIDRS[@]}"; do
+      emit_ssh_rule "$c" "$port"
+    done
+  else
+    emit_ssh_rule "" "$port"
+  fi
+}
+
+SSH_ALLOW_RULES="$(build_ssh_rules_for_port "$SSH_PORT")"
+if [[ "$ALLOW_SSH_PORT_22" == "1" ]]; then
+  SSH_ALLOW_RULES+=$'\n'"$(build_ssh_rules_for_port 22)"
+fi
+
+HTTP_RULE=""
+HTTPS_RULE=""
+[[ "$ALLOW_HTTP"  == "1" ]] && HTTP_RULE="    tcp dport 80  ct state new accept"
+[[ "$ALLOW_HTTPS" == "1" ]] && HTTPS_RULE="    tcp dport 443 ct state new accept"
+
+# Docker-compatible firewall: flush ONLY our own table (so we never clobber
+# Docker's iptables-nft tables), and don't drop the forward hook (Docker
+# manages forwarding via its own chains + DOCKER-USER). See Docker prereqs.
+if [[ "$DOCKER_COMPAT" == "1" ]]; then
+  NFT_TITLE="# Hardened firewall — deny-by-default input (Docker-compatible)"
+  NFT_FLUSH=$'# Docker-safe: replace only our table, leaving iptables-nft (ip/ip6) tables intact\ntable inet filter\ndelete table inet filter'
+  FWD_POLICY="accept"
+  FWD_COMMENT=$'\n    # Docker-compat: forwarding handled by Docker\'s iptables-nft chains / DOCKER-USER'
+else
+  NFT_TITLE="# Hardened firewall — deny-by-default"
+  NFT_FLUSH="flush ruleset"
+  FWD_POLICY="drop"
+  FWD_COMMENT=""
+fi
+
+write_file "$NFT_CONF" <<EOF
+#!/usr/sbin/nft -f
+${NFT_TITLE}
+
+${NFT_FLUSH}
+
+table inet filter {
+  set allowed_icmp_v4_types {
+    type icmp_type; elements = { echo-request, time-exceeded, destination-unreachable }
+  }
+
+  chain input {
+    type filter hook input priority 0;
+    policy drop;
+
+    iif lo accept
+    ct state established,related accept
+
+    # ICMP with simple rate limit
+    ip protocol icmp icmp type @allowed_icmp_v4_types limit rate 10/second accept
+    ip6 nexthdr icmpv6 limit rate 10/second accept
+
+${SSH_ALLOW_RULES}
+${HTTP_RULE}
+${HTTPS_RULE}
+
+    # Optional log (comment out if too noisy)
+    # counter log prefix "nftables-drop: " flags all drop
+    drop
+  }
+
+  chain forward {
+    type filter hook forward priority 0;
+    policy ${FWD_POLICY};${FWD_COMMENT}
+  }
+
+  chain output {
+    type filter hook output priority 0;
+    policy accept;
+  }
+}
+EOF
+
+info "Loading firewall ruleset..."
+run nft -f "$NFT_CONF"
+run systemctl enable --now nftables
+log "Firewall configured: default-drop input, SSH allowed, established/related kept."
+note "SSH allowed on: ${SSH_PORT}$( [[ $ALLOW_SSH_PORT_22 == 1 ]] && echo ' + 22' )  | sources: ${ALLOW_SSH_CIDRS:-any}"
+[[ -n "$HTTP_RULE"  ]] && note "HTTP/80 allowed"
+[[ -n "$HTTPS_RULE" ]] && note "HTTPS/443 allowed"
+if [[ "$DOCKER_COMPAT" == "1" ]]; then
+  note "Docker-compatible: forward=accept, scoped flush (Docker's iptables-nft rules preserved)."
+  record "Firewall" "nftables (Docker-compat); input deny-by-default, forward=accept, SSH=${SSH_PORT}$( [[ $ALLOW_SSH_PORT_22 == 1 ]] && echo '+22' ), HTTP=$ALLOW_HTTP, HTTPS=$ALLOW_HTTPS"
+else
+  record "Firewall" "nftables deny-by-default; SSH=${SSH_PORT}$( [[ $ALLOW_SSH_PORT_22 == 1 ]] && echo '+22' ), HTTP=$ALLOW_HTTP, HTTPS=$ALLOW_HTTPS"
+fi
+
+# ==============================================================================
+banner "Configuring fail2ban"
+# ==============================================================================
+run mkdir -p /etc/fail2ban/jail.d
+write_file /etc/fail2ban/jail.d/ssh.local <<EOF
+[sshd]
+enabled = true
+port = ${SSH_PORT}
+filter = sshd
+logpath = /var/log/auth.log
+backend = systemd
+maxretry = 5
+bantime = 3600
+findtime = 600
+EOF
+run systemctl enable --now fail2ban
+log "fail2ban watching sshd: 5 retries / 10 min → 1 h ban."
+record "fail2ban" "sshd jail on port $SSH_PORT (maxretry=5, bantime=3600s)"
+
+# ==============================================================================
+banner "Ensuring AppArmor is enabled"
+# ==============================================================================
+# Note: keeping AppArmor enabled also enforces Debian's unprivileged-userns
+# restriction (kernel.apparmor_restrict_unprivileged_userns) where the kernel
+# has it. That's fine — docker.sh grants ONLY rootlesskit the
+# 'userns' permission via a dedicated AppArmor profile, so rootless Docker works
+# without weakening this. See https://docs.docker.com/engine/security/apparmor/
+run systemctl enable --now apparmor
+if [[ "$DRY_RUN" != "1" ]] && aa-status >/dev/null 2>&1; then
+  AA_PROFILES="$(aa-status --profiled 2>/dev/null || echo '?')"
+  log "AppArmor active — ${AA_PROFILES} profiles loaded."
+  record "AppArmor" "Enabled (${AA_PROFILES} profiles loaded)"
+else
+  log "AppArmor will be enabled at boot."
+  record "AppArmor" "Enabled (status read skipped/unavailable)"
+fi
+
+# ==============================================================================
+banner "Initializing AIDE baseline"
+# ==============================================================================
+run_aideinit() {
+  if [[ "$DRY_RUN" == "1" ]]; then
+    dry "aideinit  &&  install /var/lib/aide/aide.db.new -> /var/lib/aide/aide.db"
+    record "AIDE" "[dry-run] would initialize baseline DB"
+    return 0
+  fi
+  info "Building file-integrity database (this can take a minute)..."
+  aideinit || true
+  if [[ -f /var/lib/aide/aide.db.new ]]; then
+    cp -a /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+    log "AIDE baseline database installed at /var/lib/aide/aide.db."
+    record "AIDE" "Baseline DB initialized"
+  else
+    warn "AIDE baseline DB not found after init — review 'aideinit' output."
+    record "AIDE" "Init attempted (baseline DB not confirmed)"
+  fi
+}
+
+if [[ -f /var/lib/aide/aide.db && "$REBUILD_AIDE" != "1" ]]; then
+  info "AIDE baseline already exists."
+  if [[ "$DRY_RUN" == "1" ]]; then
+    dry "would prompt to rebuild AIDE baseline (kept by default)"
+    record "AIDE" "[dry-run] existing baseline would be kept"
+  elif confirm "Rebuild the AIDE baseline database now?" N; then
+    run_aideinit
+  else
+    log "Keeping existing AIDE baseline (idempotent skip)."
+    record "AIDE" "Existing baseline kept (rebuild skipped)"
+  fi
+else
+  run_aideinit
+fi
+
+# ==============================================================================
+banner "Applying kernel/network sysctl hardening"
+# ==============================================================================
+SYSCTL_H="/etc/sysctl.d/99-hardening.conf"
+run cp -a /etc/sysctl.conf "$BACKUP_DIR/sysctl.conf.bak" 2>/dev/null || true
+# Docker requires IPv4 forwarding; otherwise keep it off for a non-router host.
+if [[ "$DOCKER_COMPAT" == "1" ]]; then IP_FWD=1; IP_FWD_NOTE="enabled for Docker"; else IP_FWD=0; IP_FWD_NOTE="off (host is not a router)"; fi
+write_file "$SYSCTL_H" <<EOF
+# Minimal kernel/network hardening
+net.ipv4.ip_forward = ${IP_FWD}   # ${IP_FWD_NOTE}
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
+net.ipv4.tcp_syncookies = 1
+net.ipv4.tcp_timestamps = 0
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.default.accept_source_route = 0
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.conf.all.log_martians = 1
+kernel.dmesg_restrict = 1
+kernel.kptr_restrict = 2
+fs.protected_hardlinks = 1
+fs.protected_symlinks = 1
+EOF
+run sysctl --system
+log "sysctl hardening applied (rp_filter, syncookies, redirect/martian protection, ...)."
+note "net.ipv4.ip_forward = ${IP_FWD} (${IP_FWD_NOTE})."
+record "sysctl" "Hardening applied to $SYSCTL_H (ip_forward=${IP_FWD})"
+
+# ==============================================================================
+banner "Installing guest agent"
+# ==============================================================================
+info "Ensuring qemu-guest-agent is installed..."
+run apt -y install qemu-guest-agent
+# qemu-guest-agent only runs inside a QEMU/KVM guest (it needs the virtio-serial
+# channel). Enabling is harmless on bare metal; the service just stays inactive.
+run systemctl enable --now qemu-guest-agent || true
+if [[ "$DRY_RUN" == "1" ]]; then
+  record "Guest agent" "[dry-run] would install qemu-guest-agent"
+elif systemctl is-active --quiet qemu-guest-agent 2>/dev/null; then
+  log "qemu-guest-agent active (running inside a QEMU/KVM guest)."
+  record "Guest agent" "qemu-guest-agent active"
+else
+  note "qemu-guest-agent installed but inactive (not a QEMU/KVM guest / no virtio-serial device)."
+  record "Guest agent" "qemu-guest-agent installed (inactive — not a VM)"
+fi
+
+# ==============================================================================
+banner "Running Lynis quick audit (non-blocking)"
+# ==============================================================================
+LYNIS_SCORE="n/a"
+if [[ "$DRY_RUN" == "1" ]]; then
+  dry "lynis audit system --quick"
+  record "Lynis" "[dry-run] would run quick audit"
+else
+  info "Auditing the system with Lynis..."
+  lynis audit system --quick || true
+  if [[ -r /var/log/lynis-report.dat ]]; then
+    LYNIS_SCORE="$(awk -F= '/^hardening_index=/{print $2}' /var/log/lynis-report.dat | tail -n1)"
+    [[ -n "$LYNIS_SCORE" ]] || LYNIS_SCORE="n/a"
+  fi
+  log "Lynis audit complete. Hardening index: ${BOLD}${LYNIS_SCORE}${RESET}"
+  record "Lynis" "Quick audit complete (hardening index: ${LYNIS_SCORE})"
+fi
+
+# ==============================================================================
+#  Live status block
+# ==============================================================================
+header "Live status"
+if [[ "$DRY_RUN" == "1" ]]; then
+  note "Dry run: the system was not modified; live status would be shown here after an actual run."
+else
+  printf '\n%s%sListening services:%s\n' "$BOLD" "$WHT" "$RESET"
+  ss -tulpen 2>/dev/null || true
+
+  printf '\n%s%sfail2ban (first 12 lines):%s\n' "$BOLD" "$WHT" "$RESET"
+  systemctl --no-pager status fail2ban 2>/dev/null | sed -n '1,12p' || true
+
+  printf '\n%s%sActive nftables ruleset:%s\n' "$BOLD" "$WHT" "$RESET"
+  nft list ruleset 2>/dev/null || true
+fi
+
+# ==============================================================================
+#  Reboot-required detection (read-only; safe in dry-run)
+# ==============================================================================
+# Sets REBOOT_REQUIRED (0/1) and REBOOT_REASON by checking the standard flag
+# file (created by needrestart / unattended-upgrades / kernel postinst) and by
+# comparing the running kernel against the newest installed one.
+REBOOT_REQUIRED=0
+REBOOT_REASON=""
+detect_reboot_required() {
+  local running newest pkgs
+  if [[ -f /run/reboot-required || -f /var/run/reboot-required ]]; then
+    REBOOT_REQUIRED=1
+    REBOOT_REASON="system flagged /run/reboot-required"
+    if [[ -f /run/reboot-required.pkgs ]]; then
+      pkgs="$(tr '\n' ' ' < /run/reboot-required.pkgs 2>/dev/null | sed 's/[[:space:]]\+$//')"
+      [[ -n "$pkgs" ]] && REBOOT_REASON="updated packages need it: ${pkgs}"
+    fi
+  fi
+  running="$(uname -r)"
+  newest="$(ls -1 /boot/vmlinuz-* 2>/dev/null | sed 's#.*/vmlinuz-##' | sort -V | tail -n1)"
+  if [[ -n "$newest" && "$newest" != "$running" ]]; then
+    REBOOT_REQUIRED=1
+    if [[ -n "$REBOOT_REASON" ]]; then
+      REBOOT_REASON="${REBOOT_REASON}; newer kernel installed (${newest}, running ${running})"
+    else
+      REBOOT_REASON="newer kernel installed (${newest}; running ${running})"
+    fi
+  fi
+}
+detect_reboot_required
+if [[ "$REBOOT_REQUIRED" -eq 1 ]]; then
+  record "Reboot" "RECOMMENDED — ${REBOOT_REASON}"
+else
+  record "Reboot" "not required (hardening applied live)"
+fi
+
+# ==============================================================================
+#  FINAL RECAP / SUMMARY
+# ==============================================================================
+ELAPSED=$(( $(date +%s) - START_TS ))
+MM=$(( ELAPSED / 60 )); SS=$(( ELAPSED % 60 ))
+
+printf '\n'
+hr '═'
+if [[ "$DRY_RUN" == "1" ]]; then
+  printf '%s%s  🧪  DRY RUN COMPLETE  —  NO CHANGES WERE MADE  —  RECAP%s\n' "$BOLD" "$MAG" "$RESET"
+else
+  printf '%s%s  ✅  HARDENING COMPLETE  —  RECAP%s\n' "$BOLD" "$GRN" "$RESET"
+fi
+hr '═'
+printf '%s  Host: %s   |   Elapsed: %dm %ds   |   Backups: %s%s\n' \
+  "$DIM" "$(hostname)" "$MM" "$SS" "$BACKUP_DIR" "$RESET"
+hr '─'
+
+if [[ "$DRY_RUN" == "1" ]]; then
+  printf '%s%s  WHAT WOULD BE DONE (preview)%s\n' "$BOLD" "$CYN" "$RESET"
+else
+  printf '%s%s  WHAT WAS DONE%s\n' "$BOLD" "$CYN" "$RESET"
+fi
+for entry in "${SUMMARY[@]}"; do
+  key="${entry%%$'\t'*}"
+  val="${entry#*$'\t'}"
+  printf '   %s%s%-14s%s %s\n' "$GRN" "$S_OK " "$key" "$RESET" "$val"
+done
+
+hr '─'
+printf '%s%s  KEY SETTINGS%s\n' "$BOLD" "$CYN" "$RESET"
+printf '   %sAdmin users%s  : %s\n' "$WHT" "$RESET" "${ADMIN_USER_LIST[*]}"
+printf '   %sSSH port%s     : %s  (port 22 also allowed: %s)\n' "$WHT" "$RESET" "$SSH_PORT" "$ALLOW_SSH_PORT_22"
+printf '   %sSSH sources%s  : %s\n' "$WHT" "$RESET" "${ALLOW_SSH_CIDRS:-<any>}"
+printf '   %sHTTP / HTTPS%s : 80=%s  443=%s\n' "$WHT" "$RESET" "$ALLOW_HTTP" "$ALLOW_HTTPS"
+printf '   %sSSH 2FA%s      : %s\n' "$WHT" "$RESET" "$SSH_2FA_NOTE"
+printf '   %sLynis index%s  : %s\n' "$WHT" "$RESET" "$LYNIS_SCORE"
+if [[ "$DOCKER_COMPAT" == "1" ]]; then
+  printf '   %sDocker-compat%s: %syes%s — ip_forward=1, forward=accept, scoped nft flush; filter via DOCKER-USER\n' \
+    "$WHT" "$RESET" "$GRN" "$RESET"
+else
+  printf '   %sDocker-compat%s: no (firewall is pure-nft, forward dropped, ip_forward=0)\n' "$WHT" "$RESET"
+fi
+
+# Reboot status — prominent, color-coded
+hr '─'
+if [[ "$REBOOT_REQUIRED" -eq 1 ]]; then
+  printf '%s%s  ⚠ REBOOT RECOMMENDED%s\n' "$BOLD" "$YEL" "$RESET"
+  printf '   %s%s%s %s\n' "$YEL" "$S_WARN" "$RESET" "$REBOOT_REASON"
+  printf '   %sReboot with%s %ssudo systemctl reboot%s %safter confirming your new SSH session works.%s\n' \
+    "$DIM" "$RESET" "$BOLD" "$RESET" "$DIM" "$RESET"
+  [[ "$DRY_RUN" == "1" ]] && note "(reflects current system; the upgrade was previewed, not performed)"
+else
+  printf '%s%s  ✔ NO REBOOT REQUIRED%s\n' "$BOLD" "$GRN" "$RESET"
+  printf '   %sHardening was applied live and the running kernel is current.%s\n' "$DIM" "$RESET"
+  [[ "$DRY_RUN" == "1" ]] && note "(an actual run's full upgrade could still pull a new kernel → re-check after)"
+fi
+
+if (( ${#WARNINGS[@]} > 0 )); then
+  hr '─'
+  printf '%s%s  ⚠ WARNINGS / ACTION ITEMS%s\n' "$BOLD" "$YEL" "$RESET"
+  for w in "${WARNINGS[@]}"; do
+    printf '   %s%s%s %s\n' "$YEL" "$S_WARN" "$RESET" "$w"
+  done
+fi
+
+hr '─'
+if [[ "$DRY_RUN" == "1" ]]; then
+  printf '%s%s  ⏭ NEXT STEPS%s\n' "$BOLD" "$MAG" "$RESET"
+  printf '   %s•%s  This was a preview. To apply for real, re-run and choose %sActual%s,\n' "$BOLD" "$RESET" "$BOLD" "$RESET"
+  printf '       or run: %sDRY_RUN=0 ./%s%s\n' "$DIM" "$(basename "$0")" "$RESET"
+  printf '   %s•%s  Review the LOCKOUT RISK / warnings above before the real run.\n' "$BOLD" "$RESET"
+else
+  printf '%s%s  ⏭ NEXT STEPS (do not skip)%s\n' "$BOLD" "$MAG" "$RESET"
+  printf '   %s1.%s KEEP THIS SESSION OPEN. From another terminal, test a NEW login as an admin user:\n' "$BOLD" "$RESET"
+  for u in "${ADMIN_USER_LIST[@]}"; do
+    printf '        %sssh -p %s %s@<host>%s\n' "$DIM" "$SSH_PORT" "$u" "$RESET"
+  done
+  printf '   %s2.%s Only close this session AFTER a new SSH connection succeeds.\n' "$BOLD" "$RESET"
+  if [[ "$ENABLE_SSH_2FA" == "1" ]]; then
+    printf '   %s3.%s Enroll TOTP for each user, e.g.: %ssudo -u %s -H google-authenticator%s\n' "$BOLD" "$RESET" "$DIM" "$ADMIN_USER" "$RESET"
+  fi
+  printf '   %s•%s  Restore any change from backups in: %s%s%s\n' "$BOLD" "$RESET" "$DIM" "$BACKUP_DIR" "$RESET"
+  printf '   %s•%s  To install Docker + Compose (rootless) next, run: %ssudo ./docker.sh%s\n' \
+    "$BOLD" "$RESET" "$DIM" "$RESET"
+fi
+hr '═'
+printf '%s%s  Done. Stay safe. 🔐%s\n\n' "$BOLD" "$GRN" "$RESET"
