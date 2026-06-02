@@ -66,7 +66,7 @@ describe() {
   case "$1" in
     harden.sh)    printf 'system hardening (users, SSH, firewall, fail2ban, sysctl, AppArmor, AIDE)';;
     docker.sh)    printf 'Docker Engine + Compose + rootless setup + /opt/docker layout';;
-    ancillary.sh) printf 'extra packages (btop) + fish shell for your user(s)';;
+    ancillary.sh) printf 'extra packages (btop, qemu-guest-agent) + fish shell for your user(s)';;
     *)         printf 'bootstrap script';;
   esac
 }

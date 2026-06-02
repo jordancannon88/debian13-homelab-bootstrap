@@ -15,7 +15,7 @@ script asks whether to run it — using a **local copy** if present, or offering
 | **`init.sh`** | 🚀 | Orchestrator — root check, installs `curl`, then runs the scripts below (local copy or download), one at a time. |
 | **`harden.sh`** | 🔒 | System hardening — admin users + SSH keys, SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl hardening, AppArmor, AIDE, Lynis. |
 | **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus a `/opt/docker` layout with an example app. |
-| **`ancillary.sh`** | 🐟 | Extra packages (`btop`) + the **fish** shell, set as default for users `harden.sh` created (or current users you pick). |
+| **`ancillary.sh`** | 🐟 | Extra packages (`btop`, `qemu-guest-agent`) + the **fish** shell, set as default for users `harden.sh` created (or current users you pick). |
 
 ✨ Every script is **idempotent**, has a **dry-run** preview, **prompts** before
 changes, **backs up** files it edits, and prints a **recap** at the end.
@@ -66,7 +66,7 @@ sudo ./init.sh
 ```bash
 sudo ./harden.sh     # 1️⃣  harden the system
 sudo ./docker.sh     # 2️⃣  install Docker + Compose (rootless)
-sudo ./ancillary.sh  # 3️⃣  extra packages (btop) + fish shell
+sudo ./ancillary.sh  # 3️⃣  extra packages (btop, qemu-guest-agent) + fish shell
 ```
 
 ---
@@ -101,7 +101,7 @@ sudo DRY_RUN=1 ./ancillary.sh
 
 | Variable | Effect |
 | --- | --- |
-| `ADMIN_USERS="admin jordan"` | Admin users to create/harden (sudo + SSH key) |
+| `ADMIN_USERS="jordan"` | Admin users to create/harden (sudo + SSH key); skips the prompt |
 | `PUBKEY=` / `PUBKEY_<user>=` | SSH public key(s) — `PUBKEY` is the primary user |
 | `SSH_PORT=22` | SSH port |
 | `ALLOW_SSH_CIDRS="1.2.3.4/32"` | Restrict SSH to source ranges |
