@@ -26,7 +26,7 @@ REPO_RAW_BASE="${REPO_RAW_BASE:-https://raw.githubusercontent.com/jordancannon88
 ASSUME_YES="${ASSUME_YES:-0}"
 
 # Scripts offered, in order.
-SCRIPTS=(harden.sh docker.sh ancillary.sh)
+SCRIPTS=(harden.sh ancillary.sh docker.sh)
 
 # ==============================================================================
 #  Output helpers — colors & banners
