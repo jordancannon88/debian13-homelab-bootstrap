@@ -179,6 +179,8 @@ append_line() {
     dry "append to ${f}: ${line}"
     return 0
   fi
+  # Idempotent: skip if the exact line is already in the file.
+  [[ -f "$f" ]] && grep -qxF "$line" "$f" && return 0
   printf '%s\n' "$line" >> "$f"
 }
 
@@ -1421,18 +1423,25 @@ if [[ -n "${GRUB_PASSWORD:-}" ]] && command -v grub-mkpasswd-pbkdf2 >/dev/null 2
     _grub_hash="$(printf '%s\n%s\n' "$GRUB_PASSWORD" "$GRUB_PASSWORD" | grub-mkpasswd-pbkdf2 2>/dev/null | awk '/grub\.pbkdf2/{print $NF}')"
     if [[ -n "$_grub_hash" ]]; then
       cp -a /etc/grub.d/40_custom "$BACKUP_DIR/40_custom.bak" 2>/dev/null || true
-      cat >> /etc/grub.d/40_custom <<EOF
+      # Idempotent: update the hash in place if already configured, else append.
+      if grep -q '^password_pbkdf2 root ' /etc/grub.d/40_custom 2>/dev/null; then
+        sed -i -E "s@^password_pbkdf2 root .*@password_pbkdf2 root ${_grub_hash}@" /etc/grub.d/40_custom
+        grep -q '^set superusers=' /etc/grub.d/40_custom || printf 'set superusers="root"\n' >> /etc/grub.d/40_custom
+        log "GRUB password updated (existing entry)."
+      else
+        cat >> /etc/grub.d/40_custom <<EOF
 
 # Lynis BOOT-5122: protect GRUB editing / single-user mode with a password.
 set superusers="root"
 password_pbkdf2 root ${_grub_hash}
 EOF
+        log "GRUB password set (normal boot stays password-free)."
+      fi
       # Keep normal boot password-free by marking menu entries unrestricted.
       if [[ -f /etc/grub.d/10_linux ]] && ! grep -q -- '--unrestricted' /etc/grub.d/10_linux; then
         sed -i -E 's@^(CLASS=".*)"@\1 --unrestricted"@' /etc/grub.d/10_linux || true
       fi
       update-grub 2>/dev/null || update-grub2 2>/dev/null || true
-      log "GRUB password set (normal boot stays password-free)."
       record "GRUB password" "set (superuser=root, --unrestricted)"
     else
       warn "Could not generate a GRUB password hash — skipped."

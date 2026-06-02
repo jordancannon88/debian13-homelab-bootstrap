@@ -180,17 +180,28 @@ banner "Installing the QEMU guest agent"
 # ==============================================================================
 info "Ensuring qemu-guest-agent is installed..."
 run apt-get install -y qemu-guest-agent
-# qemu-guest-agent only runs inside a QEMU/KVM guest (it needs the virtio-serial
-# channel). Enabling is harmless on bare metal; the service just stays inactive.
-run systemctl enable --now qemu-guest-agent || true
+# qemu-guest-agent.service is a STATIC unit (no [Install] section): it is started
+# automatically by udev when the host attaches the guest-agent virtio-serial
+# channel. So we do NOT 'enable' it (that just errors) — we only 'start' it when
+# we're actually a QEMU/KVM guest. On bare metal it simply stays inactive.
 if [[ "$DRY_RUN" == "1" ]]; then
+  dry "start qemu-guest-agent if this is a QEMU/KVM guest"
   record "Guest agent" "[dry-run] would install qemu-guest-agent"
-elif systemctl is-active --quiet qemu-guest-agent 2>/dev/null; then
-  log "qemu-guest-agent active (running inside a QEMU/KVM guest)."
-  record "Guest agent" "qemu-guest-agent active"
 else
-  note "qemu-guest-agent installed but inactive (not a QEMU/KVM guest / no virtio-serial device)."
-  record "Guest agent" "qemu-guest-agent installed (inactive — not a VM)"
+  VIRT="$(systemd-detect-virt 2>/dev/null || true)"; [[ -n "$VIRT" ]] || VIRT="none"
+  if [[ -e /dev/virtio-ports/org.qemu.guest_agent.0 || "$VIRT" == "qemu" || "$VIRT" == "kvm" ]]; then
+    systemctl start qemu-guest-agent 2>/dev/null || true
+    if systemctl is-active --quiet qemu-guest-agent 2>/dev/null; then
+      log "qemu-guest-agent active (QEMU/KVM guest detected: ${VIRT})."
+      record "Guest agent" "active (${VIRT} guest)"
+    else
+      note "qemu-guest-agent installed; it will activate when the host attaches the agent channel."
+      record "Guest agent" "installed (will auto-activate in guest)"
+    fi
+  else
+    note "qemu-guest-agent installed but not started — this host is not a QEMU/KVM guest (virt: ${VIRT})."
+    record "Guest agent" "installed (not a VM: ${VIRT})"
+  fi
 fi
 
 # ==============================================================================
