@@ -3,7 +3,7 @@
 #  Debian 13 Homelab Bootstrap — ancillary
 #  Installs extra/quality-of-life packages and sets up the fish shell.
 #
-#  - Installs btop (and fish).
+#  - Installs btop, fish, and qemu-guest-agent (enabled; only active in a VM).
 #  - fish shell: if harden.sh NEWLY created user(s) this run, fish is installed
 #    and made their default shell automatically. Otherwise it asks which current
 #    users should get fish as their default shell.
@@ -49,7 +49,7 @@ fi
 S_OK="✔"; S_INFO="•"; S_WARN="!"; S_ERR="✗"; S_STEP="▸"
 
 STEP_NO=0
-TOTAL_STEPS=2
+TOTAL_STEPS=3
 SUMMARY=()
 record() { SUMMARY+=("$1"$'\t'"$2"); }
 
@@ -174,6 +174,24 @@ info "Installing: ${DIM}${ANCILLARY_PKGS[*]}${RESET}"
 run apt-get install -y "${ANCILLARY_PKGS[@]}"
 log "Installed: ${ANCILLARY_PKGS[*]} (btop = resource monitor; fish = friendly shell)."
 record "Packages" "installed: ${ANCILLARY_PKGS[*]}"
+
+# ==============================================================================
+banner "Installing the QEMU guest agent"
+# ==============================================================================
+info "Ensuring qemu-guest-agent is installed..."
+run apt-get install -y qemu-guest-agent
+# qemu-guest-agent only runs inside a QEMU/KVM guest (it needs the virtio-serial
+# channel). Enabling is harmless on bare metal; the service just stays inactive.
+run systemctl enable --now qemu-guest-agent || true
+if [[ "$DRY_RUN" == "1" ]]; then
+  record "Guest agent" "[dry-run] would install qemu-guest-agent"
+elif systemctl is-active --quiet qemu-guest-agent 2>/dev/null; then
+  log "qemu-guest-agent active (running inside a QEMU/KVM guest)."
+  record "Guest agent" "qemu-guest-agent active"
+else
+  note "qemu-guest-agent installed but inactive (not a QEMU/KVM guest / no virtio-serial device)."
+  record "Guest agent" "qemu-guest-agent installed (inactive — not a VM)"
+fi
 
 # ==============================================================================
 banner "Configuring fish shell"
