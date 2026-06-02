@@ -175,12 +175,45 @@ choose_run_mode() {
 }
 
 prompt_for_user() {
-  # Choose the user that will own rootless Docker.
-  if [[ -z "$DOCKER_USER" && "$INTERACTIVE" -eq 1 ]]; then
-    printf '%s%s Which user should own rootless Docker? [default: admin]: %s' "$YEL" "$S_INFO" "$RESET" > /dev/tty
-    read -r DOCKER_USER < /dev/tty || DOCKER_USER=""
+  # Choose the user that will own rootless Docker — must be an EXISTING account.
+  # Loops until a valid user is picked (interactive); errors out non-interactively.
+  local candidates default
+  mapfile -t candidates < <(awk -F: '$3>=1000 && $3<65534 && $7 !~ /(nologin|false)$/ {print $1}' /etc/passwd | sort)
+  # Sensible default: the sudo invoker if it exists, else the sole human user.
+  default=""
+  if [[ -n "${SUDO_USER:-}" ]] && id "$SUDO_USER" >/dev/null 2>&1; then
+    default="$SUDO_USER"
+  elif (( ${#candidates[@]} == 1 )); then
+    default="${candidates[0]}"
   fi
-  DOCKER_USER="${DOCKER_USER:-admin}"
+
+  while true; do
+    # Accept a valid pre-set / previously-entered value without re-asking.
+    if [[ -n "$DOCKER_USER" ]] && id "$DOCKER_USER" >/dev/null 2>&1; then
+      return 0
+    fi
+    if [[ -n "$DOCKER_USER" ]]; then
+      # Provided but missing.
+      if [[ "$INTERACTIVE" -ne 1 ]]; then
+        err "User '$DOCKER_USER' does not exist. Set DOCKER_USER=<existing user> (run harden.sh first to create one)."
+        exit 1
+      fi
+      warn "User '$DOCKER_USER' does not exist — pick an existing user."
+    fi
+    if [[ "$INTERACTIVE" -ne 1 ]]; then
+      err "No existing target user for rootless Docker. Set DOCKER_USER=<existing user>."
+      exit 1
+    fi
+    if (( ${#candidates[@]} > 0 )); then
+      printf '   %sExisting users:%s %s\n' "$DIM" "$RESET" "${candidates[*]}" > /dev/tty
+    else
+      printf '   %sNo regular users found — run harden.sh first to create one.%s\n' "$DIM" "$RESET" > /dev/tty
+    fi
+    printf '%s%s Which user should own rootless Docker?%s%s ' \
+      "$YEL" "$S_INFO" "${default:+ [default: $default]}" "$RESET" > /dev/tty
+    read -r DOCKER_USER < /dev/tty || DOCKER_USER=""
+    DOCKER_USER="${DOCKER_USER:-$default}"
+  done
 }
 
 # ==============================================================================
@@ -222,11 +255,7 @@ hr '─'
 # ==============================================================================
 header "Pre-flight checks"
 
-# Validate the target user exists (must, for rootless).
-if ! id "$DOCKER_USER" >/dev/null 2>&1; then
-  err "User '$DOCKER_USER' does not exist. Create it first (the hardening script makes 'admin')."
-  exit 1
-fi
+# The target user was validated in prompt_for_user (it exists).
 USER_UID="$(id -u "$DOCKER_USER")"
 USER_HOME="$(getent passwd "$DOCKER_USER" | cut -d: -f6)"
 log "Target user '$DOCKER_USER' exists (uid ${USER_UID}, home ${USER_HOME})."
