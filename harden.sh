@@ -37,9 +37,12 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH
 # =======================
 ADMIN_USER="${ADMIN_USER:-admin}"
 # Admin users to create/harden identically (disabled-password + sudo + SSH key).
-# Override with ADMIN_USERS="user1 user2 ...". ADMIN_USER stays the primary
-# (used for the SSH re-login hint). Per-user keys: PUBKEY (primary) or PUBKEY_<user>.
-ADMIN_USERS="${ADMIN_USERS:-$ADMIN_USER jordan}"
+# ADMIN_USER stays the primary (used for the SSH re-login hint). If ADMIN_USERS
+# is NOT set, the script interactively asks for an additional admin username
+# (your personal account) and appends it. Per-user keys: PUBKEY (primary) or
+# PUBKEY_<user>. Set ADMIN_USERS="u1 u2 ..." to skip the prompt entirely.
+if [[ -n "${ADMIN_USERS+x}" ]]; then ADMIN_USERS_EXPLICIT=1; else ADMIN_USERS_EXPLICIT=0; fi
+ADMIN_USERS="${ADMIN_USERS:-$ADMIN_USER}"
 read -ra ADMIN_USER_LIST <<< "$ADMIN_USERS"
 # De-duplicate while preserving order.
 _seen=" "; _dedup=()
@@ -341,6 +344,65 @@ prompt_for_docker() {
   fi
 }
 
+# prompt_for_extra_user — ask for an additional admin username (your personal
+# account) and append it to ADMIN_USER_LIST. Skipped if ADMIN_USERS was set
+# explicitly via env, or when there is no TTY to prompt on.
+prompt_for_extra_user() {
+  [[ "$ADMIN_USERS_EXPLICIT" == "1" ]] && return 0
+  [[ "$INTERACTIVE" -eq 1 ]] || return 0
+  local name
+  while true; do
+    printf '\n%s%sAdditional admin user to create/harden (besides %s%s%s)?%s\n' \
+      "$BOLD" "$WHT" "$BOLD" "$ADMIN_USER" "$WHT" "$RESET" > /dev/tty
+    note "Enter a username (e.g. your own name), or press Enter for none." > /dev/tty
+    printf '%s%s username> %s' "$YEL" "$S_INFO" "$RESET" > /dev/tty
+    IFS= read -r name < /dev/tty || name=""
+    # Trim whitespace.
+    name="${name#"${name%%[![:space:]]*}"}"
+    name="${name%"${name##*[![:space:]]}"}"
+
+    [[ -z "$name" ]] && { note "No additional user — continuing with: ${ADMIN_USER_LIST[*]}" > /dev/tty; return 0; }
+    # Validate a Linux username: start with a lowercase letter/underscore.
+    if ! [[ "$name" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+      printf '%s%s Invalid username — use lowercase letters, digits, - and _ (start with a letter).%s\n' \
+        "$RED" "$S_ERR" "$RESET" > /dev/tty
+      continue
+    fi
+    # Skip if it duplicates a user already in the list.
+    if printf '%s\n' "${ADMIN_USER_LIST[@]}" | grep -qx "$name"; then
+      note "'$name' is already in the admin list — nothing to add." > /dev/tty
+      return 0
+    fi
+    # Safeguard: if the account ALREADY EXISTS, confirm before adopting it — and
+    # warn hard for system/service accounts (UID < 1000 or a nologin/false
+    # shell), since granting those sudo + SSH keys is almost certainly a typo.
+    if id "$name" >/dev/null 2>&1; then
+      local uid shell
+      uid="$(id -u "$name" 2>/dev/null || echo 0)"
+      shell="$(getent passwd "$name" | cut -d: -f7)"
+      if (( uid < 1000 )) || [[ "$shell" == */nologin || "$shell" == */false ]]; then
+        printf '%s%s '\''%s'\'' already exists and looks like a SYSTEM account (uid %s, shell %s).%s\n' \
+          "$RED" "$S_ERR" "$name" "$uid" "${shell:-?}" "$RESET" > /dev/tty
+        printf '   %sAdding it to sudo + SSH key login is almost certainly NOT what you want.%s\n' "$DIM" "$RESET" > /dev/tty
+        if ! confirm "Use the system account '$name' anyway?" N; then
+          note "Not using '$name' — enter a different username (or Enter for none)." > /dev/tty
+          continue
+        fi
+      else
+        printf '%s%s User '\''%s'\'' already exists (uid %s) — it will be PROMOTED to sudo and given an SSH key.%s\n' \
+          "$YEL" "$S_WARN" "$name" "$uid" "$RESET" > /dev/tty
+        if ! confirm "Promote existing user '$name' to admin (sudo + SSH key)?" Y; then
+          note "Skipping '$name' — enter a different username (or Enter for none)." > /dev/tty
+          continue
+        fi
+      fi
+    fi
+    ADMIN_USER_LIST+=("$name")
+    log "Added admin user: ${BOLD}${name}${RESET}" > /dev/tty
+    return 0
+  done
+}
+
 # ==============================================================================
 #  Intro splash
 # ==============================================================================
@@ -373,6 +435,9 @@ prompt_for_ssh_port
 
 # Ask whether to keep the firewall/sysctl Docker-compatible (per Docker prereqs).
 prompt_for_docker
+
+# Ask for an additional admin user (your personal account) unless ADMIN_USERS was set.
+prompt_for_extra_user
 
 # When SSH stays on 22 there is no separate "port 22 fallback" to manage.
 if [[ "$SSH_PORT" == "22" ]]; then
