@@ -20,6 +20,8 @@
 #   DISABLE_ROOT_LOGIN=1|0   -> lock the root account password (root SSH is off
 #                               regardless; sudo still works). Only applied if an
 #                               admin user is keyed; never expires root. Else asks.
+#   BLACKLIST_USB_STORAGE=1|0-> also blacklist the usb-storage module (disables
+#                               USB drives). Default: asks; off if unanswered.
 #   DRY_RUN=1|0      -> force dry-run / actual (skips the mode prompt)
 #   ASSUME_YES=1     -> answer "yes" to every prompt (for automation)
 #   SKIP_UPGRADE=1   -> skip the full apt upgrade
@@ -107,7 +109,7 @@ fi
 S_OK="✔"; S_INFO="•"; S_WARN="!"; S_ERR="✗"; S_STEP="▸"
 
 STEP_NO=0
-TOTAL_STEPS=12
+TOTAL_STEPS=13
 SUMMARY=()        # collected lines for the final recap
 WARNINGS=()       # collected warnings for the final recap
 
@@ -912,6 +914,12 @@ ensure_sshd_opt LoginGraceTime "30"
 ensure_sshd_opt ClientAliveInterval "300"
 ensure_sshd_opt ClientAliveCountMax "2"
 ensure_sshd_opt MaxAuthTries "3"
+# Lynis SSH-7408 hardening suggestions.
+ensure_sshd_opt LogLevel "VERBOSE"
+ensure_sshd_opt MaxSessions "2"
+ensure_sshd_opt TCPKeepAlive "no"
+ensure_sshd_opt AllowAgentForwarding "no"
+ensure_sshd_opt Banner "/etc/issue.net"
 
 SSH_2FA_NOTE="disabled"
 if [[ "$ENABLE_SSH_2FA" == "1" ]]; then
@@ -1150,33 +1158,153 @@ net.ipv4.conf.all.accept_redirects = 0
 net.ipv4.conf.default.accept_redirects = 0
 net.ipv4.conf.all.send_redirects = 0
 net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.icmp_ignore_bogus_error_responses = 1
 net.ipv4.conf.all.log_martians = 1
+net.ipv4.conf.default.log_martians = 1
+# IPv6 redirect/source-route protection
+net.ipv6.conf.all.accept_redirects = 0
+net.ipv6.conf.default.accept_redirects = 0
+net.ipv6.conf.all.accept_source_route = 0
+net.ipv6.conf.default.accept_source_route = 0
+# Kernel hardening (Lynis KRNL-6000)
 kernel.dmesg_restrict = 1
 kernel.kptr_restrict = 2
+kernel.sysrq = 0
+kernel.core_uses_pid = 1
+kernel.randomize_va_space = 2
+kernel.yama.ptrace_scope = 1
+kernel.unprivileged_bpf_disabled = 1
+net.core.bpf_jit_harden = 2
 fs.protected_hardlinks = 1
 fs.protected_symlinks = 1
+fs.protected_fifos = 2
+fs.protected_regular = 2
+fs.suid_dumpable = 0
 EOF
-run sysctl --system
+run sysctl --system || true
 log "sysctl hardening applied (rp_filter, syncookies, redirect/martian protection, ...)."
 note "net.ipv4.ip_forward = ${IP_FWD} (${IP_FWD_NOTE})."
 record "sysctl" "Hardening applied to $SYSCTL_H (ip_forward=${IP_FWD})"
 
 # ==============================================================================
+banner "Applying extra hardening (Lynis suggestions)"
+# ==============================================================================
+# Safe, automatable fixes for common Lynis suggestions, applied BEFORE the audit.
+
+# set_logindef KEY VALUE — set a directive in /etc/login.defs (idempotent).
+set_logindef() {
+  local key="$1" val="$2" f=/etc/login.defs
+  if [[ "$DRY_RUN" == "1" ]]; then note "${key} ${DIM}->${RESET} ${val} ${MAG}[dry-run]${RESET}"; return 0; fi
+  if grep -qiE "^\s*#?\s*${key}\b" "$f" 2>/dev/null; then
+    sed -i -E "s@^\s*#?\s*(${key})\b.*@\1 ${val}@i" "$f"
+  else
+    printf '%s\t%s\n' "$key" "$val" >> "$f"
+  fi
+  note "${key} ${DIM}->${RESET} ${val}"
+}
+
+# 1) Packages: PAM/tmp, package auditing, accounting, malware scanner, etc.
+EXTRA_PKGS=(
+  libpam-tmpdir libpam-pwquality apt-listbugs debsums apt-show-versions
+  acct sysstat auditd rkhunter
+)
+info "Installing hardening helpers: ${DIM}${EXTRA_PKGS[*]}${RESET}"
+run apt -y install "${EXTRA_PKGS[@]}"
+record "Extra pkgs" "${#EXTRA_PKGS[@]} installed (pwquality, debsums, auditd, sysstat, acct, rkhunter, ...)"
+
+# 2) Enable accounting/audit collectors (ACCT-9622/9626/9628).
+if [[ "$DRY_RUN" == "1" ]]; then
+  dry "enable sysstat collection in /etc/default/sysstat"
+else
+  [[ -f /etc/default/sysstat ]] && sed -i 's/^ENABLED=.*/ENABLED="true"/' /etc/default/sysstat
+fi
+run systemctl enable --now sysstat 2>/dev/null || true
+run systemctl enable --now auditd 2>/dev/null || true
+run systemctl enable --now acct 2>/dev/null || run systemctl enable --now acct.service 2>/dev/null || true
+log "Process accounting (acct), sysstat and auditd enabled."
+
+# 3) /etc/login.defs: password aging, hashing rounds, umask (AUTH-9230/9286/9328).
+info "Hardening /etc/login.defs..."
+run cp -a /etc/login.defs "$BACKUP_DIR/login.defs.bak" 2>/dev/null || true
+set_logindef PASS_MAX_DAYS 365
+set_logindef PASS_MIN_DAYS 1
+set_logindef PASS_WARN_AGE 7
+set_logindef SHA_CRYPT_MIN_ROUNDS 65536
+set_logindef SHA_CRYPT_MAX_ROUNDS 65536
+set_logindef UMASK 027
+record "login.defs" "password aging + SHA rounds + UMASK 027"
+
+# 4) fail2ban jail.local so updates can't clobber config (DEB-0880).
+if [[ -f /etc/fail2ban/jail.conf && ! -f /etc/fail2ban/jail.local ]]; then
+  run cp -a /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
+  log "Created /etc/fail2ban/jail.local from jail.conf."
+fi
+
+# 5) Blacklist rare/unused kernel modules (NETW-3200, STRG-1846; USB-1000 opt-in).
+#    usb-storage is OPT-IN — blacklisting it disables USB flash/disk drives, which
+#    is often unwanted on a homelab. Set BLACKLIST_USB_STORAGE=1 (or answer the
+#    prompt) to include it.
+if [[ -z "${BLACKLIST_USB_STORAGE:-}" ]]; then
+  if [[ "$DRY_RUN" != "1" ]] && confirm "Also blacklist usb-storage (disables USB drives) for tighter security?" N; then
+    BLACKLIST_USB_STORAGE=1
+  else
+    BLACKLIST_USB_STORAGE=0
+  fi
+fi
+{
+  printf '%s\n' "# Disable rarely-used network protocols and storage drivers (Lynis hardening)."
+  printf '%s\n' "# Reverse by deleting this file. Remove a line if you actually need that module."
+  printf '%s\n' "install dccp /bin/true"
+  printf '%s\n' "install sctp /bin/true"
+  printf '%s\n' "install rds /bin/true"
+  printf '%s\n' "install tipc /bin/true"
+  printf '%s\n' "install firewire-core /bin/true"
+  [[ "$BLACKLIST_USB_STORAGE" == "1" ]] && printf '%s\n' "install usb-storage /bin/true"
+} | write_file /etc/modprobe.d/99-hardening-blacklist.conf
+if [[ "$BLACKLIST_USB_STORAGE" == "1" ]]; then
+  log "Blacklisted dccp, sctp, rds, tipc, firewire-core, usb-storage (reversible)."
+  note "Remove /etc/modprobe.d/99-hardening-blacklist.conf if you need USB storage."
+  record "Module blacklist" "rare protocols + firewire + usb-storage (reversible)"
+else
+  log "Blacklisted dccp, sctp, rds, tipc, firewire-core (usb-storage left enabled)."
+  note "usb-storage NOT blacklisted (USB drives still work). Set BLACKLIST_USB_STORAGE=1 to include it."
+  record "Module blacklist" "rare protocols + firewire (usb-storage left enabled)"
+fi
+
+# 6) Legal login banners (BANN-7126, BANN-7130).
+BANNER_TEXT="Authorized access only. All connections and activity may be monitored and logged."
+write_file /etc/issue     <<EOF
+${BANNER_TEXT}
+EOF
+write_file /etc/issue.net <<EOF
+${BANNER_TEXT}
+EOF
+log "Wrote legal login banners to /etc/issue and /etc/issue.net."
+record "Login banner" "legal warning set (/etc/issue, /etc/issue.net)"
+
+# ==============================================================================
 banner "Running Lynis quick audit (non-blocking)"
 # ==============================================================================
-LYNIS_SCORE="n/a"
+LYNIS_SCORE="n/a"; LYNIS_TESTS="n/a"; LYNIS_WARN=0; LYNIS_SUGG=0
+LYNIS_REPORT="/var/log/lynis-report.dat"; LYNIS_LOG="/var/log/lynis.log"
+LYNIS_WARN_LIST=(); LYNIS_SUGG_LIST=()
 if [[ "$DRY_RUN" == "1" ]]; then
   dry "lynis audit system --quick"
   record "Lynis" "[dry-run] would run quick audit"
 else
   info "Auditing the system with Lynis..."
   lynis audit system --quick || true
-  if [[ -r /var/log/lynis-report.dat ]]; then
-    LYNIS_SCORE="$(awk -F= '/^hardening_index=/{print $2}' /var/log/lynis-report.dat | tail -n1)"
-    [[ -n "$LYNIS_SCORE" ]] || LYNIS_SCORE="n/a"
+  if [[ -r "$LYNIS_REPORT" ]]; then
+    LYNIS_SCORE="$(awk -F= '/^hardening_index=/{print $2}' "$LYNIS_REPORT" | tail -n1)"; [[ -n "$LYNIS_SCORE" ]] || LYNIS_SCORE="n/a"
+    LYNIS_TESTS="$(awk -F= '/^tests_executed=/{print $2}' "$LYNIS_REPORT" | tail -n1)"; [[ -n "$LYNIS_TESTS" ]] || LYNIS_TESTS="n/a"
+    LYNIS_WARN="$(grep -c '^warning\[\]=' "$LYNIS_REPORT" 2>/dev/null || echo 0)"
+    LYNIS_SUGG="$(grep -c '^suggestion\[\]=' "$LYNIS_REPORT" 2>/dev/null || echo 0)"
+    # Pull the human-readable text (2nd pipe-field) of the first few items.
+    mapfile -t LYNIS_WARN_LIST < <(awk -F'|' '/^warning\[\]=/{print $2}' "$LYNIS_REPORT" 2>/dev/null | head -5)
+    mapfile -t LYNIS_SUGG_LIST < <(awk -F'|' '/^suggestion\[\]=/{print $2}' "$LYNIS_REPORT" 2>/dev/null | head -5)
   fi
-  log "Lynis audit complete. Hardening index: ${BOLD}${LYNIS_SCORE}${RESET}"
-  record "Lynis" "Quick audit complete (hardening index: ${LYNIS_SCORE})"
+  log "Lynis audit complete. Hardening index: ${BOLD}${LYNIS_SCORE}${RESET} (${LYNIS_WARN} warnings, ${LYNIS_SUGG} suggestions)."
+  record "Lynis" "index ${LYNIS_SCORE}; ${LYNIS_WARN} warnings, ${LYNIS_SUGG} suggestions; ${LYNIS_TESTS} tests"
 fi
 
 # ==============================================================================
@@ -1268,12 +1396,39 @@ printf '   %sSSH port%s     : %s  (port 22 also allowed: %s)\n' "$WHT" "$RESET" 
 printf '   %sSSH sources%s  : %s\n' "$WHT" "$RESET" "${ALLOW_SSH_CIDRS:-<any>}"
 printf '   %sHTTP / HTTPS%s : 80=%s  443=%s\n' "$WHT" "$RESET" "$ALLOW_HTTP" "$ALLOW_HTTPS"
 printf '   %sSSH 2FA%s      : %s\n' "$WHT" "$RESET" "$SSH_2FA_NOTE"
-printf '   %sLynis index%s  : %s\n' "$WHT" "$RESET" "$LYNIS_SCORE"
 if [[ "$DOCKER_COMPAT" == "1" ]]; then
   printf '   %sDocker-compat%s: %syes%s — ip_forward=1, forward=accept, scoped nft flush; filter via DOCKER-USER\n' \
     "$WHT" "$RESET" "$GRN" "$RESET"
 else
   printf '   %sDocker-compat%s: no (firewall is pure-nft, forward dropped, ip_forward=0)\n' "$WHT" "$RESET"
+fi
+
+# Lynis security scan — details
+hr '─'
+printf '%s%s  🔎 LYNIS SECURITY SCAN%s\n' "$BOLD" "$CYN" "$RESET"
+if [[ "$DRY_RUN" == "1" ]]; then
+  note "Skipped in dry run — an actual run audits the system and reports here."
+else
+  # Color the index: >=80 green, 60-79 yellow, <60 red.
+  _idx_color="$WHT"
+  if [[ "$LYNIS_SCORE" =~ ^[0-9]+$ ]]; then
+    if   (( LYNIS_SCORE >= 80 )); then _idx_color="$GRN"
+    elif (( LYNIS_SCORE >= 60 )); then _idx_color="$YEL"
+    else _idx_color="$RED"; fi
+  fi
+  printf '   %sHardening index%s : %s%s / 100%s\n' "$WHT" "$RESET" "$_idx_color" "$LYNIS_SCORE" "$RESET"
+  printf '   %sTests executed%s  : %s\n' "$WHT" "$RESET" "$LYNIS_TESTS"
+  printf '   %sWarnings%s        : %s%s%s\n' "$WHT" "$RESET" "$( (( LYNIS_WARN > 0 )) && printf '%s' "$YEL" || printf '%s' "$GRN" )" "$LYNIS_WARN" "$RESET"
+  printf '   %sSuggestions%s     : %s\n' "$WHT" "$RESET" "$LYNIS_SUGG"
+  if (( ${#LYNIS_WARN_LIST[@]} > 0 )); then
+    printf '   %stop warnings:%s\n' "$DIM" "$RESET"
+    for w in "${LYNIS_WARN_LIST[@]}"; do
+      [[ -n "$w" ]] && printf '     %s%s%s %s\n' "$YEL" "$S_WARN" "$RESET" "$w"
+    done
+    (( LYNIS_WARN > ${#LYNIS_WARN_LIST[@]} )) && note "…and $(( LYNIS_WARN - ${#LYNIS_WARN_LIST[@]} )) more (see ${LYNIS_REPORT})."
+  fi
+  printf '   %sFull report%s     : %s   %slog%s: %s\n' "$WHT" "$RESET" "$LYNIS_REPORT" "$DIM" "$RESET" "$LYNIS_LOG"
+  note "Review suggestions: sudo lynis show details   |   re-run: sudo lynis audit system"
 fi
 
 # Reboot status — prominent, color-coded
