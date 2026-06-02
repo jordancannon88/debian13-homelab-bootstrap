@@ -330,14 +330,23 @@ is simply not allowed in, so packets are dropped.
 
 <br>
 
-**Fix (persistent — recommended):** open the port(s) and re-run the hardener:
+**Fix (persistent — recommended):** insert the accept rule into the input chain
+**before** its `drop` in `/etc/nftables.conf`, then reload — no need to re-run the
+whole hardener. harden.sh emits exactly one bare `drop` line (the input chain's;
+the forward chain uses `policy drop;`), so a single `sed` targets it safely:
 
 ```bash
-sudo ALLOW_TCP_PORTS="8080" ./harden.sh        # space/comma separated; UDP via ALLOW_UDP_PORTS
+sudo sed -i 's/^\([[:space:]]*\)drop$/\1tcp dport 8080 ct state new accept\n\1drop/' /etc/nftables.conf && sudo nft -f /etc/nftables.conf
 ```
 
-These rules are written into `/etc/nftables.conf` **before** the chain's `drop`,
-so they take effect and survive reloads/reboots.
+For **UDP**, swap `tcp` → `udp`. For **multiple ports**, repeat the accept line
+(e.g. `…\1tcp dport 8080 …\n\1tcp dport 8096 …\n\1drop`). Because the rule lands
+in `/etc/nftables.conf`, it survives reloads/reboots. Re-running appends a
+duplicate (harmless); to make it idempotent, guard with a grep:
+
+```bash
+grep -q 'tcp dport 8080 ct state new accept' /etc/nftables.conf || sudo sed -i 's/^\([[:space:]]*\)drop$/\1tcp dport 8080 ct state new accept\n\1drop/' /etc/nftables.conf; sudo nft -f /etc/nftables.conf
+```
 
 <br>
 
@@ -351,7 +360,7 @@ sudo nft -a list chain inet filter input          # confirm it sits ABOVE the 'd
 ```
 
 > ⚠️ Temporary rules are lost on the next `nft -f` / `systemctl reload nftables`
-> or reboot — use `ALLOW_TCP_PORTS` to make them stick.
+> or reboot — use the persistent `sed` one-liner above to make them stick.
 
 <br>
 

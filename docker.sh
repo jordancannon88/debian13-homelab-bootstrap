@@ -666,6 +666,19 @@ else
   fi
   printf '   %s•%s  Add more apps as %s%s/<app>/docker-compose.yml%s (one folder per app).\n' \
     "$BOLD" "$RESET" "$DIM" "$OPT_DOCKER_DIR" "$RESET"
+
+  # Troubleshooting (from README → "A container isn't reachable on the machine's IP").
+  printf '\n   %s%sTroubleshooting — published port not reachable from another machine:%s\n' "$BOLD" "$YEL" "$RESET"
+  printf '       %sCause:%s harden.sh sets the nftables input policy to %sdrop%s; a rootless\n' "$DIM" "$RESET" "$BOLD" "$RESET"
+  printf '       published port is a host listener subject to that filter (rootful Docker\n'
+  printf '       bypasses it via its own NAT rules), so packets are dropped.\n'
+  printf '       %sFix (persistent):%s insert the rule before the input chain'"'"'s drop, then reload:\n' "$BOLD" "$RESET"
+  printf '           %ssudo sed -i '"'"'s/^\\([[:space:]]*\\)drop$/\\1tcp dport 8080 ct state new accept\\n\\1drop/'"'"' /etc/nftables.conf && sudo nft -f /etc/nftables.conf%s\n' "$CYN" "$RESET"
+  printf '           %s(survives reloads/reboots; swap tcp->udp for UDP)%s\n' "$DIM" "$RESET"
+  printf '       %sFix (temporary):%s %ssudo nft insert rule inet filter input tcp dport 8080 ct state new accept%s\n' "$BOLD" "$RESET" "$CYN" "$RESET"
+  printf '           %s(use insert, not add — the input chain ends in an explicit drop)%s\n' "$DIM" "$RESET"
+  printf '       %sStill stuck?%s %sss -tlnp | grep '"'"':8080'"'"'%s — if bound to %s127.0.0.1%s, change the compose\n' "$BOLD" "$RESET" "$CYN" "$RESET" "$BOLD" "$RESET"
+  printf '           mapping from %s127.0.0.1:8080:80%s to %s8080:80%s and redeploy.\n' "$DIM" "$RESET" "$DIM" "$RESET"
 fi
 hr '═'
 printf '%s%s  Done. 🐳%s\n\n' "$BOLD" "$GRN" "$RESET"
