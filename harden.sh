@@ -1324,3 +1324,13 @@ else
 fi
 hr '═'
 printf '%s%s  Done. Stay safe. 🔐%s\n\n' "$BOLD" "$GRN" "$RESET"
+
+# One-line summary for init.sh's bootstrap report (actual runs only).
+if [[ "$DRY_RUN" != "1" ]]; then
+  _root_state="unchanged"
+  { [[ "${LOCK_ROOT_NOW:-0}" -eq 1 ]] || [[ "${ROOT_ALREADY_LOCKED:-0}" -eq 1 ]]; } && _root_state="locked"
+  mkdir -p /var/lib/homelab-bootstrap/summaries
+  printf 'admins: %s (sudo+key); SSH :%s key-only; nftables deny-by-default; fail2ban+AppArmor+AIDE; root %s; Lynis %s\n' \
+    "${ADMIN_USER_LIST[*]}" "$SSH_PORT" "$_root_state" "${LYNIS_SCORE:-n/a}" \
+    > /var/lib/homelab-bootstrap/summaries/harden.sh
+fi
