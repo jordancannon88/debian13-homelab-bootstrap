@@ -11,6 +11,7 @@ directory, or offering to **download it from GitHub** if it isn't.
 | `init.sh` | Orchestrator: root check, installs `curl`, then runs the scripts below (local copy or download), one at a time. |
 | `harden.sh` | System hardening — admin users + SSH keys, SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl hardening, AppArmor, AIDE, Lynis audit. |
 | `docker.sh` | Docker Engine + Compose + **rootless** Docker, plus a `/opt/docker` layout with an example app. |
+| `ancillary.sh` | Extra packages (`btop`) + the **fish** shell, set as the default shell for users `harden.sh` created (or current users you pick). |
 
 All scripts are **idempotent**, support a **dry-run** preview, prompt before
 making changes, back up every file they edit, and print a full recap at the end.
@@ -63,18 +64,21 @@ Prefer to run the steps yourself, in order:
 ```bash
 sudo ./harden.sh     # 1) harden the system
 sudo ./docker.sh     # 2) install Docker + Compose (rootless)
+sudo ./ancillary.sh  # 3) extra packages (btop) + fish shell
 ```
 
 ---
 
 ## Dry run first (recommended)
 
-Both `harden.sh` and `docker.sh` ask **Dry run vs Actual** on start, and default
-to a dry run that previews every action without changing anything. To force it:
+`harden.sh`, `docker.sh`, and `ancillary.sh` ask **Dry run vs Actual** on start,
+and default to a dry run that previews every action without changing anything.
+To force it:
 
 ```bash
 sudo DRY_RUN=1 ./harden.sh
 sudo DRY_RUN=1 ./docker.sh
+sudo DRY_RUN=1 ./ancillary.sh
 ```
 
 ---
@@ -89,12 +93,15 @@ sudo DRY_RUN=1 ./docker.sh
 - `ADMIN_USERS="admin jordan"` — admin users to create/harden (sudo + SSH key)
 - `PUBKEY="ssh-ed25519 ..."` / `PUBKEY_<user>="..."` — SSH public key(s)
 - `SSH_PORT=22` · `ALLOW_SSH_CIDRS="1.2.3.4/32"` · `ALLOW_HTTP=1` · `ALLOW_HTTPS=1`
-- `ENABLE_SSH_2FA=1` · `SKIP_UPGRADE=1` · `DOCKER_COMPAT=1`
+- `ENABLE_SSH_2FA=1` · `SKIP_UPGRADE=1` · `DOCKER_COMPAT=1` · `DISABLE_ROOT_LOGIN=1`
 
 `docker.sh`
 - `DOCKER_USER=<name>` — user to set up rootless Docker for
 - `SETUP_ROOTLESS=1` · `DISABLE_ROOTFUL=1` · `USERNS_METHOD=apparmor|sysctl|none`
 - `CREATE_OPT_DOCKER=1` · `EXAMPLE_APP=<name>` · `EXAMPLE_PORT=8080`
+
+`ancillary.sh`
+- `FISH_USERS="u1 u2"` — set fish as the default shell for exactly these users (skips prompts)
 
 Common to all: `DRY_RUN=1|0`, `ASSUME_YES=1`.
 
