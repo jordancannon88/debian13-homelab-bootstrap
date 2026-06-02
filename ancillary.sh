@@ -124,7 +124,9 @@ set_fish_default() {
 # ==============================================================================
 #  Splash
 # ==============================================================================
-clear 2>/dev/null || true
+# Don't wipe the terminal when run nested by init.sh — keep the previous
+# script's output visible. (BOOTSTRAP_NESTED is set by init.sh.)
+[[ "${BOOTSTRAP_NESTED:-0}" == "1" ]] || clear 2>/dev/null || true
 printf '%s%s  Debian 13 Homelab Bootstrap — ancillary (extra packages + fish)%s\n' "$BOLD" "$CYN" "$RESET"
 hr '─'
 
@@ -256,7 +258,11 @@ if (( ${#FISH_TARGETS[@]} > 0 )); then
   printf '   %s•%s  Affected users get fish on their NEXT login. Try it now: %sexec fish%s\n' "$BOLD" "$RESET" "$DIM" "$RESET"
 fi
 printf '   %s•%s  Launch the resource monitor with: %sbtop%s\n' "$BOLD" "$RESET" "$DIM" "$RESET"
-if [[ "$DRY_RUN" != "1" && "${QEMU_ACTIVE:-0}" -ne 1 ]]; then
+if [[ "$DRY_RUN" == "1" ]]; then
+  printf '   %s%s%s qemu-guest-agent would be installed but inactive. If this is a VM, enable the guest\n' "$YEL" "$S_WARN" "$RESET"
+  printf '       agent on the hypervisor, then %sfully shut down and start the VM%s (a cold power-cycle —\n' "$BOLD" "$RESET"
+  printf '       not just a reboot) so the agent channel is attached and the service activates.\n'
+elif [[ "${QEMU_ACTIVE:-0}" -ne 1 ]]; then
   printf '   %s%s%s qemu-guest-agent is installed but inactive. If this is a VM, enable the guest\n' "$YEL" "$S_WARN" "$RESET"
   printf '       agent on the hypervisor, then %sfully shut down and start the VM%s (a cold power-cycle —\n' "$BOLD" "$RESET"
   printf '       not just a reboot) so the agent channel is attached and the service activates.\n'

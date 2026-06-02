@@ -28,7 +28,8 @@
 #                                          https://docs.docker.com/engine/security/apparmor/)
 #                              sysctl   = disable the restriction globally
 #                              none     = change nothing (rootless may fail)
-#    CREATE_OPT_DOCKER=1|0   -> create the /opt/docker layout + example app
+#    CREATE_EXAMPLE_APP=1|0  -> also drop an example app into the layout
+#                               (the /opt/docker hierarchy is ALWAYS created)
 #    EXAMPLE_APP=<name>      -> example app folder name (default example-app)
 #    EXAMPLE_PORT=<port>     -> host port for the example app (default 8080)
 # ==============================================================================
@@ -46,7 +47,7 @@ DOCKER_USER="${DOCKER_USER:-${SUDO_USER:-}}"   # default to the sudo invoker
 SETUP_ROOTLESS="${SETUP_ROOTLESS:-}"           # empty = prompt
 DISABLE_ROOTFUL="${DISABLE_ROOTFUL:-}"         # empty = prompt
 USERNS_METHOD="${USERNS_METHOD:-}"             # apparmor|sysctl|none ; empty = prompt
-CREATE_OPT_DOCKER="${CREATE_OPT_DOCKER:-}"     # empty = prompt ; create /opt/docker layout
+CREATE_EXAMPLE_APP="${CREATE_EXAMPLE_APP:-}"   # empty = prompt ; example app (layout is always created)
 ASSUME_YES="${ASSUME_YES:-0}"
 
 # /opt/docker production layout (per the "organizing Docker files" guide)
@@ -219,7 +220,9 @@ prompt_for_user() {
 # ==============================================================================
 #  Splash
 # ==============================================================================
-clear 2>/dev/null || true
+# Don't wipe the terminal when run nested by init.sh — keep the previous
+# script's output visible. (BOOTSTRAP_NESTED is set by init.sh.)
+[[ "${BOOTSTRAP_NESTED:-0}" == "1" ]] || clear 2>/dev/null || true
 printf '%s' "$BOLD$BLU"
 cat <<'EOF'
    ____             _              ____             _   _
@@ -309,9 +312,9 @@ if [[ "$SETUP_ROOTLESS" == "1" && "$APPARMOR_USERNS_ON" == "1" ]]; then
 fi
 USERNS_METHOD="${USERNS_METHOD:-none}"
 
-# Create the /opt/docker layout + example app?
-[[ -z "$CREATE_OPT_DOCKER" ]] && { confirm "Create the ${OPT_DOCKER_DIR} structure with an example app?" Y && CREATE_OPT_DOCKER=1 || CREATE_OPT_DOCKER=0; }
-CREATE_OPT_DOCKER="${CREATE_OPT_DOCKER:-1}"
+# The /opt/docker layout is always created; only ask whether to add an example app.
+[[ -z "$CREATE_EXAMPLE_APP" ]] && { confirm "Also create an example app under ${OPT_DOCKER_DIR}?" Y && CREATE_EXAMPLE_APP=1 || CREATE_EXAMPLE_APP=0; }
+CREATE_EXAMPLE_APP="${CREATE_EXAMPLE_APP:-1}"
 
 # Offer to remove conflicts.
 PURGE_CONFLICTS=0
@@ -498,23 +501,43 @@ else
 fi
 
 # ==============================================================================
-banner "Creating /opt/docker structure + example app"
+banner "Creating /opt/docker structure"
 # ==============================================================================
-# Layout per the "organizing Docker files for production" guide:
+# Layout per the "organizing Docker files for production" guide. The directory
+# hierarchy is ALWAYS created; the example <app>/ folder is only added when the
+# user asked for it (CREATE_EXAMPLE_APP=1):
 #   /opt/docker/
-#   ├── <app>/
+#   ├── <app>/              (only with CREATE_EXAMPLE_APP=1)
 #   │   ├── docker-compose.yml
 #   │   ├── .env            (sensitive — chmod 600, keep out of VCS)
 #   │   └── data/           (persistent volume)
 #   └── shared/
 #       └── networks/       (reusable external networks)
-if [[ "$CREATE_OPT_DOCKER" == "1" ]]; then
-  if [[ "$SETUP_ROOTLESS" == "1" ]]; then OPT_OWNER="$DOCKER_USER:$DOCKER_USER"; else OPT_OWNER="root:docker"; fi
-  APP_DIR="${OPT_DOCKER_DIR}/${EXAMPLE_APP}"
+if [[ "$SETUP_ROOTLESS" == "1" ]]; then OPT_OWNER="$DOCKER_USER:$DOCKER_USER"; else OPT_OWNER="root:docker"; fi
+APP_DIR="${OPT_DOCKER_DIR}/${EXAMPLE_APP}"
 
-  info "Creating ${OPT_DOCKER_DIR} tree (owner ${OPT_OWNER})..."
-  run install -d -m 0755 "$OPT_DOCKER_DIR"
-  run install -d -m 0755 "${OPT_DOCKER_DIR}/shared" "${OPT_DOCKER_DIR}/shared/networks"
+# --- Base hierarchy (always created) -----------------------------------------
+info "Creating ${OPT_DOCKER_DIR} tree (owner ${OPT_OWNER})..."
+run install -d -m 0755 "$OPT_DOCKER_DIR"
+run install -d -m 0755 "${OPT_DOCKER_DIR}/shared" "${OPT_DOCKER_DIR}/shared/networks"
+
+# shared/networks usage notes.
+write_file "${OPT_DOCKER_DIR}/shared/networks/README.md" <<'EOF'
+# Shared Docker networks
+
+Create reusable external networks once, e.g.:
+
+    docker network create proxy
+
+Then reference them from any app's docker-compose.yml:
+
+    networks:
+      proxy:
+        external: true
+EOF
+
+# --- Example app (optional — placed inside the layout under <app>/) ----------
+if [[ "$CREATE_EXAMPLE_APP" == "1" ]]; then
   run install -d -m 0750 "$APP_DIR" "${APP_DIR}/data"
 
   # docker-compose.yml — do not clobber an existing one.
@@ -553,31 +576,21 @@ EOF
 HOST_PORT=${EXAMPLE_PORT}
 EOF
   fi
+fi
 
-  # shared/networks usage notes.
-  write_file "${OPT_DOCKER_DIR}/shared/networks/README.md" <<'EOF'
-# Shared Docker networks
-
-Create reusable external networks once, e.g.:
-
-    docker network create proxy
-
-Then reference them from any app's docker-compose.yml:
-
-    networks:
-      proxy:
-        external: true
-EOF
-
-  # Ownership + permissions (guide: restrict sensitive files, keep compose readable).
-  if [[ "$DRY_RUN" == "1" ]]; then
-    dry "chown -R ${OPT_OWNER} ${OPT_DOCKER_DIR}"
-    dry "chmod 600 ${APP_DIR}/.env ; chmod 644 ${APP_DIR}/docker-compose.yml"
-  else
-    chown -R "$OPT_OWNER" "$OPT_DOCKER_DIR"
+# --- Ownership + permissions (guide: restrict sensitive files) ---------------
+if [[ "$DRY_RUN" == "1" ]]; then
+  dry "chown -R ${OPT_OWNER} ${OPT_DOCKER_DIR}"
+  [[ "$CREATE_EXAMPLE_APP" == "1" ]] && dry "chmod 600 ${APP_DIR}/.env ; chmod 644 ${APP_DIR}/docker-compose.yml"
+else
+  chown -R "$OPT_OWNER" "$OPT_DOCKER_DIR"
+  if [[ "$CREATE_EXAMPLE_APP" == "1" ]]; then
     chmod 600 "${APP_DIR}/.env"
     chmod 644 "${APP_DIR}/docker-compose.yml"
   fi
+fi
+
+if [[ "$CREATE_EXAMPLE_APP" == "1" ]]; then
   log "Created ${OPT_DOCKER_DIR}/{${EXAMPLE_APP},shared/networks}."
   if [[ "$SETUP_ROOTLESS" == "1" ]]; then
     note "Start it as ${DOCKER_USER}:  cd ${APP_DIR} && docker compose up -d"
@@ -585,10 +598,11 @@ EOF
     note "Start it:  cd ${APP_DIR} && sudo docker compose up -d"
   fi
   note "Then browse http://<host>:${EXAMPLE_PORT} (open that port in the firewall first)."
-  record "/opt/docker" "Created ${APP_DIR} (compose+.env+data) + shared/networks; owner ${OPT_OWNER}"
+  record "/opt/docker" "Created ${OPT_DOCKER_DIR} + shared/networks and example app ${APP_DIR} (compose+.env+data); owner ${OPT_OWNER}"
 else
-  note "Skipped creating ${OPT_DOCKER_DIR}."
-  record "/opt/docker" "skipped"
+  log "Created ${OPT_DOCKER_DIR}/shared/networks (no example app)."
+  note "Add an app as ${OPT_DOCKER_DIR}/<app>/docker-compose.yml (one folder per app)."
+  record "/opt/docker" "Created ${OPT_DOCKER_DIR} + shared/networks (no example app); owner ${OPT_OWNER}"
 fi
 
 # ==============================================================================
@@ -646,12 +660,12 @@ else
   else
     printf '   %s2.%s Add your user to the %sdocker%s group to use the root daemon without sudo.\n' "$BOLD" "$RESET" "$BOLD" "$RESET"
   fi
-  if [[ "$CREATE_OPT_DOCKER" == "1" ]]; then
+  if [[ "$CREATE_EXAMPLE_APP" == "1" ]]; then
     printf '   %s3.%s Launch the example app: %scd %s/%s && docker compose up -d%s\n' \
       "$BOLD" "$RESET" "$DIM" "$OPT_DOCKER_DIR" "$EXAMPLE_APP" "$RESET"
-    printf '   %s•%s  Add more apps as %s%s/<app>/docker-compose.yml%s (one folder per app).\n' \
-      "$BOLD" "$RESET" "$DIM" "$OPT_DOCKER_DIR" "$RESET"
   fi
+  printf '   %s•%s  Add more apps as %s%s/<app>/docker-compose.yml%s (one folder per app).\n' \
+    "$BOLD" "$RESET" "$DIM" "$OPT_DOCKER_DIR" "$RESET"
 fi
 hr '═'
 printf '%s%s  Done. 🐳%s\n\n' "$BOLD" "$GRN" "$RESET"
@@ -659,7 +673,7 @@ printf '%s%s  Done. 🐳%s\n\n' "$BOLD" "$GRN" "$RESET"
 # One-line summary for init.sh's bootstrap report (actual runs only).
 if [[ "$DRY_RUN" != "1" ]]; then
   if [[ "$SETUP_ROOTLESS" == "1" ]]; then _rootless="rootless for ${DOCKER_USER}"; else _rootless="root daemon"; fi
-  if [[ "$CREATE_OPT_DOCKER" == "1" ]]; then _opt="/opt/docker created (${EXAMPLE_APP})"; else _opt="/opt/docker skipped"; fi
+  if [[ "$CREATE_EXAMPLE_APP" == "1" ]]; then _opt="/opt/docker created (+ ${EXAMPLE_APP})"; else _opt="/opt/docker created (no example app)"; fi
   mkdir -p /var/lib/homelab-bootstrap/summaries
   printf 'Docker Engine + Compose installed; %s; %s\n' "$_rootless" "$_opt" \
     > /var/lib/homelab-bootstrap/summaries/docker.sh
