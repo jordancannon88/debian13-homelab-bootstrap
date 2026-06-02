@@ -147,7 +147,7 @@ export DRY_RUN
 [[ "$DRY_RUN" == "1" ]] && info "Mode: ${MAG}DRY RUN${RESET}" || info "Mode: ${RED}ACTUAL RUN${RESET}"
 
 # Select which scripts to run.
-declare -A STATUS DETAIL SUMM
+declare -A STATUS DETAIL SUMM LOGS
 SELECTED=()
 for s in "${SCRIPTS[@]}"; do
   printf '\n%s%s %s%s%s — %s%s%s\n' "$BOLD" "$S_STEP" "$CYN" "$s" "$RESET" "$DIM" "$(describe "$s")" "$RESET"
@@ -272,12 +272,15 @@ for s in "${SELECTED[@]}"; do
 
   rm -f "${SUMMARY_DIR}/${s}" 2>/dev/null || true
   s_start="$(date +%s)"
-  # Run NON-INTERACTIVELY: ASSUME_YES=1 + all answers exported above.
-  if ASSUME_YES=1 bash "$src"; then
+  logf="${WORKDIR}/${s}.log"; LOGS[$s]="$logf"
+  # Run NON-INTERACTIVELY (ASSUME_YES=1 + all answers exported above), teeing the
+  # output to a log so we can replay each script's RECAP at the end. pipefail
+  # makes the 'if' reflect the script's exit, not tee's.
+  if ASSUME_YES=1 bash "$src" 2>&1 | tee "$logf"; then
     STATUS[$s]="ran"; DETAIL[$s]="${srcdesc}; $(( $(date +%s) - s_start ))s"
     [[ -s "${SUMMARY_DIR}/${s}" ]] && SUMM[$s]="$(head -n1 "${SUMMARY_DIR}/${s}")"
   else
-    rc=$?; err "${s} exited with status ${rc} — stopping; later scripts were NOT run."
+    rc="${PIPESTATUS[0]}"; err "${s} exited with status ${rc} — stopping; later scripts were NOT run."
     STATUS[$s]="failed"; DETAIL[$s]="${srcdesc}; exit ${rc}"; break
   fi
 done
@@ -303,11 +306,30 @@ for s in "${SCRIPTS[@]}"; do
   if [[ -n "${SUMM[$s]:-}" ]]; then printf '       %s%s%s\n' "$WHT" "${SUMM[$s]}" "$RESET"; else printf '       %s%s%s\n' "$DIM" "$(describe "$s")" "$RESET"; fi
   [[ -n "${DETAIL[$s]:-}" ]] && printf '       %s↳ %s%s\n' "$DIM" "${DETAIL[$s]}" "$RESET"
 done
-hr '─'
-info "Review each script's own recap above for full details."
+
+# --- Full RECAP section from each script that ran -----------------------------
+for s in "${SCRIPTS[@]}"; do
+  [[ -n "${LOGS[$s]:-}" && -s "${LOGS[$s]:-/nonexistent}" ]] || continue
+  printf '\n'; hr '═'
+  printf '%s%s  %s — RECAP%s\n' "$BOLD" "$CYN" "$s" "$RESET"
+  hr '═'
+  if grep -q 'RECAP' "${LOGS[$s]}"; then
+    # Replay from the script's own recap header to the end of its output.
+    sed -n '/RECAP/,$p' "${LOGS[$s]}"
+  else
+    note "(no recap captured — the script stopped early; see its output above)"
+  fi
+done
+
 if [[ "${STATUS[ancillary.sh]:-}" == "ran" ]]; then
-  printf '   %s%s%s If this is a VM: enable the QEMU guest agent on the hypervisor, then\n' "$YEL" "$S_WARN" "$RESET"
-  printf '       %sfully shut down and start the VM%s (a cold power-cycle, not just a reboot)\n' "$BOLD" "$RESET"
-  printf '       so qemu-guest-agent picks up the guest-agent channel and becomes active.\n'
+  hr '─'
+  printf '%s%s  ⏭ NEXT STEPS (optional)%s\n' "$BOLD" "$MAG" "$RESET"
+  printf '   %s•%s QEMU guest agent (VMs only) — if you want host↔guest integration:\n' "$BOLD" "$RESET"
+  printf '       1. Enable the guest agent for this VM on the hypervisor\n'
+  printf '          %s(e.g. Proxmox: VM → Options → QEMU Guest Agent → Enabled)%s\n' "$DIM" "$RESET"
+  printf '       2. %sFully shut down and start the VM%s (a cold power-cycle, not just a reboot)\n' "$BOLD" "$RESET"
+  printf '       3. Start the service: %ssudo systemctl start qemu-guest-agent%s\n' "$CYN" "$RESET"
+  printf '          %s(it also auto-starts on boot once the agent channel is attached)%s\n' "$DIM" "$RESET"
 fi
+hr '═'
 printf '%s%s  Done. 🚀%s\n\n' "$BOLD" "$GRN" "$RESET"
