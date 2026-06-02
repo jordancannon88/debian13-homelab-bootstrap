@@ -231,7 +231,7 @@ if in_selected docker.sh; then
   export SETUP_ROOTLESS=1
   export USERNS_METHOD=apparmor
   confirm "Disable the system-wide (root) Docker daemon — rootless only?" Y && export DISABLE_ROOTFUL=1 || export DISABLE_ROOTFUL=0
-  confirm "Create the /opt/docker layout + example app?" Y && export CREATE_OPT_DOCKER=1 || export CREATE_OPT_DOCKER=0
+  confirm "Also create an example app under /opt/docker?" Y && export CREATE_EXAMPLE_APP=1 || export CREATE_EXAMPLE_APP=0
 fi
 
 # --- ancillary.sh questions
@@ -276,7 +276,7 @@ for s in "${SELECTED[@]}"; do
   # Run NON-INTERACTIVELY (ASSUME_YES=1 + all answers exported above), teeing the
   # output to a log so we can replay each script's RECAP at the end. pipefail
   # makes the 'if' reflect the script's exit, not tee's.
-  if ASSUME_YES=1 bash "$src" 2>&1 | tee "$logf"; then
+  if ASSUME_YES=1 BOOTSTRAP_NESTED=1 bash "$src" 2>&1 | tee "$logf"; then
     STATUS[$s]="ran"; DETAIL[$s]="${srcdesc}; $(( $(date +%s) - s_start ))s"
     [[ -s "${SUMMARY_DIR}/${s}" ]] && SUMM[$s]="$(head -n1 "${SUMMARY_DIR}/${s}")"
   else
@@ -308,28 +308,39 @@ for s in "${SCRIPTS[@]}"; do
 done
 
 # --- Full RECAP section from each script that ran -----------------------------
+# Each script prints its own "⏭ NEXT STEPS" block. We strip those out of the
+# per-script recaps below and collect them into ONE consolidated list at the end,
+# so the user reads a single set of next steps instead of one per script.
+NEXTSTEPS=""
 for s in "${SCRIPTS[@]}"; do
   [[ -n "${LOGS[$s]:-}" && -s "${LOGS[$s]:-/nonexistent}" ]] || continue
   printf '\n'; hr '═'
   printf '%s%s  %s — RECAP%s\n' "$BOLD" "$CYN" "$s" "$RESET"
   hr '═'
   if grep -q 'RECAP' "${LOGS[$s]}"; then
-    # Replay from the script's own recap header to the end of its output.
-    sed -n '/RECAP/,$p' "${LOGS[$s]}"
+    # Replay the recap from its header up to (but not including) NEXT STEPS.
+    awk '/RECAP/{f=1} f && /NEXT STEPS/{f=0} f{print}' "${LOGS[$s]}"
+    # Capture this script's NEXT STEPS items (between its header and the next
+    # ═-rule / "Done." footer) for the consolidated list below.
+    items="$(awk '
+      /NEXT STEPS/ {cap=1; next}
+      cap && (/═══/ || /Done\./) {cap=0}
+      cap {print}
+    ' "${LOGS[$s]}")"
+    if [[ -n "${items//[[:space:]]/}" ]]; then
+      NEXTSTEPS+="${BOLD}${CYN}   ${s}${RESET}"$'\n'"${items}"$'\n'
+    fi
   else
     note "(no recap captured — the script stopped early; see its output above)"
   fi
 done
 
-if [[ "${STATUS[ancillary.sh]:-}" == "ran" ]]; then
-  hr '─'
-  printf '%s%s  ⏭ NEXT STEPS (optional)%s\n' "$BOLD" "$MAG" "$RESET"
-  printf '   %s•%s QEMU guest agent (VMs only) — if you want host↔guest integration:\n' "$BOLD" "$RESET"
-  printf '       1. Enable the guest agent for this VM on the hypervisor\n'
-  printf '          %s(e.g. Proxmox: VM → Options → QEMU Guest Agent → Enabled)%s\n' "$DIM" "$RESET"
-  printf '       2. %sFully shut down and start the VM%s (a cold power-cycle, not just a reboot)\n' "$BOLD" "$RESET"
-  printf '       3. Start the service: %ssudo systemctl start qemu-guest-agent%s\n' "$CYN" "$RESET"
-  printf '          %s(it also auto-starts on boot once the agent channel is attached)%s\n' "$DIM" "$RESET"
+# --- One consolidated NEXT STEPS list (merged from every script that ran) -----
+if [[ -n "${NEXTSTEPS//[[:space:]]/}" ]]; then
+  printf '\n'; hr '═'
+  printf '%s%s  ⏭ NEXT STEPS%s\n' "$BOLD" "$MAG" "$RESET"
+  hr '═'
+  printf '%s' "$NEXTSTEPS"
 fi
 hr '═'
 printf '%s%s  Done. 🚀%s\n\n' "$BOLD" "$GRN" "$RESET"

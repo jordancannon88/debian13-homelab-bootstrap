@@ -443,7 +443,9 @@ prompt_for_admin_users() {
 # ==============================================================================
 #  Intro splash
 # ==============================================================================
-clear 2>/dev/null || true
+# Don't wipe the terminal when run nested by init.sh — keep the previous
+# script's output visible. (BOOTSTRAP_NESTED is set by init.sh.)
+[[ "${BOOTSTRAP_NESTED:-0}" == "1" ]] || clear 2>/dev/null || true
 printf '%s' "$BOLD$MAG"
 cat <<'EOF'
   ██   ██  █████  ██████  ██████  ███████ ███    ██
