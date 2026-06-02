@@ -25,7 +25,8 @@
 #   BACKUP_DNS="ip ip"       -> fallback DNS servers (default "1.1.1.1 9.9.9.9")
 #   REMOTE_SYSLOG="host:port"-> forward logs to a remote syslog host (opt-in)
 #   GRUB_PASSWORD="..."      -> set a GRUB password (opt-in; normal boot stays free)
-#   HARDEN_COMPILERS=1       -> restrict compilers (gcc/cc/...) to root only (opt-in)
+#   HARDEN_COMPILERS=0       -> do NOT restrict compilers (gcc/cc/...) to root
+#                               (default: restricted to root only — HRDN-7222)
 #   DRY_RUN=1|0      -> force dry-run / actual (skips the mode prompt)
 #   ASSUME_YES=1     -> answer "yes" to every prompt (for automation)
 #   SKIP_UPGRADE=1   -> skip the full apt upgrade
@@ -1297,20 +1298,47 @@ EOF
 log "Wrote legal login banners to /etc/issue and /etc/issue.net."
 record "Login banner" "legal warning set (/etc/issue, /etc/issue.net)"
 
-# 7) debsums: schedule regular verification via cron (PKGS-7370).
-if [[ -f /etc/default/debsums ]]; then
+# 6b) Restrict permissions on sensitive files/dirs (FILE-7524). Only existing
+#     paths are touched; these are the files Lynis expects to be tightened.
+_perm_targets=(
+  "/etc/crontab:600"
+  "/etc/cron.d:700" "/etc/cron.daily:700" "/etc/cron.hourly:700"
+  "/etc/cron.weekly:700" "/etc/cron.monthly:700"
+  "/etc/cron.allow:600" "/etc/cron.deny:600"
+  "/etc/at.allow:600" "/etc/at.deny:600"
+  "/etc/ssh/sshd_config:600"
+  "/boot/grub/grub.cfg:600"
+)
+_perm_changed=0
+for _t in "${_perm_targets[@]}"; do
+  _path="${_t%%:*}"; _mode="${_t##*:}"
+  [[ -e "$_path" ]] || continue
   if [[ "$DRY_RUN" == "1" ]]; then
-    dry "set CRON_CHECK=weekly in /etc/default/debsums"
+    dry "chmod ${_mode} ${_path}"
   else
-    if grep -qE '^#?\s*CRON_CHECK=' /etc/default/debsums; then
-      sed -i -E 's@^#?\s*CRON_CHECK=.*@CRON_CHECK="weekly"@' /etc/default/debsums
-    else
-      printf 'CRON_CHECK="weekly"\n' >> /etc/default/debsums
-    fi
-    log "debsums scheduled to verify packages weekly."
+    chmod "$_mode" "$_path" 2>/dev/null || true
   fi
-  record "debsums" "weekly cron verification enabled"
+  _perm_changed=$((_perm_changed + 1))
+done
+log "Restricted permissions on ${_perm_changed} sensitive files/dirs (cron, sshd_config, grub.cfg)."
+record "File perms" "tightened ${_perm_changed} paths (FILE-7524)"
+
+# 7) debsums: schedule regular verification via cron (PKGS-7370).
+# The cron wrapper (/etc/cron.daily/debsums) reads CRON_CHECK from this file;
+# it defaults to "never". Valid values: never|daily|weekly|monthly. We ensure
+# the file exists (it isn't always shipped) and set it to weekly.
+DEBSUMS_DEFAULT="/etc/default/debsums"
+if [[ "$DRY_RUN" == "1" ]]; then
+  dry "set CRON_CHECK=weekly in ${DEBSUMS_DEFAULT} (create if missing)"
+else
+  if [[ -f "$DEBSUMS_DEFAULT" ]] && grep -qE '^#?\s*CRON_CHECK=' "$DEBSUMS_DEFAULT"; then
+    sed -i -E 's@^#?\s*CRON_CHECK=.*@CRON_CHECK="weekly"@' "$DEBSUMS_DEFAULT"
+  else
+    printf '# debsums config — verify installed packages against known-good MD5s.\nCRON_CHECK="weekly"\n' >> "$DEBSUMS_DEFAULT"
+  fi
+  log "debsums scheduled to verify packages weekly (${DEBSUMS_DEFAULT})."
 fi
+record "debsums" "CRON_CHECK=weekly in ${DEBSUMS_DEFAULT}"
 
 # 8) auditd: install a basic ruleset so it is not "enabled with empty ruleset" (ACCT-9630).
 write_file /etc/audit/rules.d/99-hardening.rules <<'EOF'
@@ -1412,8 +1440,9 @@ EOF
   fi
 fi
 
-# Restrict compilers to root only (HRDN-7222): set HARDEN_COMPILERS=1 to enable.
-if [[ "${HARDEN_COMPILERS:-0}" == "1" ]]; then
+# Restrict compilers to root only (HRDN-7222). Applied by default; set
+# HARDEN_COMPILERS=0 to skip (e.g. if non-root users must compile on this host).
+if [[ "${HARDEN_COMPILERS:-1}" != "0" ]]; then
   _comp_done=()
   for _c in cc gcc g++ c++ clang clang++ as ld; do
     _p="$(command -v "$_c" 2>/dev/null || true)"
