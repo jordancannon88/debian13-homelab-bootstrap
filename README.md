@@ -15,6 +15,7 @@ script asks whether to run it — using a **local copy** if present, or offering
 - [🧪 Dry run first](#-dry-run-first-recommended)
 - [🐳 Docker & the `/opt/docker` layout](#-docker--the-optdocker-layout)
 - [⚙️ Environment overrides](#️-environment-overrides)
+- [🛟 Troubleshooting](#-troubleshooting)
 - [✅ Requirements](#-requirements)
 
 <br>
@@ -31,7 +32,7 @@ script asks whether to run it — using a **local copy** if present, or offering
 | --- | :---: | --- |
 | **`init.sh`** | 🚀 | Orchestrator — root check, installs `curl`, then runs the scripts below (local copy or download), one at a time, with a summary report. |
 | **`harden.sh`** | 🔒 | System hardening — admin users + SSH keys, SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl & kernel hardening, AppArmor, AIDE, auditd, plus extra fixes to clear common Lynis findings, then a Lynis audit. |
-| **`ancillary.sh`** | 🐟 | Extra packages (`btop`, `qemu-guest-agent`) + the **fish** shell, set as the default shell for users `harden.sh` created (or current users you pick). |
+| **`ancillary.sh`** | 🐟 | Extra packages (`btop`, `rsync`, `qemu-guest-agent`) + the **fish** shell, set as the default shell for users `harden.sh` created (or current users you pick). |
 | **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus a `/opt/docker` layout with an example app. |
 
 <br>
@@ -106,7 +107,7 @@ sudo ./init.sh
 
 ```bash
 sudo ./harden.sh     # 1️⃣  harden the system
-sudo ./ancillary.sh  # 2️⃣  extra packages (btop, qemu-guest-agent) + fish shell
+sudo ./ancillary.sh  # 2️⃣  extra packages (btop, rsync, qemu-guest-agent) + fish shell
 sudo ./docker.sh     # 3️⃣  install Docker + Compose (rootless)
 ```
 
@@ -202,8 +203,12 @@ docker compose up -d
 
 - Your shell gets `DOCKER_HOST=unix:///run/user/<uid>/docker.sock` so `docker`
   talks to the rootless daemon.
-- **Published ports bind on the host**, so open them in the nftables firewall
-  (`harden.sh`) as needed — they are not opened automatically.
+- **Published ports bind on the host but are blocked by the deny-by-default
+  firewall** — rootless port forwards are a userspace listener subject to the
+  nftables input filter (unlike rootful, which bypasses it). Open each container
+  port in `harden.sh`, e.g. `ALLOW_TCP_PORTS="8080 8096"` (or temporarily —
+  note **`insert`**, since the chain ends in an explicit `drop`:
+  `sudo nft insert rule inet filter input tcp dport 8080 ct state new accept`).
 - Rootless containers run **without** the `docker-default` AppArmor profile
   (loading a profile needs root); isolation relies on user namespaces + seccomp.
 - On Debian 13, `harden.sh` keeps AppArmor on; `docker.sh` grants **only**
@@ -250,6 +255,8 @@ docker compose up -d
 | `SSH_PORT=22` | SSH port |
 | `ALLOW_SSH_CIDRS="1.2.3.4/32"` | Restrict SSH to source ranges |
 | `ALLOW_HTTP=1` · `ALLOW_HTTPS=1` | Open 80 / 443 |
+| `ALLOW_TCP_PORTS="8080 8096"` | Open extra TCP ports (needed for rootless container ports) |
+| `ALLOW_UDP_PORTS="51820"` | Open extra UDP ports |
 | `ENABLE_SSH_2FA=1` | Require TOTP 2FA |
 | `SKIP_UPGRADE=1` | Skip the full `apt` upgrade |
 | `DOCKER_COMPAT=1` | Docker-compatible firewall + sysctl |
@@ -295,6 +302,71 @@ docker compose up -d
 <br>
 
 > 🌐 Common to all: `DRY_RUN=1\|0`, `ASSUME_YES=1`.
+
+<br>
+
+---
+
+<br>
+
+## 🛟 Troubleshooting
+
+<br>
+
+### 🐳 A container isn't reachable on the machine's IP
+
+<br>
+
+**Symptom:** you published a container port (e.g. `-p 8080:80`) but
+`http://<machine-ip>:8080` times out / refuses from another machine.
+
+<br>
+
+**Cause:** `harden.sh` sets the nftables **input policy to drop** (only SSH and
+any ports you opened are allowed). With **rootless** Docker, a published port is
+a userspace listener bound on the host, so it's subject to that input filter —
+unlike rootful Docker, which inserts its own NAT rules that bypass it. The port
+is simply not allowed in, so packets are dropped.
+
+<br>
+
+**Fix (persistent — recommended):** open the port(s) and re-run the hardener:
+
+```bash
+sudo ALLOW_TCP_PORTS="8080" ./harden.sh        # space/comma separated; UDP via ALLOW_UDP_PORTS
+```
+
+These rules are written into `/etc/nftables.conf` **before** the chain's `drop`,
+so they take effect and survive reloads/reboots.
+
+<br>
+
+**Fix (temporary — for a quick test):** add the rule live. Use **`insert`**, not
+`add` — the input chain ends in an explicit `drop`, and `add` appends *after* it
+(so the rule is never reached), whereas `insert` prepends it above the `drop`:
+
+```bash
+sudo nft insert rule inet filter input tcp dport 8080 ct state new accept
+sudo nft -a list chain inet filter input          # confirm it sits ABOVE the 'drop' line
+```
+
+> ⚠️ Temporary rules are lost on the next `nft -f` / `systemctl reload nftables`
+> or reboot — use `ALLOW_TCP_PORTS` to make them stick.
+
+<br>
+
+**Still not reachable?** Check what the port is bound to:
+
+```bash
+ss -tlnp | grep ':8080'
+```
+
+- `0.0.0.0:8080` (or the machine IP) → good; the firewall was the only blocker.
+- `127.0.0.1:8080` → the container is published to loopback only. Change the
+  compose mapping from `127.0.0.1:8080:80` to `8080:80`, then `docker compose up -d`.
+
+Also verify the container itself works from the host (`curl http://127.0.0.1:8080`)
+and that nothing upstream (cloud security group, router) is filtering the port.
 
 <br>
 

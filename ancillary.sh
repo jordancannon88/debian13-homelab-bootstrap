@@ -32,7 +32,7 @@ DRY_RUN="${DRY_RUN:-}"
 START_TS="$(date +%s)"
 
 # Extra packages this script installs.
-ANCILLARY_PKGS=(btop fish)
+ANCILLARY_PKGS=(btop fish rsync)
 
 # State written by harden.sh: users it NEWLY created this round.
 CREATED_USERS_FILE="/var/lib/homelab-bootstrap/created-users"
@@ -140,7 +140,10 @@ hr '─'
 # ==============================================================================
 FISH_TARGETS=()
 
-if [[ -n "$FISH_USERS" ]]; then
+if [[ "${FISH_USERS,,}" == "none" ]]; then
+  # Explicit opt-out — change no shells.
+  info "fish default-shell change disabled (FISH_USERS=none)."
+elif [[ -n "$FISH_USERS" ]]; then
   # Explicit override.
   read -ra FISH_TARGETS <<< "$FISH_USERS"
   info "fish users from FISH_USERS: ${BOLD}${FISH_TARGETS[*]}${RESET}"
@@ -173,7 +176,7 @@ info "Refreshing package lists..."
 run apt-get update
 info "Installing: ${DIM}${ANCILLARY_PKGS[*]}${RESET}"
 run apt-get install -y "${ANCILLARY_PKGS[@]}"
-log "Installed: ${ANCILLARY_PKGS[*]} (btop = resource monitor; fish = friendly shell)."
+log "Installed: ${ANCILLARY_PKGS[*]} (btop = resource monitor; fish = friendly shell; rsync = file sync)."
 record "Packages" "installed: ${ANCILLARY_PKGS[*]}"
 
 # ==============================================================================
@@ -185,6 +188,7 @@ run apt-get install -y qemu-guest-agent
 # automatically by udev when the host attaches the guest-agent virtio-serial
 # channel. So we do NOT 'enable' it (that just errors) — we only 'start' it when
 # we're actually a QEMU/KVM guest. On bare metal it simply stays inactive.
+QEMU_ACTIVE=0   # tracks whether the guest agent ended up running
 if [[ "$DRY_RUN" == "1" ]]; then
   dry "start qemu-guest-agent only if the guest-agent channel is present"
   record "Guest agent" "[dry-run] would install qemu-guest-agent"
@@ -192,14 +196,14 @@ else
   VIRT="$(systemd-detect-virt 2>/dev/null || true)"; [[ -n "$VIRT" ]] || VIRT="none"
   if systemctl is-active --quiet qemu-guest-agent 2>/dev/null; then
     log "qemu-guest-agent already active (virt: ${VIRT})."
-    record "Guest agent" "active (${VIRT})"
+    record "Guest agent" "active (${VIRT})"; QEMU_ACTIVE=1
   elif [[ -e /dev/virtio-ports/org.qemu.guest_agent.0 ]]; then
     # Only start when the channel device exists, so the .device dependency is
     # satisfiable (otherwise systemctl start fails with a dependency error).
     systemctl start qemu-guest-agent >/dev/null 2>&1 || true
     if systemctl is-active --quiet qemu-guest-agent 2>/dev/null; then
       log "qemu-guest-agent started (virt: ${VIRT})."
-      record "Guest agent" "active (${VIRT})"
+      record "Guest agent" "active (${VIRT})"; QEMU_ACTIVE=1
     else
       note "qemu-guest-agent installed; the guest-agent channel is present but it did not start."
       record "Guest agent" "installed (start failed)"
@@ -247,10 +251,15 @@ for entry in "${SUMMARY[@]}"; do
   printf '   %s%s%-16s%s %s\n' "$GRN" "$S_OK " "$key" "$RESET" "$val"
 done
 hr '─'
+printf '%s%s  ⏭ NEXT STEPS%s\n' "$BOLD" "$MAG" "$RESET"
 if (( ${#FISH_TARGETS[@]} > 0 )); then
-  printf '%s%s  ⏭ NEXT STEPS%s\n' "$BOLD" "$MAG" "$RESET"
   printf '   %s•%s  Affected users get fish on their NEXT login. Try it now: %sexec fish%s\n' "$BOLD" "$RESET" "$DIM" "$RESET"
-  printf '   %s•%s  Launch the resource monitor with: %sbtop%s\n' "$BOLD" "$RESET" "$DIM" "$RESET"
+fi
+printf '   %s•%s  Launch the resource monitor with: %sbtop%s\n' "$BOLD" "$RESET" "$DIM" "$RESET"
+if [[ "$DRY_RUN" != "1" && "${QEMU_ACTIVE:-0}" -ne 1 ]]; then
+  printf '   %s%s%s qemu-guest-agent is installed but inactive. If this is a VM, enable the guest\n' "$YEL" "$S_WARN" "$RESET"
+  printf '       agent on the hypervisor, then %sfully shut down and start the VM%s (a cold power-cycle —\n' "$BOLD" "$RESET"
+  printf '       not just a reboot) so the agent channel is attached and the service activates.\n'
 fi
 printf '%s%s  Done. 🐟%s\n\n' "$BOLD" "$GRN" "$RESET"
 
