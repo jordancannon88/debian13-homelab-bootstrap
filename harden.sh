@@ -38,14 +38,13 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH
 # =======================
 # Config (env overridable)
 # =======================
-ADMIN_USER="${ADMIN_USER:-admin}"
 # Admin users to create/harden identically (disabled-password + sudo + SSH key).
-# ADMIN_USER stays the primary (used for the SSH re-login hint). If ADMIN_USERS
-# is NOT set, the script interactively asks for an additional admin username
-# (your personal account) and appends it. Per-user keys: PUBKEY (primary) or
-# PUBKEY_<user>. Set ADMIN_USERS="u1 u2 ..." to skip the prompt entirely.
+# There is NO default user — if ADMIN_USERS is not set, the script interactively
+# asks which admin username(s) to set up. ADMIN_USER is just the first one (used
+# for messaging). Per-user keys: PUBKEY (primary) or PUBKEY_<user>.
+# Set ADMIN_USERS="u1 u2 ..." to skip the prompt entirely.
 if [[ -n "${ADMIN_USERS+x}" ]]; then ADMIN_USERS_EXPLICIT=1; else ADMIN_USERS_EXPLICIT=0; fi
-ADMIN_USERS="${ADMIN_USERS:-$ADMIN_USER}"
+ADMIN_USERS="${ADMIN_USERS:-}"
 read -ra ADMIN_USER_LIST <<< "$ADMIN_USERS"
 # De-duplicate while preserving order.
 _seen=" "; _dedup=()
@@ -54,8 +53,8 @@ for _u in "${ADMIN_USER_LIST[@]}"; do
   _dedup+=("$_u"); _seen+="$_u "
 done
 ADMIN_USER_LIST=("${_dedup[@]}")
-ADMIN_USER="${ADMIN_USER_LIST[0]}"
-declare -A USER_EXISTS USER_HASKEY USER_PUBKEY
+ADMIN_USER="${ADMIN_USER_LIST[0]:-}"
+declare -A USER_EXISTS USER_HASKEY USER_PUBKEY WANT_CREATE
 
 # Was SSH_PORT explicitly provided? (decide before applying the default)
 if [[ -n "${SSH_PORT+x}" ]]; then SSH_PORT_EXPLICIT=1; else SSH_PORT_EXPLICIT=0; fi
@@ -108,7 +107,7 @@ fi
 S_OK="✔"; S_INFO="•"; S_WARN="!"; S_ERR="✗"; S_STEP="▸"
 
 STEP_NO=0
-TOTAL_STEPS=13
+TOTAL_STEPS=12
 SUMMARY=()        # collected lines for the final recap
 WARNINGS=()       # collected warnings for the final recap
 
@@ -355,40 +354,49 @@ prompt_for_docker() {
   fi
 }
 
-# prompt_for_extra_user — ask for an additional admin username (your personal
-# account) and append it to ADMIN_USER_LIST. Skipped if ADMIN_USERS was set
-# explicitly via env, or when there is no TTY to prompt on.
-prompt_for_extra_user() {
+# prompt_for_admin_users — ask which admin username(s) to create/harden. There is
+# no default user, so this requires at least one (unless ADMIN_USERS was set via
+# env, or there is no TTY). Press Enter on an empty prompt once at least one user
+# has been added to finish. Brand-new names are flagged in WANT_CREATE so they
+# are created without a second "create it?" confirm.
+prompt_for_admin_users() {
   [[ "$ADMIN_USERS_EXPLICIT" == "1" ]] && return 0
   [[ "$INTERACTIVE" -eq 1 ]] || return 0
-  local name
+  local name uid shell
   while true; do
-    printf '\n%s%sAdditional admin user to create/harden (besides %s%s%s)?%s\n' \
-      "$BOLD" "$WHT" "$BOLD" "$ADMIN_USER" "$WHT" "$RESET" > /dev/tty
-    note "Enter a username (e.g. your own name), or press Enter for none." > /dev/tty
+    printf '\n%s%sAdmin username to create/harden (sudo + SSH key)?%s\n' "$BOLD" "$WHT" "$RESET" > /dev/tty
+    if (( ${#ADMIN_USER_LIST[@]} > 0 )); then
+      note "Added so far: ${ADMIN_USER_LIST[*]} — enter another, or press Enter to finish." > /dev/tty
+    else
+      note "Enter a username (e.g. your own name). At least one is required." > /dev/tty
+    fi
     printf '%s%s username> %s' "$YEL" "$S_INFO" "$RESET" > /dev/tty
     IFS= read -r name < /dev/tty || name=""
     # Trim whitespace.
     name="${name#"${name%%[![:space:]]*}"}"
     name="${name%"${name##*[![:space:]]}"}"
 
-    [[ -z "$name" ]] && { note "No additional user — continuing with: ${ADMIN_USER_LIST[*]}" > /dev/tty; return 0; }
+    if [[ -z "$name" ]]; then
+      if (( ${#ADMIN_USER_LIST[@]} > 0 )); then return 0; fi
+      printf '%s%s At least one admin user is required (password login is disabled).%s\n' \
+        "$YEL" "$S_WARN" "$RESET" > /dev/tty
+      continue
+    fi
     # Validate a Linux username: start with a lowercase letter/underscore.
     if ! [[ "$name" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
       printf '%s%s Invalid username — use lowercase letters, digits, - and _ (start with a letter).%s\n' \
         "$RED" "$S_ERR" "$RESET" > /dev/tty
       continue
     fi
-    # Skip if it duplicates a user already in the list.
+    # Ignore duplicates already in the list.
     if printf '%s\n' "${ADMIN_USER_LIST[@]}" | grep -qx "$name"; then
-      note "'$name' is already in the admin list — nothing to add." > /dev/tty
-      return 0
+      note "'$name' is already in the admin list." > /dev/tty
+      continue
     fi
     # Safeguard: if the account ALREADY EXISTS, confirm before adopting it — and
     # warn hard for system/service accounts (UID < 1000 or a nologin/false
     # shell), since granting those sudo + SSH keys is almost certainly a typo.
     if id "$name" >/dev/null 2>&1; then
-      local uid shell
       uid="$(id -u "$name" 2>/dev/null || echo 0)"
       shell="$(getent passwd "$name" | cut -d: -f7)"
       if (( uid < 1000 )) || [[ "$shell" == */nologin || "$shell" == */false ]]; then
@@ -396,21 +404,23 @@ prompt_for_extra_user() {
           "$RED" "$S_ERR" "$name" "$uid" "${shell:-?}" "$RESET" > /dev/tty
         printf '   %sAdding it to sudo + SSH key login is almost certainly NOT what you want.%s\n' "$DIM" "$RESET" > /dev/tty
         if ! confirm "Use the system account '$name' anyway?" N; then
-          note "Not using '$name' — enter a different username (or Enter for none)." > /dev/tty
+          note "Not using '$name' — enter a different username." > /dev/tty
           continue
         fi
       else
         printf '%s%s User '\''%s'\'' already exists (uid %s) — it will be PROMOTED to sudo and given an SSH key.%s\n' \
           "$YEL" "$S_WARN" "$name" "$uid" "$RESET" > /dev/tty
         if ! confirm "Promote existing user '$name' to admin (sudo + SSH key)?" Y; then
-          note "Skipping '$name' — enter a different username (or Enter for none)." > /dev/tty
+          note "Skipping '$name' — enter a different username." > /dev/tty
           continue
         fi
       fi
+    else
+      WANT_CREATE[$name]=1   # brand-new: create without re-asking in pre-flight
     fi
     ADMIN_USER_LIST+=("$name")
+    ADMIN_USER="${ADMIN_USER_LIST[0]}"
     log "Added admin user: ${BOLD}${name}${RESET}" > /dev/tty
-    return 0
   done
 }
 
@@ -447,8 +457,14 @@ prompt_for_ssh_port
 # Ask whether to keep the firewall/sysctl Docker-compatible (per Docker prereqs).
 prompt_for_docker
 
-# Ask for an additional admin user (your personal account) unless ADMIN_USERS was set.
-prompt_for_extra_user
+# Ask which admin user(s) to create/harden, unless ADMIN_USERS was set via env.
+prompt_for_admin_users
+
+# At least one admin user is required (password login is disabled by hardening).
+if (( ${#ADMIN_USER_LIST[@]} == 0 )); then
+  err "No admin user specified. Set ADMIN_USERS=\"name\" or run interactively — at least one is required."
+  exit 1
+fi
 
 # When SSH stays on 22 there is no separate "port 22 fallback" to manage.
 if [[ "$SSH_PORT" == "22" ]]; then
@@ -481,18 +497,18 @@ run mkdir -p "$BACKUP_DIR"
 header "Pre-flight checks & gotchas"
 
 # --- Resolve which admin users to set up ------------------------------------
-# Existing users are always hardened. A MISSING user is created automatically
-# if it is the primary admin; for any other missing user (e.g. jordan) we ask.
+# Existing users are always hardened. A MISSING user is created automatically if
+# it was typed at the prompt (WANT_CREATE) or forced via CREATE_<user>=1; for a
+# missing user that came from ADMIN_USERS env we ask.
 EFFECTIVE_USERS=()
 for u in "${ADMIN_USER_LIST[@]}"; do
   if id "$u" >/dev/null 2>&1; then
     EFFECTIVE_USERS+=("$u"); continue            # exists → always harden
   fi
-  if [[ "$u" == "$ADMIN_USER" ]]; then
-    EFFECTIVE_USERS+=("$u"); continue            # primary admin → always create
-  fi
   cvar="CREATE_${u}"
-  if [[ -n "${!cvar:-}" ]]; then
+  if [[ "${WANT_CREATE[$u]:-0}" == "1" ]]; then
+    _do=1                                        # chosen at the prompt → create
+  elif [[ -n "${!cvar:-}" ]]; then
     [[ "${!cvar}" == "1" ]] && _do=1 || _do=0
   elif confirm "User '$u' does not exist — create it?" Y; then
     _do=1
@@ -507,6 +523,13 @@ for u in "${ADMIN_USER_LIST[@]}"; do
   fi
 done
 ADMIN_USER_LIST=("${EFFECTIVE_USERS[@]}")
+ADMIN_USER="${ADMIN_USER_LIST[0]:-}"
+
+# After resolution there must still be at least one admin user to set up.
+if (( ${#ADMIN_USER_LIST[@]} == 0 )); then
+  err "No admin users left to set up (all were skipped). Aborting — at least one is required."
+  exit 1
+fi
 
 # --- Per-user: detect existence + existing key, resolve/prompt for a key -----
 # At least one admin user must end up with a key (password auth is disabled).
@@ -1137,24 +1160,6 @@ run sysctl --system
 log "sysctl hardening applied (rp_filter, syncookies, redirect/martian protection, ...)."
 note "net.ipv4.ip_forward = ${IP_FWD} (${IP_FWD_NOTE})."
 record "sysctl" "Hardening applied to $SYSCTL_H (ip_forward=${IP_FWD})"
-
-# ==============================================================================
-banner "Installing guest agent"
-# ==============================================================================
-info "Ensuring qemu-guest-agent is installed..."
-run apt -y install qemu-guest-agent
-# qemu-guest-agent only runs inside a QEMU/KVM guest (it needs the virtio-serial
-# channel). Enabling is harmless on bare metal; the service just stays inactive.
-run systemctl enable --now qemu-guest-agent || true
-if [[ "$DRY_RUN" == "1" ]]; then
-  record "Guest agent" "[dry-run] would install qemu-guest-agent"
-elif systemctl is-active --quiet qemu-guest-agent 2>/dev/null; then
-  log "qemu-guest-agent active (running inside a QEMU/KVM guest)."
-  record "Guest agent" "qemu-guest-agent active"
-else
-  note "qemu-guest-agent installed but inactive (not a QEMU/KVM guest / no virtio-serial device)."
-  record "Guest agent" "qemu-guest-agent installed (inactive — not a VM)"
-fi
 
 # ==============================================================================
 banner "Running Lynis quick audit (non-blocking)"
