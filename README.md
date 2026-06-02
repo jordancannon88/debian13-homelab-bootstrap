@@ -294,7 +294,7 @@ docker compose up -d
 | `DOCKER_USER=<name>` | User to set up rootless Docker for |
 | `SETUP_ROOTLESS=1` · `DISABLE_ROOTFUL=1` | Rootless setup / disable the root daemon |
 | `USERNS_METHOD=apparmor\|sysctl\|none` | How to allow unprivileged user namespaces |
-| `CREATE_OPT_DOCKER=1` | Create the `/opt/docker` layout + example app |
+| `CREATE_EXAMPLE_APP=1\|0` | Also drop an example app into the layout (the `/opt/docker` hierarchy is always created) |
 | `EXAMPLE_APP=<name>` · `EXAMPLE_PORT=8080` | Example app name / host port |
 
 </details>
