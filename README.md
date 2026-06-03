@@ -35,11 +35,14 @@ script asks whether to run it — using a **local copy** if present, or offering
 | **`ancillary.sh`** | 🐟 | Extra packages (`btop`, `rsync`, `qemu-guest-agent`) + the **fish** shell, set as the default shell for users `harden.sh` created (or current users you pick). |
 | **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus the `/opt/docker` layout (always created) with an optional example app. |
 | **`motd.sh`** | 🖥️ | A cool **dynamic login banner** (MOTD) showing live host, IP, uptime, OS/kernel, load, memory, disk &amp; sessions — plus a link to your homelab documentation. |
+| **`connect-doc.sh`** | 🔌 | Generates the **connection doc** (`docs/connect.html`) — server details plus how to SSH in on the hardened port, with a `fish` alias and `~/.ssh/config` recipe. Auto-detects host / IP / port / user, or takes `CONN_*` overrides. _Offered by `init.sh` as the optional **final step**, reusing the SSH port/user you configured._ |
 
 <br>
 
-✨ Every script is **idempotent**, has a **dry-run** preview, **prompts** before
-changes, **backs up** files it edits, and prints a **recap** at the end.
+✨ Every setup script is **idempotent**, has a **dry-run** preview, **prompts**
+before changes, **backs up** files it edits, and prints a **recap** at the end.
+(`connect-doc.sh` follows the same conventions but writes a doc rather than
+changing the system, so it needs no root and backs nothing up.)
 
 <br>
 
@@ -111,6 +114,7 @@ sudo ./harden.sh     # 1️⃣  harden the system
 sudo ./ancillary.sh  # 2️⃣  extra packages (btop, rsync, qemu-guest-agent) + fish shell
 sudo ./docker.sh     # 3️⃣  install Docker + Compose (rootless)
 sudo ./motd.sh       # 4️⃣  install the dynamic login banner (MOTD)
+./connect-doc.sh     # 5️⃣  generate docs/connect.html (no sudo needed)
 ```
 
 <br>
@@ -133,6 +137,7 @@ sudo DRY_RUN=1 ./harden.sh
 sudo DRY_RUN=1 ./ancillary.sh
 sudo DRY_RUN=1 ./docker.sh
 sudo DRY_RUN=1 ./motd.sh
+DRY_RUN=1 ./connect-doc.sh   # no sudo — just previews the generated HTML
 ```
 
 <br>
@@ -313,6 +318,30 @@ docker compose up -d
 | --- | --- |
 | `DOC_URL=<url>` | Documentation link shown in the banner. **No default** — if unset you're prompted; leave it **blank to omit** the docs section entirely |
 | `BLANK_STATIC_MOTD=1\|0` | Blank the stock `/etc/motd` so only the dynamic banner shows (default `1`; original is backed up to `/etc/motd.bootstrap-bak`) |
+
+</details>
+
+<br>
+
+<details open>
+<summary>🔌 &nbsp;<strong><code>connect-doc.sh</code></strong></summary>
+
+<br>
+
+Every field auto-detects from the host it runs on (or is prompted); set any
+`CONN_*` override to pin it — handy for documenting a different box.
+
+| Variable | Effect |
+| --- | --- |
+| `CONN_FQDN=<name>` | DNS hostname (default: `hostname -f`) |
+| `CONN_IP=<addr>` | LAN address (default: primary route source IP) |
+| `CONN_PORT=<port>` | SSH port (default: `Port` from `sshd_config`, else `22`) |
+| `CONN_USER=<user>` | Login user (default: `SUDO_USER` / `logname`) |
+| `CONN_ALIAS=<alias>` | `ssh` / `fish` alias (default: short hostname) |
+| `CONN_KEY=<name>` | `IdentityFile` basename under `~/.ssh/` (default: `id_ed25519`) |
+| `CONN_OS=<string>` | OS description (default: `PRETTY_NAME`) |
+| `CONN_KERNEL=<rel>` | Kernel release (default: `uname -r`) |
+| `OUT_FILE=<path>` | Output file (default: `docs/connect.html`) |
 
 </details>
 
