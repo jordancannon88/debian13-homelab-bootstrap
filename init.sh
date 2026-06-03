@@ -31,7 +31,7 @@ PKGS_ancillary="btop, fish, rsync, qemu-guest-agent"
 SUMMARY_DIR="/var/lib/homelab-bootstrap/summaries"
 
 # Scripts offered, in order.
-SCRIPTS=(harden.sh ancillary.sh docker.sh)
+SCRIPTS=(harden.sh ancillary.sh docker.sh motd.sh)
 
 # ==============================================================================
 #  Output helpers
@@ -90,6 +90,7 @@ describe() {
     harden.sh)    printf 'system hardening (users, SSH, firewall, fail2ban, sysctl, AppArmor, AIDE, Lynis)';;
     ancillary.sh) printf 'extra packages + fish shell for your user(s)';;
     docker.sh)    printf 'Docker Engine + Compose + rootless setup + /opt/docker layout';;
+    motd.sh)      printf 'cool dynamic login banner (host, IP, uptime) + docs link';;
     *)            printf 'bootstrap script';;
   esac
 }
@@ -241,6 +242,12 @@ if in_selected ancillary.sh; then
   else
     export FISH_USERS="none"
   fi
+fi
+
+# --- motd.sh questions
+if in_selected motd.sh; then
+  DOC_URL="$(ask "Documentation URL to show in the login banner" "${DOC_URL:-https://bookstack.local.cannon.dev/shelves/homelab}")"
+  export DOC_URL
 fi
 
 log "All questions answered — the scripts will now run unattended."
