@@ -27,7 +27,11 @@ set -euo pipefail
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
 
 ASSUME_YES="${ASSUME_YES:-0}"
-DOC_URL="${DOC_URL:-https://bookstack.local.cannon.dev/shelves/homelab}"
+# DOC_URL: if set via env (incl. by init.sh's wizard) we use it as-is; otherwise
+# we prompt for it interactively, pre-filled with this default.
+DEFAULT_DOC_URL="https://bookstack.local.cannon.dev/shelves/homelab"
+if [[ -n "${DOC_URL+x}" ]]; then DOC_URL_EXPLICIT=1; else DOC_URL_EXPLICIT=0; fi
+DOC_URL="${DOC_URL:-$DEFAULT_DOC_URL}"
 BLANK_STATIC_MOTD="${BLANK_STATIC_MOTD:-1}"
 
 if [[ -n "${DRY_RUN+x}" ]]; then DRY_RUN_EXPLICIT=1; else DRY_RUN_EXPLICIT=0; fi
@@ -83,6 +87,18 @@ if [[ "$ASSUME_YES" != "1" && -r /dev/tty ]]; then INTERACTIVE=1; fi
 
 require_root() { if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then err "Run as root (e.g. sudo $0)."; exit 1; fi; }
 
+# ask "Question" "default" -> echoes the answer (reads /dev/tty); honours automation.
+ask() {
+  local prompt="$1" default="${2:-}" reply
+  if [[ "$ASSUME_YES" == "1" || ! -r /dev/tty ]]; then printf '%s' "$default"; return; fi
+  printf '%s%s %s%s%s ' "$YEL" "$S_INFO" "$prompt" "${default:+ [default: $default]}" "$RESET" > /dev/tty
+  read -r reply < /dev/tty || reply=""
+  reply="${reply:-$default}"
+  # trim surrounding whitespace
+  reply="${reply#"${reply%%[![:space:]]*}"}"; reply="${reply%"${reply##*[![:space:]]}"}"
+  printf '%s' "$reply"
+}
+
 choose_run_mode() {
   if [[ "$DRY_RUN_EXPLICIT" == "1" ]]; then [[ "$DRY_RUN" == "1" ]] && DRY_RUN=1 || DRY_RUN=0; return; fi
   if [[ "$INTERACTIVE" -eq 0 ]]; then [[ "$ASSUME_YES" == "1" ]] && DRY_RUN=0 || DRY_RUN=1; return; fi
@@ -107,6 +123,13 @@ hr '─'
 require_root
 choose_run_mode
 [[ "$DRY_RUN" == "1" ]] && info "Mode: ${MAG}DRY RUN${RESET}" || info "Mode: ${RED}ACTUAL RUN${RESET}"
+
+# Ask for the documentation URL unless it was supplied via env / automation
+# (e.g. init.sh's wizard exports DOC_URL, and ASSUME_YES runs unattended).
+if [[ "$DOC_URL_EXPLICIT" != "1" ]]; then
+  DOC_URL="$(ask "Documentation URL to show in the login banner" "$DOC_URL")"
+  [[ -n "$DOC_URL" ]] || DOC_URL="$DEFAULT_DOC_URL"
+fi
 note "Documentation link: ${DOC_URL}"
 
 # ==============================================================================
