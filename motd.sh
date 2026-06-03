@@ -15,7 +15,8 @@
 #  Run as root, e.g.  sudo ./motd.sh
 #
 #  Environment overrides:
-#    DOC_URL=<url>          -> documentation link shown in the banner
+#    DOC_URL=<url>          -> documentation link shown in the banner (no default;
+#                              prompted if unset, leave blank to omit the section)
 #    BLANK_STATIC_MOTD=1|0  -> blank the stock /etc/motd (default 1)
 #    DRY_RUN=1|0            -> force preview / actual (else asks)
 #    ASSUME_YES=1           -> answer "yes" to every prompt (automation)
@@ -27,11 +28,11 @@ set -euo pipefail
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
 
 ASSUME_YES="${ASSUME_YES:-0}"
-# DOC_URL: if set via env (incl. by init.sh's wizard) we use it as-is; otherwise
-# we prompt for it interactively, pre-filled with this default.
-DEFAULT_DOC_URL="https://bookstack.local.cannon.dev/shelves/homelab"
+# DOC_URL: documentation link shown in the banner. If set via env (incl. by
+# init.sh's wizard) we use it as-is; otherwise we prompt for it. Leave it blank
+# to omit the documentation section from the banner entirely.
 if [[ -n "${DOC_URL+x}" ]]; then DOC_URL_EXPLICIT=1; else DOC_URL_EXPLICIT=0; fi
-DOC_URL="${DOC_URL:-$DEFAULT_DOC_URL}"
+DOC_URL="${DOC_URL:-}"
 BLANK_STATIC_MOTD="${BLANK_STATIC_MOTD:-1}"
 
 if [[ -n "${DRY_RUN+x}" ]]; then DRY_RUN_EXPLICIT=1; else DRY_RUN_EXPLICIT=0; fi
@@ -127,10 +128,13 @@ choose_run_mode
 # Ask for the documentation URL unless it was supplied via env / automation
 # (e.g. init.sh's wizard exports DOC_URL, and ASSUME_YES runs unattended).
 if [[ "$DOC_URL_EXPLICIT" != "1" ]]; then
-  DOC_URL="$(ask "Documentation URL to show in the login banner" "$DOC_URL")"
-  [[ -n "$DOC_URL" ]] || DOC_URL="$DEFAULT_DOC_URL"
+  DOC_URL="$(ask "Documentation URL to show in the login banner (leave blank to omit)" "")"
 fi
-note "Documentation link: ${DOC_URL}"
+if [[ -n "$DOC_URL" ]]; then
+  note "Documentation link: ${DOC_URL}"
+else
+  note "No documentation URL given — the docs section will be omitted from the banner."
+fi
 
 # ==============================================================================
 banner "Ensuring ${MOTD_DIR} exists"
@@ -156,8 +160,11 @@ write_file "$MOTD_FILE" <<'MOTD_SCRIPT'
 # Run at each login by pam_motd via /etc/update-motd.d. Edit DOC_URL by re-running
 # motd.sh. No 'set -e' on purpose: a failing probe must never blank the banner.
 
-C0=$'\033[0m'; B=$'\033[1m'; DIM=$'\033[2m'
+C0=$'\033[0m'; B=$'\033[1m'; DIM=$'\033[2m'; REV=$'\033[7m'
 CYN=$'\033[1;36m'; GRN=$'\033[1;32m'; YEL=$'\033[1;33m'; BLU=$'\033[1;34m'
+
+# Documentation link (injected at install time; blank => docs section omitted).
+DOC_URL='@@DOC_URL@@'
 
 # --- gather details (each guarded so the MOTD never breaks) -------------------
 host="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo unknown)"
@@ -186,11 +193,13 @@ cat <<'ART'
 ART
 printf '%s' "$C0"
 
+# Prominent hostname headline (reverse-video bar) right under the logo.
+printf '\n   %s %s %s   %s%s%s\n\n' "${B}${CYN}${REV}" "$host" "${C0}" "${DIM}" "$os" "${C0}"
+
 rule() { printf '   %s%s%s\n' "$DIM" "────────────────────────────────────────────────────────────" "$C0"; }
 field() { printf '   %s●%s %s%-9s%s %s│%s %s\n' "$GRN" "$C0" "$B" "$1" "$C0" "$DIM" "$C0" "$2"; }
 
 rule
-field "Host"     "${B}${host}${C0}   ${DIM}${os}${C0}"
 field "Kernel"   "$kernel"
 field "Address"  "$ip"
 field "Uptime"   "$up"
@@ -199,19 +208,24 @@ field "Memory"   "$mem"
 field "Disk /"   "$disk"
 field "Sessions" "${sessions} active   ${DIM}${now}${C0}"
 rule
-printf '   %s📚 Docs:%s %s@@DOC_URL@@%s\n' "$YEL$B" "$C0" "$BLU$B" "$C0"
-printf '   %sNeed help with this server? Browse the Homelab shelf above.%s\n\n' "$DIM" "$C0"
+if [ -n "$DOC_URL" ]; then
+  printf '   %s📚 Docs:%s %s%s%s\n' "$YEL$B" "$C0" "$BLU$B" "$DOC_URL" "$C0"
+  printf '   %sNeed help with this server? Browse the Homelab shelf above.%s\n' "$DIM" "$C0"
+fi
+printf '\n'
 MOTD_SCRIPT
 
 if [[ "$DRY_RUN" != "1" ]]; then
-  sed -i "s|@@DOC_URL@@|${DOC_URL}|g" "$MOTD_FILE"
+  # Escape sed-special chars in the URL (\, &, and the | delimiter) before injecting.
+  doc_esc="$(printf '%s' "$DOC_URL" | sed -e 's/[\\&|]/\\&/g')"
+  sed -i "s|@@DOC_URL@@|${doc_esc}|g" "$MOTD_FILE"
   chmod 0755 "$MOTD_FILE"
   log "Installed ${MOTD_FILE} (executable)."
 else
-  dry "sed -i 's|@@DOC_URL@@|${DOC_URL}|g' ${MOTD_FILE}"
+  dry "inject DOC_URL='${DOC_URL:-<blank — docs section omitted>}' into ${MOTD_FILE}"
   dry "chmod 0755 ${MOTD_FILE}"
 fi
-record "MOTD banner" "${MOTD_FILE} (docs: ${DOC_URL})"
+record "MOTD banner" "${MOTD_FILE} ($([[ -n "$DOC_URL" ]] && echo "docs: ${DOC_URL}" || echo "no docs link"))"
 
 # ==============================================================================
 banner "Tidying the stock static MOTD"
@@ -270,14 +284,19 @@ if [[ "$DRY_RUN" == "1" ]]; then
 else
   printf '   %s•%s  Open a new SSH session to see the banner, or render it now with:\n' "$BOLD" "$RESET"
   printf '       %ssudo run-parts %s%s\n' "$DIM" "$MOTD_DIR" "$RESET"
-  printf '   %s•%s  Change the link later by re-running with %sDOC_URL=<url>%s.\n' "$BOLD" "$RESET" "$DIM" "$RESET"
-  printf '   %s•%s  Documentation: %s%s%s\n' "$BOLD" "$RESET" "$BLU" "$DOC_URL" "$RESET"
+  printf '   %s•%s  Change the link later by re-running with %sDOC_URL=<url>%s (blank to omit it).\n' "$BOLD" "$RESET" "$DIM" "$RESET"
+  if [[ -n "$DOC_URL" ]]; then
+    printf '   %s•%s  Documentation: %s%s%s\n' "$BOLD" "$RESET" "$BLU" "$DOC_URL" "$RESET"
+  else
+    printf '   %s•%s  No documentation link set — the docs section is omitted from the banner.\n' "$BOLD" "$RESET"
+  fi
 fi
 printf '%s%s  Done. 🖥️%s\n\n' "$BOLD" "$GRN" "$RESET"
 
 # One-line summary for init.sh's bootstrap report (actual runs only).
 if [[ "$DRY_RUN" != "1" ]]; then
   mkdir -p /var/lib/homelab-bootstrap/summaries
-  printf 'dynamic MOTD banner installed (%s); docs: %s\n' "$MOTD_FILE" "$DOC_URL" \
+  if [[ -n "$DOC_URL" ]]; then _docs="docs: ${DOC_URL}"; else _docs="no docs link"; fi
+  printf 'dynamic MOTD banner installed (%s); %s\n' "$MOTD_FILE" "$_docs" \
     > /var/lib/homelab-bootstrap/summaries/motd.sh
 fi

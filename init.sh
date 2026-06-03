@@ -246,7 +246,7 @@ fi
 
 # --- motd.sh questions
 if in_selected motd.sh; then
-  DOC_URL="$(ask "Documentation URL to show in the login banner" "${DOC_URL:-https://bookstack.local.cannon.dev/shelves/homelab}")"
+  DOC_URL="$(ask "Documentation URL to show in the login banner (leave blank to omit)" "${DOC_URL:-}")"
   export DOC_URL
 fi
 
