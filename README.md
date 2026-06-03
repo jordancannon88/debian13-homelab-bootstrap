@@ -311,7 +311,7 @@ docker compose up -d
 
 | Variable | Effect |
 | --- | --- |
-| `DOC_URL=<url>` | Documentation link shown in the banner (default `https://bookstack.local.cannon.dev/shelves/homelab`) |
+| `DOC_URL=<url>` | Documentation link shown in the banner. **No default** — if unset you're prompted; leave it **blank to omit** the docs section entirely |
 | `BLANK_STATIC_MOTD=1\|0` | Blank the stock `/etc/motd` so only the dynamic banner shows (default `1`; original is backed up to `/etc/motd.bootstrap-bak`) |
 
 </details>
