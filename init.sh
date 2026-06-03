@@ -30,8 +30,9 @@ PKGS_ancillary="btop, fish, rsync, qemu-guest-agent"
 # Where each script drops a one-line summary of what it did (read for the recap).
 SUMMARY_DIR="/var/lib/homelab-bootstrap/summaries"
 
-# Scripts offered, in order.
-SCRIPTS=(harden.sh ancillary.sh docker.sh motd.sh)
+# Scripts offered, in order. connect-doc.sh is last: it documents the host you
+# just set up (it generates a doc, it doesn't change the system).
+SCRIPTS=(harden.sh ancillary.sh docker.sh motd.sh connect-doc.sh)
 
 # ==============================================================================
 #  Output helpers
@@ -91,6 +92,7 @@ describe() {
     ancillary.sh) printf 'extra packages + fish shell for your user(s)';;
     docker.sh)    printf 'Docker Engine + Compose + rootless setup + /opt/docker layout';;
     motd.sh)      printf 'cool dynamic login banner (host, IP, uptime) + docs link';;
+    connect-doc.sh) printf 'generate docs/connect.html — how to SSH into this host on its hardened port';;
     *)            printf 'bootstrap script';;
   esac
 }
@@ -248,6 +250,17 @@ fi
 if in_selected motd.sh; then
   DOC_URL="$(ask "Documentation URL to show in the login banner (leave blank to omit)" "${DOC_URL:-}")"
   export DOC_URL
+fi
+
+# --- connect-doc.sh inputs (it auto-detects everything else; reuse what we have)
+if in_selected connect-doc.sh; then
+  # Write next to where init was launched, so the downloaded-copy run doesn't
+  # land the doc in the throwaway temp dir.
+  export OUT_FILE="$(pwd)/docs/connect.html"
+  # Keep the doc consistent with the SSH port/user we just configured, rather
+  # than re-detecting (in a dry run sshd_config still shows the old port).
+  [[ -n "${SSH_PORT:-}" ]] && export CONN_PORT="$SSH_PORT"
+  [[ -n "$PRIMARY_USER" ]] && export CONN_USER="$PRIMARY_USER"
 fi
 
 log "All questions answered — the scripts will now run unattended."
