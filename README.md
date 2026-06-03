@@ -33,7 +33,8 @@ script asks whether to run it — using a **local copy** if present, or offering
 | **`init.sh`** | 🚀 | Orchestrator — root check, installs `curl`, then runs the scripts below (local copy or download), one at a time, with a summary report. |
 | **`harden.sh`** | 🔒 | System hardening — admin users + SSH keys, SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl & kernel hardening, AppArmor, AIDE, auditd, plus extra fixes to clear common Lynis findings, then a Lynis audit. |
 | **`ancillary.sh`** | 🐟 | Extra packages (`btop`, `rsync`, `qemu-guest-agent`) + the **fish** shell, set as the default shell for users `harden.sh` created (or current users you pick). |
-| **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus a `/opt/docker` layout with an example app. |
+| **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus the `/opt/docker` layout (always created) with an optional example app. |
+| **`motd.sh`** | 🖥️ | A cool **dynamic login banner** (MOTD) showing live host, IP, uptime, OS/kernel, load, memory, disk &amp; sessions — plus a link to your homelab documentation. |
 
 <br>
 
@@ -109,6 +110,7 @@ sudo ./init.sh
 sudo ./harden.sh     # 1️⃣  harden the system
 sudo ./ancillary.sh  # 2️⃣  extra packages (btop, rsync, qemu-guest-agent) + fish shell
 sudo ./docker.sh     # 3️⃣  install Docker + Compose (rootless)
+sudo ./motd.sh       # 4️⃣  install the dynamic login banner (MOTD)
 ```
 
 <br>
@@ -121,7 +123,7 @@ sudo ./docker.sh     # 3️⃣  install Docker + Compose (rootless)
 
 <br>
 
-All three setup scripts ask **Dry run vs Actual** on start and **default to a dry
+All setup scripts ask **Dry run vs Actual** on start and **default to a dry
 run** that previews every action without changing anything. To force it:
 
 <br>
@@ -130,6 +132,7 @@ run** that previews every action without changing anything. To force it:
 sudo DRY_RUN=1 ./harden.sh
 sudo DRY_RUN=1 ./ancillary.sh
 sudo DRY_RUN=1 ./docker.sh
+sudo DRY_RUN=1 ./motd.sh
 ```
 
 <br>
@@ -296,6 +299,20 @@ docker compose up -d
 | `USERNS_METHOD=apparmor\|sysctl\|none` | How to allow unprivileged user namespaces |
 | `CREATE_EXAMPLE_APP=1\|0` | Also drop an example app into the layout (the `/opt/docker` hierarchy is always created) |
 | `EXAMPLE_APP=<name>` · `EXAMPLE_PORT=8080` | Example app name / host port |
+
+</details>
+
+<br>
+
+<details open>
+<summary>🖥️ &nbsp;<strong><code>motd.sh</code></strong></summary>
+
+<br>
+
+| Variable | Effect |
+| --- | --- |
+| `DOC_URL=<url>` | Documentation link shown in the banner (default `https://bookstack.local.cannon.dev/shelves/homelab`) |
+| `BLANK_STATIC_MOTD=1\|0` | Blank the stock `/etc/motd` so only the dynamic banner shows (default `1`; original is backed up to `/etc/motd.bootstrap-bak`) |
 
 </details>
 
