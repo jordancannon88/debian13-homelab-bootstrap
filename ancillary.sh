@@ -3,16 +3,21 @@
 #  Debian 13 Homelab Bootstrap — ancillary
 #  Installs extra/quality-of-life packages and sets up the fish shell.
 #
-#  - Installs btop, fish, and qemu-guest-agent (started only when run inside a
-#    QEMU/KVM guest with the guest-agent channel; otherwise left inactive).
-#  - fish shell: if harden.sh NEWLY created user(s) this run, fish is installed
-#    and made their default shell automatically. Otherwise it asks which current
-#    users should get fish as their default shell.
-#  - Any user fish is set up for gets it as their DEFAULT login shell.
+#  - Installs a selectable set of packages: btop, fish, rsync, qemu-guest-agent.
+#    By default (standalone run) it installs them all; init.sh's wizard lets you
+#    pick a subset and passes it via ANCILLARY_PKGS.
+#  - qemu-guest-agent (if selected) is started only when run inside a QEMU/KVM
+#    guest with the guest-agent channel; otherwise it's left inactive.
+#  - fish shell (if selected): if harden.sh NEWLY created user(s) this run, fish
+#    is made their default shell automatically. Otherwise it asks which current
+#    users should get fish as their default shell. Affected users get it as their
+#    DEFAULT login shell.
 #
 #  Run as root, e.g.  sudo ./ancillary.sh
 #
 #  Environment overrides:
+#    ANCILLARY_PKGS="btop rsync ..." -> install exactly these (or "none" for
+#                                       nothing); unset = the full default set
 #    FISH_USERS="u1 u2 ..." -> set fish for exactly these users (skips prompts)
 #    DRY_RUN=1|0            -> force preview / actual (else asks)
 #    ASSUME_YES=1           -> answer "yes" to every prompt (automation)
@@ -31,8 +36,28 @@ DRY_RUN="${DRY_RUN:-}"
 
 START_TS="$(date +%s)"
 
-# Extra packages this script installs.
-ANCILLARY_PKGS=(btop fish rsync)
+# All packages this installer knows how to install (slug -> short description).
+declare -A PKG_DESC=(
+  [btop]="resource monitor (htop-like)"
+  [fish]="friendly interactive shell"
+  [rsync]="fast file copy / sync"
+  [qemu-guest-agent]="QEMU/KVM guest integration (VMs only)"
+)
+ALL_PKGS=(btop fish rsync qemu-guest-agent)
+
+# Which packages to install. ANCILLARY_PKGS (space-separated list, or "none")
+# overrides the selection — init.sh sets it from the wizard's package picker.
+# Unset = install the full default set (so a standalone run behaves as before).
+if [[ "${ANCILLARY_PKGS+x}" == "x" ]]; then
+  if [[ "${ANCILLARY_PKGS,,}" == "none" || -z "${ANCILLARY_PKGS// /}" ]]; then
+    SELECTED_PKGS=()
+  else
+    read -ra SELECTED_PKGS <<< "$ANCILLARY_PKGS"
+  fi
+else
+  SELECTED_PKGS=("${ALL_PKGS[@]}")
+fi
+pkg_selected() { local p; for p in "${SELECTED_PKGS[@]}"; do [[ "$p" == "$1" ]] && return 0; done; return 1; }
 
 # State written by harden.sh: users it NEWLY created this round.
 CREATED_USERS_FILE="/var/lib/homelab-bootstrap/created-users"
@@ -50,7 +75,10 @@ fi
 S_OK="✔"; S_INFO="•"; S_WARN="!"; S_ERR="✗"; S_STEP="▸"
 
 STEP_NO=0
-TOTAL_STEPS=3
+# Steps shown depend on what's selected: packages (always) + QEMU + fish.
+TOTAL_STEPS=1
+pkg_selected qemu-guest-agent && TOTAL_STEPS=$((TOTAL_STEPS + 1))
+pkg_selected fish            && TOTAL_STEPS=$((TOTAL_STEPS + 1))
 SUMMARY=()
 record() { SUMMARY+=("$1"$'\t'"$2"); }
 
@@ -137,12 +165,17 @@ choose_run_mode
 if [[ "$DRY_RUN" == "1" ]]; then info "Mode: ${MAG}DRY RUN (no changes)${RESET}"; else info "Mode: ${RED}ACTUAL RUN${RESET}"; fi
 hr '─'
 
+info "Packages to install: ${BOLD}${SELECTED_PKGS[*]:-<none>}${RESET}"
+hr '─'
+
 # ==============================================================================
 #  Decide which users get fish (before installing, so the recap is accurate)
 # ==============================================================================
 FISH_TARGETS=()
 
-if [[ "${FISH_USERS,,}" == "none" ]]; then
+if ! pkg_selected fish; then
+  info "fish not selected — no default-shell changes."
+elif [[ "${FISH_USERS,,}" == "none" ]]; then
   # Explicit opt-out — change no shells.
   info "fish default-shell change disabled (FISH_USERS=none)."
 elif [[ -n "$FISH_USERS" ]]; then
@@ -170,18 +203,33 @@ else
   fi
 fi
 
+# qemu-guest-agent has its own start logic below; install the rest here.
+APT_PKGS=()
+for p in "${SELECTED_PKGS[@]}"; do [[ "$p" == "qemu-guest-agent" ]] || APT_PKGS+=("$p"); done
+
 # ==============================================================================
 banner "Installing extra packages"
 # ==============================================================================
 export DEBIAN_FRONTEND=noninteractive
-info "Refreshing package lists..."
-run apt-get update
-info "Installing: ${DIM}${ANCILLARY_PKGS[*]}${RESET}"
-run apt-get install -y "${ANCILLARY_PKGS[@]}"
-log "Installed: ${ANCILLARY_PKGS[*]} (btop = resource monitor; fish = friendly shell; rsync = file sync)."
-record "Packages" "installed: ${ANCILLARY_PKGS[*]}"
+if (( ${#SELECTED_PKGS[@]} == 0 )); then
+  note "No packages selected — nothing to install."
+  record "Packages" "none selected"
+elif (( ${#APT_PKGS[@]} == 0 )); then
+  info "Refreshing package lists..."
+  run apt-get update
+  note "Only qemu-guest-agent selected — it's installed in the next step."
+else
+  info "Refreshing package lists..."
+  run apt-get update
+  info "Installing: ${DIM}${APT_PKGS[*]}${RESET}"
+  run apt-get install -y "${APT_PKGS[@]}"
+  _desc=""; for p in "${APT_PKGS[@]}"; do _desc+="${p} = ${PKG_DESC[$p]:-extra package}; "; done
+  log "Installed: ${APT_PKGS[*]} (${_desc%; })."
+  record "Packages" "installed: ${APT_PKGS[*]}"
+fi
 
 # ==============================================================================
+if pkg_selected qemu-guest-agent; then
 banner "Installing the QEMU guest agent"
 # ==============================================================================
 info "Ensuring qemu-guest-agent is installed..."
@@ -217,8 +265,10 @@ else
     record "Guest agent" "installed (inactive; no agent channel)"
   fi
 fi
+fi   # end: pkg_selected qemu-guest-agent
 
 # ==============================================================================
+if pkg_selected fish; then
 banner "Configuring fish shell"
 # ==============================================================================
 if (( ${#FISH_TARGETS[@]} > 0 )); then
@@ -233,6 +283,7 @@ else
   note "No users selected for fish — leaving default shells unchanged."
   record "fish" "no users changed"
 fi
+fi   # end: pkg_selected fish
 
 # ==============================================================================
 #  Recap
@@ -254,25 +305,31 @@ for entry in "${SUMMARY[@]}"; do
 done
 hr '─'
 printf '%s%s  ⏭ NEXT STEPS%s\n' "$BOLD" "$MAG" "$RESET"
+_had_step=0
 if (( ${#FISH_TARGETS[@]} > 0 )); then
-  printf '   %s•%s  Affected users get fish on their NEXT login. Try it now: %sexec fish%s\n' "$BOLD" "$RESET" "$DIM" "$RESET"
+  printf '   %s•%s  Affected users get fish on their NEXT login. Try it now: %sexec fish%s\n' "$BOLD" "$RESET" "$DIM" "$RESET"; _had_step=1
 fi
-printf '   %s•%s  Launch the resource monitor with: %sbtop%s\n' "$BOLD" "$RESET" "$DIM" "$RESET"
-if [[ "$DRY_RUN" == "1" ]]; then
-  printf '   %s%s%s qemu-guest-agent would be installed but inactive. If this is a VM, enable the guest\n' "$YEL" "$S_WARN" "$RESET"
-  printf '       agent on the hypervisor, then %sfully shut down and start the VM%s (a cold power-cycle —\n' "$BOLD" "$RESET"
-  printf '       not just a reboot) so the agent channel is attached and the service activates.\n'
-elif [[ "${QEMU_ACTIVE:-0}" -ne 1 ]]; then
-  printf '   %s%s%s qemu-guest-agent is installed but inactive. If this is a VM, enable the guest\n' "$YEL" "$S_WARN" "$RESET"
-  printf '       agent on the hypervisor, then %sfully shut down and start the VM%s (a cold power-cycle —\n' "$BOLD" "$RESET"
-  printf '       not just a reboot) so the agent channel is attached and the service activates.\n'
+if pkg_selected btop; then
+  printf '   %s•%s  Launch the resource monitor with: %sbtop%s\n' "$BOLD" "$RESET" "$DIM" "$RESET"; _had_step=1
 fi
+if pkg_selected qemu-guest-agent; then
+  if [[ "$DRY_RUN" == "1" || "${QEMU_ACTIVE:-0}" -ne 1 ]]; then
+    _verb="$( [[ $DRY_RUN == 1 ]] && echo 'would be installed' || echo 'is installed' )"
+    printf '   %s%s%s qemu-guest-agent %s but inactive. If this is a VM, enable the guest\n' "$YEL" "$S_WARN" "$RESET" "$_verb"
+    printf '       agent on the hypervisor, then %sfully shut down and start the VM%s (a cold power-cycle —\n' "$BOLD" "$RESET"
+    printf '       not just a reboot) so the agent channel is attached and the service activates.\n'; _had_step=1
+  fi
+fi
+(( _had_step == 0 )) && printf '   %s•%s  Nothing further to do.\n' "$BOLD" "$RESET"
 printf '%s%s  Done. 🐟%s\n\n' "$BOLD" "$GRN" "$RESET"
 
 # One-line summary for init.sh's bootstrap report (actual runs only).
 if [[ "$DRY_RUN" != "1" ]]; then
-  if (( ${#FISH_TARGETS[@]} > 0 )); then _fish="fish default for: ${FISH_TARGETS[*]}"; else _fish="fish: no users changed"; fi
+  if (( ${#FISH_TARGETS[@]} > 0 )); then _fish="fish default for: ${FISH_TARGETS[*]}"
+  elif pkg_selected fish; then _fish="fish: no users changed"
+  else _fish="fish: not selected"; fi
+  if (( ${#SELECTED_PKGS[@]} > 0 )); then _pkgs="installed ${SELECTED_PKGS[*]}"; else _pkgs="no packages selected"; fi
   mkdir -p /var/lib/homelab-bootstrap/summaries
-  printf 'installed %s, qemu-guest-agent; %s\n' "${ANCILLARY_PKGS[*]}" "$_fish" \
+  printf '%s; %s\n' "$_pkgs" "$_fish" \
     > /var/lib/homelab-bootstrap/summaries/ancillary.sh
 fi

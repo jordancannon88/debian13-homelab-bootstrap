@@ -2,14 +2,18 @@
 # ==============================================================================
 #  Debian 13 Homelab Bootstrap — init
 #  Entry point. Must run as root. It:
-#    1. installs curl
-#    2. asks WHICH scripts to run
-#    3. asks EVERY question up front (a single wizard)
-#    4. runs each chosen script NON-INTERACTIVELY (answers passed via env), so
+#    1. asks WHICH scripts to run
+#    2. asks EVERY question up front (a single wizard) — including which
+#       ancillary packages to install
+#    3. runs each chosen script NON-INTERACTIVELY (answers passed via env), so
 #       nothing stops mid-run to ask you anything
+#    4. prints ONE consolidated report (review + next steps)
 #
 #  Run as root, e.g.:  sudo ./init.sh
 #  Or one-liner:       curl -fsSL <raw-url>/init.sh | sudo bash
+#
+#  curl must already be present (the one-liner above uses it; download fallback
+#  needs it too). Debian ships it on all but the most minimal installs.
 #
 #  Environment overrides:
 #    REPO_RAW_BASE=<url>  -> base raw URL to fetch scripts from
@@ -24,8 +28,15 @@ REPO_RAW_BASE="${REPO_RAW_BASE:-https://raw.githubusercontent.com/jordancannon88
 ASSUME_YES="${ASSUME_YES:-0}"
 START_TS="$(date +%s)"
 
-# Packages each script installs (shown when asking whether to run it).
-PKGS_ancillary="btop, fish, rsync, qemu-guest-agent"
+# Packages ancillary.sh can install. The wizard lets you pick which to install;
+# the chosen list is passed to ancillary.sh via ANCILLARY_PKGS. Order = display.
+ANCILLARY_ALL_PKGS=(btop fish rsync qemu-guest-agent)
+declare -A ANCILLARY_PKG_DESC=(
+  [btop]="resource monitor (htop-like)"
+  [fish]="friendly interactive shell"
+  [rsync]="fast file copy / sync"
+  [qemu-guest-agent]="QEMU/KVM guest integration (VMs only)"
+)
 
 # Where each script drops a one-line summary of what it did (read for the recap).
 SUMMARY_DIR="/var/lib/homelab-bootstrap/summaries"
@@ -89,16 +100,18 @@ valid_pubkey() {
 describe() {
   case "$1" in
     harden.sh)    printf 'system hardening (users, SSH, firewall, fail2ban, sysctl, AppArmor, AIDE, Lynis)';;
-    ancillary.sh) printf 'extra packages + fish shell for your user(s)';;
+    ancillary.sh) printf 'pick-and-install extra packages (+ fish as your default shell)';;
     docker.sh)    printf 'Docker Engine + Compose + rootless setup + /opt/docker layout';;
     motd.sh)      printf 'cool dynamic login banner (host, IP, uptime) + docs link';;
     connect-doc.sh) printf 'generate docs/connect.html — how to SSH into this host on its hardened port';;
     *)            printf 'bootstrap script';;
   esac
 }
-details() { case "$1" in ancillary.sh) printf '   %sInstalls packages:%s %s\n' "$DIM" "$RESET" "$PKGS_ancillary";; esac; }
+details() { case "$1" in ancillary.sh) printf '   %sChoose from:%s %s\n' "$DIM" "$RESET" "${ANCILLARY_ALL_PKGS[*]}";; esac; }
 
 in_selected() { local x; for x in "${SELECTED[@]}"; do [[ "$x" == "$1" ]] && return 0; done; return 1; }
+# in_selected_arr <needle> <item...> — is <needle> among the remaining args?
+in_selected_arr() { local n="$1"; shift; local x; for x in "$@"; do [[ "$x" == "$n" ]] && return 0; done; return 1; }
 
 # ==============================================================================
 #  Splash + checks
@@ -119,21 +132,10 @@ hr '─'
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then err "This script must be run as root (try: sudo $0)."; exit 1; fi
 command -v apt-get >/dev/null 2>&1 || { err "apt-get not found — this targets Debian/apt systems."; exit 1; }
 log "Running as root."
+command -v curl >/dev/null 2>&1 || warn "curl not found — the download fallback for remote scripts won't work (local copies still will)."
 
 # ==============================================================================
-step "Step 1 — Install curl"
-# ==============================================================================
-if command -v curl >/dev/null 2>&1; then
-  log "curl already installed."
-else
-  info "Installing curl (needed to download scripts)..."
-  export DEBIAN_FRONTEND=noninteractive
-  apt-get update && apt-get install -y curl
-  log "curl installed."
-fi
-
-# ==============================================================================
-step "Step 2 — Choose run mode & scripts"
+step "Step 1 — Choose run mode & scripts"
 # ==============================================================================
 # Mode: dry run vs actual (passed to every script).
 DRY_RUN=1
@@ -168,7 +170,7 @@ if (( ${#SELECTED[@]} == 0 )); then
 fi
 
 # ==============================================================================
-step "Step 3 — Configuration (all questions answered now)"
+step "Step 2 — Configuration (all questions answered now)"
 # ==============================================================================
 PRIMARY_USER=""
 
@@ -239,8 +241,27 @@ fi
 
 # --- ancillary.sh questions
 if in_selected ancillary.sh; then
-  if confirm "Set fish as ${PRIMARY_USER}'s default shell?" Y; then
-    export FISH_USERS="$PRIMARY_USER"
+  info "Pick which packages ancillary.sh should install:"
+  ANCILLARY_PICK=()
+  for p in "${ANCILLARY_ALL_PKGS[@]}"; do
+    confirm "Install ${p} — ${ANCILLARY_PKG_DESC[$p]}?" Y && ANCILLARY_PICK+=("$p")
+  done
+  if (( ${#ANCILLARY_PICK[@]} == 0 )); then
+    # Sentinel: explicitly "install nothing" (distinct from the env being unset).
+    export ANCILLARY_PKGS="none"
+    note "No packages selected — ancillary.sh will install nothing."
+  else
+    export ANCILLARY_PKGS="${ANCILLARY_PICK[*]}"
+    log "Will install: ${BOLD}${ANCILLARY_PICK[*]}${RESET}"
+  fi
+
+  # The fish default-shell question only matters if fish is being installed.
+  if in_selected_arr fish "${ANCILLARY_PICK[@]}"; then
+    if confirm "Set fish as ${PRIMARY_USER}'s default shell?" Y; then
+      export FISH_USERS="$PRIMARY_USER"
+    else
+      export FISH_USERS="none"
+    fi
   else
     export FISH_USERS="none"
   fi
@@ -266,7 +287,7 @@ fi
 log "All questions answered — the scripts will now run unattended."
 
 # ==============================================================================
-step "Step 4 — Running scripts (no further prompts)"
+step "Step 3 — Running scripts (no further prompts)"
 # ==============================================================================
 WORKDIR="$(mktemp -d /tmp/homelab-bootstrap.XXXXXX)"; trap 'rm -rf "$WORKDIR"' EXIT
 CWD="$(pwd)"
@@ -294,8 +315,8 @@ for s in "${SELECTED[@]}"; do
   s_start="$(date +%s)"
   logf="${WORKDIR}/${s}.log"; LOGS[$s]="$logf"
   # Run NON-INTERACTIVELY (ASSUME_YES=1 + all answers exported above), teeing the
-  # output to a log so we can replay each script's RECAP at the end. pipefail
-  # makes the 'if' reflect the script's exit, not tee's.
+  # output to a log so we can scrape each script's NEXT STEPS for the final
+  # consolidated report. pipefail makes the 'if' reflect the script's exit, not tee's.
   if ASSUME_YES=1 BOOTSTRAP_NESTED=1 bash "$src" 2>&1 | tee "$logf"; then
     STATUS[$s]="ran"; DETAIL[$s]="${srcdesc}; $(( $(date +%s) - s_start ))s"
     [[ -s "${SUMMARY_DIR}/${s}" ]] && SUMM[$s]="$(head -n1 "${SUMMARY_DIR}/${s}")"
@@ -306,15 +327,30 @@ for s in "${SELECTED[@]}"; do
 done
 
 # ==============================================================================
-#  Report
+#  Report — ONE consolidated report: a REVIEW of what each script did, then a
+#  single NEXT STEPS list merged from every script that ran. (We no longer
+#  replay each script's full recap — the per-script output already scrolled by
+#  above; this is the single takeaway summary.)
 # ==============================================================================
 ELAPSED=$(( $(date +%s) - START_TS )); MM=$(( ELAPSED / 60 )); SS=$(( ELAPSED % 60 ))
-ran_count=0; for s in "${SCRIPTS[@]}"; do [[ "${STATUS[$s]:-}" == "ran" ]] && ran_count=$((ran_count+1)); done
+ran_count=0; fail=""
+for s in "${SCRIPTS[@]}"; do
+  [[ "${STATUS[$s]:-}" == "ran" ]] && ran_count=$((ran_count+1))
+  case "${STATUS[$s]:-skipped}" in ran|skipped) ;; *) fail="$s" ;; esac
+done
+
 printf '\n'; hr '═'
-printf '%s%s  ✅  BOOTSTRAP COMPLETE%s\n' "$BOLD" "$GRN" "$RESET"
+if [[ -n "$fail" ]]; then
+  printf '%s%s  ⚠  BOOTSTRAP STOPPED — %s failed%s\n' "$BOLD" "$RED" "$fail" "$RESET"
+else
+  printf '%s%s  ✅  BOOTSTRAP COMPLETE%s\n' "$BOLD" "$GRN" "$RESET"
+fi
 hr '═'
 printf '%s  Host: %s   |   Ran %d/%d scripts   |   Total: %dm %ds%s\n' "$DIM" "$(hostname)" "$ran_count" "${#SCRIPTS[@]}" "$MM" "$SS" "$RESET"
+
+# --- Review: status + one-line summary for every script -----------------------
 hr '─'
+printf '%s%s  📋 REVIEW%s\n' "$BOLD" "$CYN" "$RESET"
 for s in "${SCRIPTS[@]}"; do
   st="${STATUS[$s]:-skipped}"
   case "$st" in
@@ -327,40 +363,30 @@ for s in "${SCRIPTS[@]}"; do
   [[ -n "${DETAIL[$s]:-}" ]] && printf '       %s↳ %s%s\n' "$DIM" "${DETAIL[$s]}" "$RESET"
 done
 
-# --- Full RECAP section from each script that ran -----------------------------
-# Each script prints its own "⏭ NEXT STEPS" block. We strip those out of the
-# per-script recaps below and collect them into ONE consolidated list at the end,
-# so the user reads a single set of next steps instead of one per script.
+# --- Next steps: one list, merged from every script that ran ------------------
+# Each script prints its own "⏭ NEXT STEPS" block in its recap; we scrape those
+# from the captured logs and fold them into a single list here.
 NEXTSTEPS=""
 for s in "${SCRIPTS[@]}"; do
   [[ -n "${LOGS[$s]:-}" && -s "${LOGS[$s]:-/nonexistent}" ]] || continue
-  printf '\n'; hr '═'
-  printf '%s%s  %s — RECAP%s\n' "$BOLD" "$CYN" "$s" "$RESET"
-  hr '═'
-  if grep -q 'RECAP' "${LOGS[$s]}"; then
-    # Replay the recap from its header up to (but not including) NEXT STEPS.
-    awk '/RECAP/{f=1} f && /NEXT STEPS/{f=0} f{print}' "${LOGS[$s]}"
-    # Capture this script's NEXT STEPS items (between its header and the next
-    # ═-rule / "Done." footer) for the consolidated list below.
-    items="$(awk '
-      /NEXT STEPS/ {cap=1; next}
-      cap && (/═══/ || /Done\./) {cap=0}
-      cap {print}
-    ' "${LOGS[$s]}")"
-    if [[ -n "${items//[[:space:]]/}" ]]; then
-      NEXTSTEPS+="${BOLD}${CYN}   ${s}${RESET}"$'\n'"${items}"$'\n'
-    fi
-  else
-    note "(no recap captured — the script stopped early; see its output above)"
+  items="$(awk '
+    /NEXT STEPS/ {cap=1; next}
+    cap && (/═══/ || /Done\./) {cap=0}
+    cap {print}
+  ' "${LOGS[$s]}")"
+  if [[ -n "${items//[[:space:]]/}" ]]; then
+    NEXTSTEPS+="   ${BOLD}${CYN}${s}${RESET}"$'\n'"${items}"$'\n'
   fi
 done
 
-# --- One consolidated NEXT STEPS list (merged from every script that ran) -----
 if [[ -n "${NEXTSTEPS//[[:space:]]/}" ]]; then
-  printf '\n'; hr '═'
+  hr '─'
   printf '%s%s  ⏭ NEXT STEPS%s\n' "$BOLD" "$MAG" "$RESET"
-  hr '═'
   printf '%s' "$NEXTSTEPS"
 fi
 hr '═'
-printf '%s%s  Done. 🚀%s\n\n' "$BOLD" "$GRN" "$RESET"
+if [[ -n "$fail" ]]; then
+  printf '%s%s  Fix the issue above, then re-run — completed scripts are idempotent. 🔧%s\n\n' "$BOLD" "$YEL" "$RESET"
+else
+  printf '%s%s  Done. 🚀%s\n\n' "$BOLD" "$GRN" "$RESET"
+fi
