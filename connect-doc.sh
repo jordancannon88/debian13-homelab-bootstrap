@@ -19,7 +19,7 @@
 #    CONN_ALIAS=<alias>   -> ssh / fish alias   (default: short hostname)
 #    CONN_KEY=<name>      -> IdentityFile base  (default: id_ed25519)
 #    CONN_OS=<string>     -> OS description     (default: PRETTY_NAME)
-#    CONN_KERNEL=<rel>    -> kernel             (default: uname -r)
+#    CONN_ROOT=<string>   -> root access note   (default: detected from sshd_config + root pw lock)
 #    OUT_FILE=<path>      -> output file        (default: <script dir>/docs/connect.html)
 #    DRY_RUN=1|0          -> force preview / actual (else asks)
 #    ASSUME_YES=1         -> accept all defaults, no prompts (automation)
@@ -117,7 +117,19 @@ det_port="$(awk 'tolower($1)=="port"{print $2; exit}' /etc/ssh/sshd_config 2>/de
 det_user="${SUDO_USER:-$(logname 2>/dev/null || echo "${USER:-user}")}"
 det_alias="${det_fqdn%%.*}"
 det_os="$( . /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-Linux}" )"
-det_kernel="$(uname -r 2>/dev/null || echo unknown)"
+
+# Root access pattern: harden.sh disables root SSH (PermitRootLogin no) and can
+# optionally LOCK the root password (su-by-password). Detect both: root SSH from
+# sshd_config (world-readable), the password lock via `passwd -S root` (only
+# readable as root — otherwise assume su-by-password still works, harden's default).
+det_root_ssh="$(awk 'tolower($1)=="permitrootlogin"{print tolower($2); exit}' /etc/ssh/sshd_config 2>/dev/null)"
+case "$det_root_ssh" in
+  yes|prohibit-password|without-password|forced-commands-only) det_root_ssh="enabled" ;;
+  *) det_root_ssh="disabled" ;;
+esac
+det_root_pw="enabled"
+if _rs="$(passwd -S root 2>/dev/null)" && [[ " $_rs " == *" L "* ]]; then det_root_pw="disabled (root locked)"; fi
+det_root="SSH login ${det_root_ssh}; password su ${det_root_pw}"
 
 FQDN="${CONN_FQDN:-$(ask "DNS hostname" "$det_fqdn")}"
 IP="${CONN_IP:-$(ask "LAN address" "$det_ip")}"
@@ -126,16 +138,17 @@ USER_NAME="${CONN_USER:-$(ask "Login user" "$det_user")}"
 ALIAS="${CONN_ALIAS:-$(ask "ssh / fish alias" "${det_alias:-server}")}"
 KEY="${CONN_KEY:-$(ask "IdentityFile name (~/.ssh/<name>)" "id_ed25519")}"
 OS_DESC="${CONN_OS:-$(ask "OS description" "$det_os")}"
-KERNEL="${CONN_KERNEL:-$(ask "Kernel release" "$det_kernel")}"
+ROOT_ACCESS="${CONN_ROOT:-$(ask "Root access pattern" "$det_root")}"
 
 note "Host:   ${FQDN}  (${IP})  port ${PORT}"
 note "Login:  ${USER_NAME}   alias: ${ALIAS}   key: ~/.ssh/${KEY}"
-note "System: ${OS_DESC}  —  ${KERNEL}"
+note "System: ${OS_DESC}"
+note "Root:   ${ROOT_ACCESS}"
 
 # Pre-escape everything that lands in the HTML.
 e_fqdn="$(esc "$FQDN")"; e_ip="$(esc "$IP")"; e_port="$(esc "$PORT")"
 e_user="$(esc "$USER_NAME")"; e_alias="$(esc "$ALIAS")"; e_key="$(esc "$KEY")"
-e_os="$(esc "$OS_DESC")"; e_kernel="$(esc "$KERNEL")"
+e_os="$(esc "$OS_DESC")"; e_root="$(esc "$ROOT_ACCESS")"
 
 # ==============================================================================
 #  Render the HTML fragment
@@ -172,9 +185,8 @@ HTML="$(cat <<EOF
   <tr><th>LAN address</th><td><code>${e_ip}</code></td></tr>
   <tr><th>SSH port</th><td><code>${e_port}</code></td></tr>
   <tr><th>OS</th><td>${e_os}</td></tr>
-  <tr><th>Kernel</th><td><code>${e_kernel}</code></td></tr>
   <tr><th>User</th><td>${e_user}</td></tr>
-  <tr><th>Alias</th><td>${e_alias}</td></tr>
+  <tr><th>Root access</th><td>${e_root}</td></tr>
   <tr><th>SSH Key</th><td>${e_key}</td></tr>
   <tr><th>Role</th><td>Rootless Docker host — services under <code>/opt/docker/&lt;service&gt;</code></td></tr>
 </table>
