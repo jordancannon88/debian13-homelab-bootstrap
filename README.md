@@ -2,9 +2,11 @@
 
 > Opinionated bootstrap scripts for a fresh **Debian 13 (Trixie)** homelab host.
 
-`init.sh` is the entry point: it checks for root, installs `curl`, then for each
-script asks whether to run it — using a **local copy** if present, or offering to
-**download it from GitHub** if not.
+`init.sh` is the entry point: it checks for root, then for each script asks
+whether to run it — using a **local copy** if present, or **downloading it from
+GitHub** if not. It asks **every question up front** (including which ancillary
+packages to install), runs the chosen scripts unattended, and ends with **one
+consolidated report** (a review of what ran, plus a single next-steps list).
 
 <br>
 
@@ -30,9 +32,9 @@ script asks whether to run it — using a **local copy** if present, or offering
 
 | Script | Icon | What it does |
 | --- | :---: | --- |
-| **`init.sh`** | 🚀 | Orchestrator — root check, installs `curl`, then runs the scripts below (local copy or download), one at a time, with a summary report. |
+| **`init.sh`** | 🚀 | Orchestrator — root check, then runs the scripts below (local copy or download), one at a time, with a single consolidated review + next-steps report at the end. |
 | **`harden.sh`** | 🔒 | System hardening — admin users + SSH keys, SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl & kernel hardening, AppArmor, AIDE, auditd, plus extra fixes to clear common Lynis findings, then a Lynis audit. |
-| **`ancillary.sh`** | 🐟 | Extra packages (`btop`, `rsync`, `qemu-guest-agent`) + the **fish** shell, set as the default shell for users `harden.sh` created (or current users you pick). |
+| **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `btop`, `fish`, `rsync`, `qemu-guest-agent` — plus the **fish** shell set as the default shell for users `harden.sh` created (or current users you pick). |
 | **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus the `/opt/docker` layout (always created) with an optional example app. |
 | **`motd.sh`** | 🖥️ | A cool **dynamic login banner** (MOTD) showing live host, IP, uptime, OS/kernel, load, memory, disk &amp; sessions — plus a link to your homelab documentation. |
 | **`connect-doc.sh`** | 🔌 | Generates the **connection doc** (`docs/connect.html`) — server details plus how to SSH in on the hardened port, with a `fish` alias and `~/.ssh/config` recipe. Auto-detects host / IP / port / user, or takes `CONN_*` overrides. _Offered by `init.sh` as the optional **final step**, reusing the SSH port/user you configured._ |
@@ -85,10 +87,14 @@ sudo bash init.sh
 
 For each script, `init.sh` will:
 
-1. ❓ &nbsp; ask **whether to run it** (`Run harden.sh?` …) — and show what it installs;
-2. 📂 &nbsp; use the **local file** if present, otherwise show the full raw URL and ask to **download** it;
-3. ▶️ &nbsp; run it, **wait** for it to finish, then move to the next;
-4. 📋 &nbsp; print a **bootstrap report** with a one-line summary from each script.
+1. ❓ &nbsp; ask **whether to run it** (`Run harden.sh?` …) — and, for `ancillary.sh`, let you **pick which packages** to install;
+2. 🧭 &nbsp; gather **every answer up front**, then use the **local file** if present, otherwise download it from GitHub;
+3. ▶️ &nbsp; run each chosen script **unattended** (no mid-run prompts), waiting for it to finish before the next;
+4. 📋 &nbsp; finish with **one consolidated report** — a review of what ran and a single, merged next-steps list.
+
+> 💡 `curl` is no longer installed by `init.sh`; it's assumed present (the
+> one-liner above already uses it, and Debian ships it on all but the most
+> minimal installs). The download fallback needs it too.
 
 <br>
 
@@ -111,7 +117,7 @@ sudo ./init.sh
 
 ```bash
 sudo ./harden.sh     # 1️⃣  harden the system
-sudo ./ancillary.sh  # 2️⃣  extra packages (btop, rsync, qemu-guest-agent) + fish shell
+sudo ./ancillary.sh  # 2️⃣  extra packages (btop, fish, rsync, qemu-guest-agent) + fish shell
 sudo ./docker.sh     # 3️⃣  install Docker + Compose (rootless)
 sudo ./motd.sh       # 4️⃣  install the dynamic login banner (MOTD)
 ./connect-doc.sh     # 5️⃣  generate docs/connect.html (no sudo needed)
@@ -286,6 +292,7 @@ docker compose up -d
 
 | Variable | Effect |
 | --- | --- |
+| `ANCILLARY_PKGS="btop rsync"` | Install exactly these packages (any of `btop fish rsync qemu-guest-agent`), or `none` for nothing; **unset** installs the full default set |
 | `FISH_USERS="u1 u2"` | Set fish as the default shell for exactly these users (skips prompts) |
 
 </details>
@@ -340,7 +347,7 @@ Every field auto-detects from the host it runs on (or is prompted); set any
 | `CONN_ALIAS=<alias>` | `ssh` / `fish` alias (default: short hostname) |
 | `CONN_KEY=<name>` | `IdentityFile` basename under `~/.ssh/` (default: `id_ed25519`) |
 | `CONN_OS=<string>` | OS description (default: `PRETTY_NAME`) |
-| `CONN_KERNEL=<rel>` | Kernel release (default: `uname -r`) |
+| `CONN_ROOT=<string>` | Root access note shown in the server table (default: detected — root SSH from `sshd_config`, password `su` from the root password-lock state) |
 | `OUT_FILE=<path>` | Output file (default: `docs/connect.html`) |
 
 </details>
