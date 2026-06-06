@@ -434,6 +434,38 @@ and that nothing upstream (cloud security group, router) is filtering the port.
 
 <br>
 
+### 🔌 SSH works after hardening, then "Connection refused" on the new port after a reboot
+
+<br>
+
+**Symptom:** right after `harden.sh` you can SSH on the new port (e.g. `9907`),
+but after rebooting the host you get `connect to host … port 9907: Connection
+refused` (a *refusal*, not a timeout — so it's a missing listener, not the firewall).
+
+<br>
+
+**Cause:** Debian 13 can **socket-activate** SSH via `ssh.socket`, whose listening
+port comes from the socket unit (`ListenStream`, default **22**) — not from
+`sshd_config`'s `Port`. A runtime restart can bind the new port, but on the next
+boot only `ssh.socket` starts (the standalone `ssh.service` isn't enabled in
+socket mode), so SSH reverts to **:22** and the new port refuses.
+
+<br>
+
+**Fix:** current `harden.sh` detects this and **masks `ssh.socket`** + enables
+`ssh.service` so the port persists across reboots. To repair a host hardened by an
+older version, get in on port 22 (still served by the socket) — `ssh -p 22 user@host`
+— or via the Proxmox/VM console, then:
+
+```bash
+sudo systemctl disable --now ssh.socket
+sudo systemctl mask ssh.socket
+sudo systemctl enable --now ssh.service
+sudo ss -ltnp | grep <port>          # confirm sshd is listening on the new port
+```
+
+<br>
+
 ---
 
 <br>
