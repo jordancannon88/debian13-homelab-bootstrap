@@ -70,7 +70,7 @@ changing the system, so it needs no root and backs nothing up.)
 
 ```bash
 # One-liner
-curl -fsSL https://raw.githubusercontent.com/jordancannon88/debian13-homelab-bootstrap/main/init.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/jordancannon88/debian13-homelab-bootstrap/main/init.sh | bash
 ```
 
 <br>
@@ -80,7 +80,7 @@ curl -fsSL https://raw.githubusercontent.com/jordancannon88/debian13-homelab-boo
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jordancannon88/debian13-homelab-bootstrap/main/init.sh -o init.sh
 less init.sh        # review it first
-sudo bash init.sh
+bash init.sh
 ```
 
 <br>
