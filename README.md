@@ -36,7 +36,7 @@ ran, plus a single next-steps list).
 | **`init.sh`** | 🚀 | Orchestrator — root check, then runs the scripts below (local copy or download), one at a time, with a single consolidated review + next-steps report at the end. |
 | **`harden.sh`** | 🔒 | System hardening — admin users + SSH keys, SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl & kernel hardening, AppArmor, AIDE, auditd, plus extra fixes to clear common Lynis findings, then a Lynis audit. **Detects VM vs LXC** and skips host-managed steps (e.g. AppArmor) inside containers. |
 | **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `btop`, `fish`, `rsync`, `qemu-guest-agent` — plus the **fish** shell set as the default shell for users `harden.sh` created (or current users you pick). |
-| **`monitoring.sh`** | 📈 | **Pick-and-install** monitoring agents from their vendor repos. **`zabbix-agent2`** adds Zabbix's official repo, installs the agent, and writes a custom config with this host's name and the Zabbix server address you provide. **`alloy`** adds Grafana's official repo and installs Grafana Alloy, a journal-first log shipper pointed at the Loki URL you provide. |
+| **`monitoring.sh`** | 📈 | **Pick-and-install** monitoring agents from their vendor repos. **`zabbix-agent2`** adds Zabbix's official repo, installs the agent, and writes a custom config with this host's name and the Zabbix server address you provide. **`alloy`** adds Grafana's official repo and installs Grafana Alloy, a journal-first log shipper pointed at the Loki URL you provide — with an **optional prompt to also tail Docker container logs** (adds the `alloy` user to the `docker` group for socket access). |
 | **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus the `/opt/docker` layout (always created) with an optional example app. |
 | **`motd.sh`** | 🖥️ | A cool **dynamic login banner** (MOTD) showing live host, IP, uptime, OS/kernel, load, memory, disk &amp; sessions — plus a link to your homelab documentation. |
 | **`documentation.sh`** | 🔌 | Generates the **connection doc** (`docs/connect.html` by default) — server details plus how to SSH in on the hardened port, with a `fish` alias and `~/.ssh/config` recipe. Auto-detects host / IP / port / user, or takes `CONN_*` overrides. _Offered by `init.sh` as the optional **final step**, reusing the SSH port/user you configured — when run via `init.sh` the doc is always written to `/tmp/connect.html`._ |
@@ -126,6 +126,11 @@ tick in the picker are installed.
 | `inxi` | Debian | System-information CLI; backs the CPU-temperature monitoring item. Installed alongside `zabbix-agent2`. |
 | `gnupg` | Debian | Ensured present to import the Grafana repo key (usually already installed by `harden.sh`). |
 | `alloy` | **Grafana repo** | Grafana Alloy — journal-first log shipper to Loki. |
+
+> 📦 If you opt into **Docker container logs**, Alloy reads them straight from
+> `/var/run/docker.sock` (no extra package). `monitoring.sh` adds the `alloy`
+> user to the `docker` group so it can access the socket; the daemon's own logs
+> already arrive via the journal (`docker.service`).
 
 <br>
 
@@ -416,6 +421,7 @@ docker compose up -d
 | `MONITORING_PKGS="zabbix-agent2 alloy"` | Install exactly these agents (any of `zabbix-agent2 alloy`), or `none` for nothing; **unset** installs the full default set |
 | `ZABBIX_SERVER_ACTIVE="host[:port]"` | Zabbix server/proxy for active checks — **required** when `zabbix-agent2` is selected (asked interactively if unset). Written into `ServerActive=` in `/etc/zabbix/zabbix_agent2.conf` |
 | `LOKI_URL="scheme://host:port"` | Loki base URL for Alloy to push to — used when `alloy` is selected (asked interactively; defaults to `http://localhost:3100`). The `/loki/api/v1/push` path is appended automatically |
+| `ALLOY_DOCKER_LOGS=1` | Also tail **Docker container** logs with Alloy — used when `alloy` is selected (asked interactively; defaults to off). Adds the `alloy` user to the `docker` group so it can read `/var/run/docker.sock`; container logs ship under `{job="docker"}` |
 
 </details>
 

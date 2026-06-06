@@ -10,6 +10,8 @@
 #  - alloy (if selected) adds Grafana's official apt repo, installs Grafana
 #    Alloy, and writes a journal-first log-shipping config pointing at the Loki
 #    server (LOKI_URL, or asked when run interactively; defaults to localhost).
+#    Optionally also tails Docker container logs (ALLOY_DOCKER_LOGS, or asked) —
+#    when enabled, the alloy user is added to the docker group for socket access.
 #
 #  Config templates live alongside this script in zabbix/ and alloy/; if this
 #  script is run on its own (no repo checkout) they're fetched from the repo.
@@ -25,6 +27,9 @@
 #    LOKI_URL="scheme://host:port" -> Loki base URL for Alloy to push to
 #                                       (used when alloy is selected; asked
 #                                       interactively, defaults to localhost:3100)
+#    ALLOY_DOCKER_LOGS=1|0 -> also tail Docker container logs with Alloy
+#                                       (used when alloy is selected; asked
+#                                       interactively, defaults to off)
 #    DRY_RUN=1|0            -> force preview / actual (else asks)
 #    ASSUME_YES=1           -> answer "yes" to every prompt (automation)
 # ==============================================================================
@@ -68,6 +73,9 @@ ALLOY_CONF="/etc/alloy/config.alloy"
 # is selected; asked interactively if unset. The /loki/api/v1/push path is added
 # automatically in the config template.
 LOKI_URL="${LOKI_URL:-}"
+# Whether Alloy should also tail Docker container logs (1/0). Asked interactively
+# when alloy is selected and this is unset; defaults to off (no Docker assumed).
+ALLOY_DOCKER_LOGS="${ALLOY_DOCKER_LOGS:-}"
 
 # Which agents to install. MONITORING_PKGS (space-separated list, or "none")
 # overrides the selection — init.sh sets it from the wizard's picker.
@@ -184,14 +192,24 @@ write_zabbix_conf() {
   return 0
 }
 
-# write_alloy_conf <target> <loki_base_url> — render the journal-first Alloy
-# config to <target>, substituting the Loki base URL into the loki.write
-# endpoint (awk swaps the @@LOKI_ENDPOINT@@ token for the URL, safe regardless
-# of the / and : it contains). Returns non-zero if the template can't be found.
+# write_alloy_conf <target> <loki_base_url> <docker_logs> — render the
+# journal-first Alloy config to <target>, substituting the Loki base URL into
+# the loki.write endpoint (awk swaps the @@LOKI_ENDPOINT@@ token for the URL,
+# safe regardless of the / and : it contains). The Docker-container log block
+# (between the @@ALLOY_DOCKER_BEGIN@@/@@ALLOY_DOCKER_END@@ markers) is kept when
+# <docker_logs> is "1" and removed otherwise; the marker lines are always
+# dropped. Returns non-zero if the template can't be found.
 write_alloy_conf() {
-  local target="$1" url="$2"
+  local target="$1" url="$2" docker="${3:-0}"
   resolve_template "$ALLOY_CONFIG_SRC" "alloy/config.alloy" || return 1
-  awk -v url="$url" '{ gsub(/@@LOKI_ENDPOINT@@/, url); print }' "$RESOLVED_TEMPLATE" > "$target"
+  # Anchor to the dedicated marker lines ("// @@ALLOY_DOCKER_BEGIN@@") so the
+  # header prose that merely mentions the tokens isn't matched.
+  awk -v url="$url" -v docker="$docker" '
+    /^\/\/ @@ALLOY_DOCKER_BEGIN@@$/ { indocker=1; next }   # drop the begin marker line
+    /^\/\/ @@ALLOY_DOCKER_END@@$/   { indocker=0; next }    # drop the end marker line
+    indocker && docker != "1" { next }                     # skip the block body when disabled
+    { gsub(/@@LOKI_ENDPOINT@@/, url); print }
+  ' "$RESOLVED_TEMPLATE" > "$target"
   [[ "$RESOLVED_TEMPLATE_IS_TMP" == "1" ]] && rm -f "$RESOLVED_TEMPLATE"
   return 0
 }
@@ -344,15 +362,30 @@ fi
 [[ "$LOKI_URL" =~ ^https?:// ]] || LOKI_URL="http://${LOKI_URL}"
 LOKI_URL="${LOKI_URL%/}"
 
+# Resolve whether to also tail Docker container logs — prompt if unset.
+if [[ -z "$ALLOY_DOCKER_LOGS" ]]; then
+  ALLOY_DOCKER_LOGS=0
+  if [[ "$INTERACTIVE" -eq 1 ]]; then
+    printf '%s%s Also capture Docker container logs? (needs Docker on this host) [y/N]: %s' \
+      "$YEL" "$S_WARN" "$RESET" > /dev/tty
+    read -r _dl < /dev/tty || _dl=""
+    [[ "$_dl" =~ ^[Yy] ]] && ALLOY_DOCKER_LOGS=1
+  fi
+fi
+# Normalise to 0/1 (accept yes/true/1 from the environment).
+[[ "${ALLOY_DOCKER_LOGS,,}" =~ ^(1|y|yes|true|on)$ ]] && ALLOY_DOCKER_LOGS=1 || ALLOY_DOCKER_LOGS=0
+
 if [[ "$DRY_RUN" == "1" ]]; then
   dry "add Grafana apt repo, then apt-get install alloy"
+  _docker_note="$( [[ "$ALLOY_DOCKER_LOGS" == "1" ]] && echo ' + Docker container logs' || echo '' )"
   if [[ -r "$ALLOY_CONFIG_SRC" ]]; then
-    dry "render ${ALLOY_CONFIG_SRC} -> ${ALLOY_CONF} (root:alloy 0640) pushing to ${LOKI_URL}/loki/api/v1/push"
+    dry "render ${ALLOY_CONFIG_SRC} -> ${ALLOY_CONF} (root:alloy 0640) pushing to ${LOKI_URL}/loki/api/v1/push${_docker_note}"
   else
-    dry "fetch alloy/config.alloy from repo -> ${ALLOY_CONF} (root:alloy 0640) pushing to ${LOKI_URL}/loki/api/v1/push"
+    dry "fetch alloy/config.alloy from repo -> ${ALLOY_CONF} (root:alloy 0640) pushing to ${LOKI_URL}/loki/api/v1/push${_docker_note}"
   fi
+  [[ "$ALLOY_DOCKER_LOGS" == "1" ]] && dry "add the alloy user to the 'docker' group so it can read /var/run/docker.sock"
   dry "enable + restart alloy"
-  record "Grafana Alloy" "[dry-run] would install + configure (Loki ${LOKI_URL})"
+  record "Grafana Alloy" "[dry-run] would install + configure (Loki ${LOKI_URL}${_docker_note})"
 else
   # gpg --dearmor needs gnupg; ensure it's present before adding the repo key.
   command -v gpg >/dev/null 2>&1 || apt-get install -y gnupg
@@ -381,17 +414,30 @@ else
   # accessible — otherwise the service exits with "permission denied" on start.
   _alloy_grp="alloy"; getent group alloy >/dev/null 2>&1 || _alloy_grp="root"
   install -d -o root -g "$_alloy_grp" -m 0750 /etc/alloy
+
+  # For Docker container logs, the alloy user needs to read /var/run/docker.sock
+  # (owned root:docker). Add it to the docker group if that group exists.
+  if [[ "$ALLOY_DOCKER_LOGS" == "1" ]]; then
+    if getent group docker >/dev/null 2>&1; then
+      usermod -aG docker alloy 2>/dev/null || true
+      log "Added the alloy user to the 'docker' group (to read the Docker socket)."
+    else
+      warn "Docker log capture enabled but no 'docker' group exists yet — install Docker, then run: usermod -aG docker alloy && systemctl restart alloy"
+    fi
+  fi
+
   _alloy_tmp="$(mktemp)"
-  if write_alloy_conf "$_alloy_tmp" "$LOKI_URL"; then
+  if write_alloy_conf "$_alloy_tmp" "$LOKI_URL" "$ALLOY_DOCKER_LOGS"; then
     install -o root -g "$_alloy_grp" -m 0640 "$_alloy_tmp" "$ALLOY_CONF"
     rm -f "$_alloy_tmp"
-    log "Wrote ${ALLOY_CONF} (pushing to ${LOKI_URL}/loki/api/v1/push)."
+    _docker_note="$( [[ "$ALLOY_DOCKER_LOGS" == "1" ]] && echo ' + Docker container logs' || echo '' )"
+    log "Wrote ${ALLOY_CONF} (pushing to ${LOKI_URL}/loki/api/v1/push${_docker_note})."
 
     systemctl enable alloy >/dev/null 2>&1 || true
     systemctl reset-failed alloy >/dev/null 2>&1 || true
     if systemctl restart alloy 2>/dev/null; then
       log "alloy enabled and running."
-      record "Grafana Alloy" "installed; pushing to ${LOKI_URL}"
+      record "Grafana Alloy" "installed; pushing to ${LOKI_URL}${_docker_note}"
     else
       warn "alloy installed but did not start — check: systemctl status alloy"
       record "Grafana Alloy" "installed; service not running (check status)"
@@ -432,6 +478,10 @@ fi
 if pkg_selected alloy; then
   printf '   %s•%s  Confirm logs are flowing: %ssystemctl status alloy%s, then in Grafana query\n' "$BOLD" "$RESET" "$DIM" "$RESET"
   printf '       %s{host="%s"}%s against your Loki source. Auditd logs need read access for the alloy user.\n' "$DIM" "$(hostname)" "$RESET"; _had_step=1
+  if [[ "${ALLOY_DOCKER_LOGS:-0}" == "1" ]]; then
+    printf '       Docker container logs ship under %s{job="docker"}%s — if empty, the alloy user may need a\n' "$DIM" "$RESET"
+    printf '       re-login for docker-group membership: %ssystemctl restart alloy%s (Docker must be installed).\n' "$DIM" "$RESET"
+  fi
 fi
 (( _had_step == 0 )) && printf '   %s•%s  Nothing further to do.\n' "$BOLD" "$RESET"
 printf '%s%s  Done. 📈%s\n\n' "$BOLD" "$GRN" "$RESET"
