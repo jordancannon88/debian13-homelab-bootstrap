@@ -5,8 +5,9 @@
 `init.sh` is the entry point: it checks for root, then for each script asks
 whether to run it — using a **local copy** if present, or **downloading it from
 GitHub** if not. It asks **every question up front** (including which extra
-services to install), runs the chosen scripts unattended, and ends with **one
-consolidated report** (a review of what ran, plus a single next-steps list).
+packages, monitoring agents, and whether to install Docker), runs the chosen
+scripts unattended, and ends with **one consolidated report** (a review of what
+ran, plus a single next-steps list).
 
 <br>
 
@@ -192,7 +193,7 @@ bash init.sh
 
 For each script, `init.sh` will:
 
-1. ❓ &nbsp; ask **whether to run it** (`Run harden.sh?` …) — and, under **Extra services**, let you **pick which packages and agents** to install (routed to `ancillary.sh`, `monitoring.sh`, `docker.sh`);
+1. ❓ &nbsp; ask **whether to run it** (`Harden the system?`, `Install extra packages?`, `Install monitoring agents?`, `Install Docker…?` …) — and, for the **Extra packages** and **Monitoring** groups, let you **pick which ones** to install;
 2. 🧭 &nbsp; gather **every answer up front**, then use the **local file** if present, otherwise download it from GitHub;
 3. ▶️ &nbsp; run each chosen script **unattended** (no mid-run prompts), waiting for it to finish before the next;
 4. 📋 &nbsp; finish with **one consolidated report** — a review of what ran and a single, merged next-steps list.

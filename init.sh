@@ -32,7 +32,10 @@ START_TS="$(date +%s)"
 # Extra services init can install, presented to the user as one "extra services"
 # group. The apt packages are handled by ancillary.sh (chosen list passed via
 # ANCILLARY_PKGS); "docker" runs docker.sh (rootless Docker). Order = display.
-EXTRA_SERVICES=(btop fish rsync qemu-guest-agent zabbix-agent2 alloy docker)
+# Pickable packages, split by the script that installs them. docker is a
+# standalone yes/no (it has no sub-packages to pick), asked on its own below.
+ANCILLARY_SERVICES=(btop fish rsync qemu-guest-agent)
+MONITORING_SERVICES=(zabbix-agent2 alloy)
 declare -A EXTRA_DESC=(
   [btop]="resource monitor (htop-like)"
   [fish]="friendly interactive shell"
@@ -215,25 +218,33 @@ skip_script() { STATUS[$1]="skipped"; DETAIL[$1]="you chose not to run it"; }
 printf '\n%s%s %s%s%s — %s%s%s\n' "$BOLD" "$S_STEP" "$CYN" "harden.sh" "$RESET" "$DIM" "$(describe harden.sh)" "$RESET"
 if confirm "Harden the system?" Y; then SELECTED+=(harden.sh); else skip_script harden.sh; fi
 
-# --- ancillary.sh + docker.sh — combined "extra services" group.
-printf '\n%s%s %sExtra services%s — %s%s%s\n' "$BOLD" "$S_STEP" "$CYN" "$RESET" "$DIM" "extra packages + optional rootless Docker" "$RESET"
-if confirm "Install extra services?" Y; then
-  info "Pick which services to install:"
-  INSTALL_DOCKER=0
-  for p in "${EXTRA_SERVICES[@]}"; do
-    confirm "Install ${p} — ${EXTRA_DESC[$p]}?" Y || continue
-    case "$p" in
-      docker)              INSTALL_DOCKER=1 ;;
-      zabbix-agent2|alloy) MONITORING_PICK+=("$p") ;;
-      *)                   ANCILLARY_PICK+=("$p") ;;
-    esac
+# --- ancillary.sh — extra packages group
+printf '\n%s%s %sExtra packages%s — %s%s%s\n' "$BOLD" "$S_STEP" "$CYN" "$RESET" "$DIM" "quality-of-life CLI tools + fish shell" "$RESET"
+if confirm "Install extra packages?" Y; then
+  info "Pick which packages to install:"
+  for p in "${ANCILLARY_SERVICES[@]}"; do
+    confirm "Install ${p} — ${EXTRA_DESC[$p]}?" Y && ANCILLARY_PICK+=("$p")
   done
-  if (( ${#ANCILLARY_PICK[@]} > 0 ));  then SELECTED+=(ancillary.sh);  else skip_script ancillary.sh; fi
-  if (( ${#MONITORING_PICK[@]} > 0 )); then SELECTED+=(monitoring.sh); else skip_script monitoring.sh; fi
-  if (( INSTALL_DOCKER == 1 ));        then SELECTED+=(docker.sh);     else skip_script docker.sh; fi
+  if (( ${#ANCILLARY_PICK[@]} > 0 )); then SELECTED+=(ancillary.sh); else skip_script ancillary.sh; fi
 else
-  skip_script ancillary.sh; skip_script monitoring.sh; skip_script docker.sh
+  skip_script ancillary.sh
 fi
+
+# --- monitoring.sh — monitoring agents group
+printf '\n%s%s %sMonitoring%s — %s%s%s\n' "$BOLD" "$S_STEP" "$CYN" "$RESET" "$DIM" "Zabbix agent + Grafana Alloy" "$RESET"
+if confirm "Install monitoring agents?" Y; then
+  info "Pick which agents to install:"
+  for p in "${MONITORING_SERVICES[@]}"; do
+    confirm "Install ${p} — ${EXTRA_DESC[$p]}?" Y && MONITORING_PICK+=("$p")
+  done
+  if (( ${#MONITORING_PICK[@]} > 0 )); then SELECTED+=(monitoring.sh); else skip_script monitoring.sh; fi
+else
+  skip_script monitoring.sh
+fi
+
+# --- docker.sh
+printf '\n%s%s %s%s%s — %s%s%s\n' "$BOLD" "$S_STEP" "$CYN" "docker.sh" "$RESET" "$DIM" "$(describe docker.sh)" "$RESET"
+if confirm "Install Docker Engine + Compose (rootless)?" Y; then SELECTED+=(docker.sh); else skip_script docker.sh; fi
 
 # --- motd.sh
 printf '\n%s%s %s%s%s — %s%s%s\n' "$BOLD" "$S_STEP" "$CYN" "motd.sh" "$RESET" "$DIM" "$(describe motd.sh)" "$RESET"
