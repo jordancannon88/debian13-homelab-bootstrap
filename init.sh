@@ -32,12 +32,13 @@ START_TS="$(date +%s)"
 # Extra services init can install, presented to the user as one "extra services"
 # group. The apt packages are handled by ancillary.sh (chosen list passed via
 # ANCILLARY_PKGS); "docker" runs docker.sh (rootless Docker). Order = display.
-EXTRA_SERVICES=(btop fish rsync qemu-guest-agent docker)
+EXTRA_SERVICES=(btop fish rsync qemu-guest-agent zabbix-agent2 docker)
 declare -A EXTRA_DESC=(
   [btop]="resource monitor (htop-like)"
   [fish]="friendly interactive shell"
   [rsync]="fast file copy / sync"
   [qemu-guest-agent]="QEMU/KVM guest integration (VMs only)"
+  [zabbix-agent2]="Zabbix agent 2 monitoring (needs a Zabbix server)"
   [docker]="Docker Engine + Compose + rootless setup + /opt/docker layout"
 )
 
@@ -325,6 +326,20 @@ fi
 if in_selected ancillary.sh; then
   export ANCILLARY_PKGS="${ANCILLARY_PICK[*]}"
   log "Will install: ${BOLD}${ANCILLARY_PICK[*]}${RESET}"
+
+  # Zabbix agent 2 needs the server/proxy address for active checks (no default).
+  if in_selected_arr zabbix-agent2 "${ANCILLARY_PICK[@]}"; then
+    ZABBIX_SERVER_ACTIVE=""
+    while [[ -z "$ZABBIX_SERVER_ACTIVE" ]]; do
+      ZABBIX_SERVER_ACTIVE="$(ask "Zabbix server/proxy for active checks (host or host:port, e.g. zbx.example.com:10051)" "")"
+      ZABBIX_SERVER_ACTIVE="${ZABBIX_SERVER_ACTIVE//[[:space:]]/}"
+      [[ -z "$ZABBIX_SERVER_ACTIVE" ]] || break
+      warn "A Zabbix server address is required for zabbix-agent2."
+      [[ -r /dev/tty && "$ASSUME_YES" != 1 ]] || { err "No Zabbix server address provided (set ZABBIX_SERVER_ACTIVE)."; exit 1; }
+    done
+    export ZABBIX_SERVER_ACTIVE
+    log "Zabbix server (active checks): ${BOLD}${ZABBIX_SERVER_ACTIVE}${RESET}"
+  fi
 
   # The fish default-shell question only matters if fish is being installed.
   if in_selected_arr fish "${ANCILLARY_PICK[@]}"; then
