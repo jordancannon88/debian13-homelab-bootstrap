@@ -17,6 +17,9 @@
 #   ALLOW_UDP_PORTS="51820"     -> open extra UDP ports
 #   ADMIN_USERS="u1 u2 ..."  -> admin users to create/harden (default: asks for one)
 #   PUBKEY_<user>="ssh-..."  -> SSH key for a specific user (PUBKEY = primary user)
+#   PASSWORD_<user>="..."    -> password to set on a NEWLY-created user
+#                               (ADMIN_PASSWORD = primary user). Existing users
+#                               are never changed; blank = passwordless (key-only).
 #   CREATE_<user>=1|0        -> auto-answer the "create missing user?" prompt
 #                               (existing users are always hardened; the primary
 #                                admin is always created if missing)
@@ -64,7 +67,7 @@ for _u in "${ADMIN_USER_LIST[@]}"; do
 done
 ADMIN_USER_LIST=("${_dedup[@]}")
 ADMIN_USER="${ADMIN_USER_LIST[0]:-}"
-declare -A USER_EXISTS USER_HASKEY USER_PUBKEY WANT_CREATE
+declare -A USER_EXISTS USER_HASKEY USER_PUBKEY USER_PASSWORD WANT_CREATE
 
 # Was SSH_PORT explicitly provided? (decide before applying the default)
 if [[ -n "${SSH_PORT+x}" ]]; then SSH_PORT_EXPLICIT=1; else SSH_PORT_EXPLICIT=0; fi
@@ -296,6 +299,32 @@ prompt_for_pubkey() {
     fi
     printf '%s%s That does not look like a valid SSH public key — try again.%s\n' \
       "$RED" "$S_ERR" "$RESET" > /dev/tty
+  done
+}
+
+# prompt_for_password <user> -> interactively read a password (entered twice to
+# confirm) for a NEW account and store it in USER_PASSWORD[<user>]. Pressing
+# Enter skips, leaving the account passwordless (SSH-key only) as before.
+prompt_for_password() {
+  local user="$1"
+  [[ "$INTERACTIVE" -eq 1 ]] || return 0   # cannot prompt without a TTY
+  local p1 p2
+  while true; do
+    printf '\n%s%sSet a login password for the new user %s%s%s\n' \
+      "$BOLD" "$WHT" "$BOLD" "$user" "$RESET" > /dev/tty
+    printf '   %s(press Enter to skip — the account stays passwordless / SSH-key only)%s\n' "$DIM" "$RESET" > /dev/tty
+    printf '%s%s %s password> %s' "$YEL" "$S_INFO" "$user" "$RESET" > /dev/tty
+    IFS= read -rs p1 < /dev/tty || p1=""; printf '\n' > /dev/tty
+    [[ -z "$p1" ]] && return 0
+    printf '%s%s %s confirm > %s' "$YEL" "$S_INFO" "$user" "$RESET" > /dev/tty
+    IFS= read -rs p2 < /dev/tty || p2=""; printf '\n' > /dev/tty
+    if [[ "$p1" != "$p2" ]]; then
+      printf '%s%s Passwords do not match — try again.%s\n' "$RED" "$S_ERR" "$RESET" > /dev/tty
+      continue
+    fi
+    USER_PASSWORD[$user]="$p1"
+    printf '%s%s%s Password set for %s.\n' "$GRN" "$S_OK" "$RESET" "$user" > /dev/tty
+    return 0
   done
 }
 
@@ -590,6 +619,18 @@ for u in "${ADMIN_USER_LIST[@]}"; do
   fi
   # Otherwise offer to paste one now (before the lockout check).
   [[ -z "${USER_PUBKEY[$u]:-}" ]] && prompt_for_pubkey "$u"
+  # Password — only for users we'll CREATE (existing accounts are never changed):
+  # PASSWORD_<user>, else ADMIN_PASSWORD for the primary user, else prompt.
+  if [[ "${USER_EXISTS[$u]}" == "0" ]]; then
+    pwvar="PASSWORD_${u}"
+    if [[ -n "${!pwvar:-}" ]]; then
+      USER_PASSWORD[$u]="${!pwvar}"
+    elif [[ "$u" == "$ADMIN_USER" && -n "${ADMIN_PASSWORD:-}" ]]; then
+      USER_PASSWORD[$u]="$ADMIN_PASSWORD"
+    else
+      prompt_for_password "$u"
+    fi
+  fi
   # Track login viability + users that will have no key.
   if [[ -n "${USER_PUBKEY[$u]:-}" || "${USER_HASKEY[$u]}" == "1" ]]; then
     key_login_ok=1
@@ -821,8 +862,20 @@ setup_admin_user() {
     info "Creating admin user: ${BOLD}${user}${RESET}"
     run adduser --disabled-password --gecos "" "$user"
     run usermod -aG sudo "$user"
-    log "Created '$user' and added to the sudo group."
-    record "User:$user" "created (disabled-password) + sudo"
+    # Set the password collected for this new account (if any); otherwise the
+    # account stays passwordless (SSH-key only), as before.
+    if [[ -n "${USER_PASSWORD[$user]:-}" ]]; then
+      if [[ "$DRY_RUN" == "1" ]]; then
+        dry "set password for '$user' (chpasswd)"
+      else
+        printf '%s:%s\n' "$user" "${USER_PASSWORD[$user]}" | chpasswd
+      fi
+      log "Created '$user' (password set) and added to the sudo group."
+      record "User:$user" "created (password set) + sudo"
+    else
+      log "Created '$user' and added to the sudo group."
+      record "User:$user" "created (disabled-password) + sudo"
+    fi
     # Record newly-created users so ancillary.sh can target them (e.g. fish shell).
     if [[ "$DRY_RUN" == "1" ]]; then
       dry "record newly-created user '$user' -> $CREATED_USERS_FILE (for ancillary.sh)"
