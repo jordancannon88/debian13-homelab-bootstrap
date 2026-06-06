@@ -225,6 +225,22 @@ require_root() {
   fi
 }
 
+# detect_container -> prints the container type (lxc, docker, ...) and returns 0
+# when running inside a container; returns 1 on bare metal / a full VM. Several
+# hardening steps (AppArmor profiles, some sysctls, the audit subsystem) are
+# owned by the HOST kernel and cannot be managed from inside an unprivileged
+# LXC/container, so we detect this and skip those steps gracefully.
+detect_container() {
+  local v=""
+  if command -v systemd-detect-virt >/dev/null 2>&1; then
+    v="$(systemd-detect-virt -c 2>/dev/null || true)"
+  fi
+  if [[ -n "$v" && "$v" != "none" ]]; then printf '%s' "$v"; return 0; fi
+  if [[ -r /run/systemd/container ]]; then printf '%s' "$(cat /run/systemd/container)"; return 0; fi
+  if grep -qa 'container=lxc' /proc/1/environ 2>/dev/null; then printf 'lxc'; return 0; fi
+  return 1
+}
+
 # valid_pubkey "<key line>" -> 0 if it looks like a valid SSH public key
 valid_pubkey() {
   local key="$1" tmp
@@ -466,6 +482,10 @@ if ! command -v apt >/dev/null 2>&1; then
   exit 1
 fi
 
+# Are we inside a container (e.g. a Proxmox LXC)? Host-managed steps adapt below.
+CONTAINER_TYPE="$(detect_container || true)"
+[[ -n "$CONTAINER_TYPE" ]] && IS_CONTAINER=1 || IS_CONTAINER=0
+
 # Decide dry-run vs actual BEFORE anything else happens.
 choose_run_mode
 
@@ -498,6 +518,7 @@ fi
 info "Mode         : ${BOLD}${MODE_LABEL}"
 info "Run date     : $(date '+%Y-%m-%d %H:%M:%S %Z')"
 info "Hostname     : $(hostname -f 2>/dev/null || hostname)"
+[[ "$IS_CONTAINER" == "1" ]] && info "Environment  : ${BOLD}${CONTAINER_TYPE} container${RESET} (host-managed steps will be skipped)"
 info "Backup dir   : ${BOLD}${BACKUP_DIR}${RESET}"
 info "Admin users  : ${BOLD}${ADMIN_USER_LIST[*]}${RESET}"
 info "SSH port     : ${BOLD}${SSH_PORT}${RESET}   (also allow 22: ${ALLOW_SSH_PORT_22})"
@@ -1126,8 +1147,18 @@ banner "Ensuring AppArmor is enabled"
 # has it. That's fine — docker.sh grants ONLY rootlesskit the
 # 'userns' permission via a dedicated AppArmor profile, so rootless Docker works
 # without weakening this. See https://docs.docker.com/engine/security/apparmor/
-run systemctl enable --now apparmor
-if [[ "$DRY_RUN" != "1" ]] && aa-status >/dev/null 2>&1; then
+if [[ "$IS_CONTAINER" == "1" ]]; then
+  # Inside an LXC/container the kernel's AppArmor is owned by the Proxmox HOST;
+  # apparmor.service can't load profiles here and would fail to start. Skip it.
+  warn "Skipping AppArmor — managed by the host in a ${CONTAINER_TYPE} container."
+  note "Enable/confirm AppArmor on the Proxmox host, not inside the container."
+  record "AppArmor" "Skipped (host-managed in ${CONTAINER_TYPE} container)"
+elif ! run systemctl enable --now apparmor; then
+  # Don't abort the whole run if the unit won't start (e.g. unusual kernels).
+  warn "Could not enable apparmor.service — continuing without it."
+  note "Check 'systemctl status apparmor' and the kernel's AppArmor support."
+  record "AppArmor" "Enable failed (continued; see systemctl status apparmor)"
+elif [[ "$DRY_RUN" != "1" ]] && aa-status >/dev/null 2>&1; then
   AA_PROFILES="$(aa-status --profiled 2>/dev/null || echo '?')"
   log "AppArmor active — ${AA_PROFILES} profiles loaded."
   record "AppArmor" "Enabled (${AA_PROFILES} profiles loaded)"
