@@ -398,6 +398,14 @@ if in_selected monitoring.sh; then
     LOKI_URL="${LOKI_URL//[[:space:]]/}"
     export LOKI_URL
     log "Loki endpoint (Alloy): ${BOLD}${LOKI_URL}${RESET}"
+
+    # Optionally also tail Docker container logs (needs Docker on this host).
+    if confirm "Also capture Docker container logs with Alloy? (needs Docker installed)" N; then
+      export ALLOY_DOCKER_LOGS=1
+      log "Alloy will also tail Docker container logs."
+    else
+      export ALLOY_DOCKER_LOGS=0
+    fi
   fi
 fi
 
