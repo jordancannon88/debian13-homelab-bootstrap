@@ -249,24 +249,39 @@ PRIMARY_USER=""
 if in_selected harden.sh || in_selected docker.sh || in_selected ancillary.sh; then
   mapfile -t HUMANS < <(awk -F: '$3>=1000 && $3<65534 && $7 !~ /(nologin|false)$/ {print $1}' /etc/passwd | sort)
   default_user="${SUDO_USER:-}"; [[ -n "$default_user" ]] || { (( ${#HUMANS[@]} == 1 )) && default_user="${HUMANS[0]}"; }
-  must_exist=1; in_selected harden.sh && must_exist=0   # harden can create a new one
-  while true; do
-    (( ${#HUMANS[@]} > 0 )) && note "Existing users: ${HUMANS[*]}"
-    if in_selected harden.sh; then
+
+  if in_selected harden.sh; then
+    # harden can create the user, so ask which admin user to create/harden.
+    while true; do
+      (( ${#HUMANS[@]} > 0 )) && note "Existing users: ${HUMANS[*]}"
       PRIMARY_USER="$(ask "Admin username (sudo + SSH key) — enter an existing user to harden, or a new name to create one" "$default_user")"
+      PRIMARY_USER="${PRIMARY_USER//[[:space:]]/}"
+      if [[ -z "$PRIMARY_USER" ]]; then warn "A username is required."; [[ -r /dev/tty && "$ASSUME_YES" != 1 ]] || { err "No user available."; exit 1; }; continue; fi
+      if ! valid_user "$PRIMARY_USER"; then warn "Invalid username (lowercase letters, digits, - and _)."; continue; fi
+      break
+    done
+  else
+    # harden NOT selected — docker/ancillary just need an EXISTING user to own
+    # things. Auto-detect it (SUDO_USER or the sole human account) and only ask
+    # if it can't be resolved unambiguously, so we don't prompt unnecessarily.
+    if [[ -n "$default_user" ]] && id "$default_user" >/dev/null 2>&1; then
+      PRIMARY_USER="$default_user"
     else
-      PRIMARY_USER="$(ask "Existing user to configure?" "$default_user")"
+      while true; do
+        (( ${#HUMANS[@]} > 0 )) && note "Existing users: ${HUMANS[*]}"
+        PRIMARY_USER="$(ask "Existing user to configure?" "$default_user")"
+        PRIMARY_USER="${PRIMARY_USER//[[:space:]]/}"
+        if [[ -z "$PRIMARY_USER" ]]; then warn "A username is required."; [[ -r /dev/tty && "$ASSUME_YES" != 1 ]] || { err "No user available."; exit 1; }; continue; fi
+        if ! valid_user "$PRIMARY_USER"; then warn "Invalid username (lowercase letters, digits, - and _)."; continue; fi
+        if ! id "$PRIMARY_USER" >/dev/null 2>&1; then
+          warn "User '$PRIMARY_USER' does not exist — pick an existing one (or include harden.sh to create it)."
+          [[ -r /dev/tty && "$ASSUME_YES" != 1 ]] || { err "User '$PRIMARY_USER' does not exist."; exit 1; }
+          continue
+        fi
+        break
+      done
     fi
-    PRIMARY_USER="${PRIMARY_USER//[[:space:]]/}"
-    if [[ -z "$PRIMARY_USER" ]]; then warn "A username is required."; [[ -r /dev/tty && "$ASSUME_YES" != 1 ]] || { err "No user available."; exit 1; }; continue; fi
-    if ! valid_user "$PRIMARY_USER"; then warn "Invalid username (lowercase letters, digits, - and _)."; continue; fi
-    if [[ "$must_exist" -eq 1 ]] && ! id "$PRIMARY_USER" >/dev/null 2>&1; then
-      warn "User '$PRIMARY_USER' does not exist — pick an existing one (or include harden.sh to create it)."
-      [[ -r /dev/tty && "$ASSUME_YES" != 1 ]] || { err "User '$PRIMARY_USER' does not exist."; exit 1; }
-      continue
-    fi
-    break
-  done
+  fi
   log "Primary user: ${BOLD}${PRIMARY_USER}${RESET}"
 fi
 
