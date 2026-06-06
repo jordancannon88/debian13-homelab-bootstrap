@@ -44,6 +44,14 @@ declare -A EXTRA_DESC=(
 # Where each script drops a one-line summary of what it did (read for the recap).
 SUMMARY_DIR="/var/lib/homelab-bootstrap/summaries"
 
+# Persistent error log for this run. Created lazily (only if something goes
+# wrong) so its mere existence means "an error occurred" — its location is
+# printed in the final report. Lives outside the throwaway WORKDIR so it
+# survives the cleanup trap.
+LOG_DIR="/var/log/homelab-bootstrap"
+ERROR_LOG="${LOG_DIR}/install-errors-$(date +%Y%m%d-%H%M%S).log"
+ERROR_COUNT=0
+
 # Scripts offered, in order. documentation.sh is last: it documents the host you
 # just set up (it generates a doc, it doesn't change the system).
 SCRIPTS=(harden.sh ancillary.sh docker.sh motd.sh documentation.sh)
@@ -67,6 +75,30 @@ warn() { printf '%s%s %s%s\n' "$YEL" "$S_WARN" "$*" "$RESET"; }
 err()  { printf '%s%s %s%s\n' "$RED" "$S_ERR" "$*" "$RESET" >&2; }
 note() { printf '   %s%s%s\n' "$DIM" "$*" "$RESET"; }
 step() { printf '\n'; hr '═'; printf '%s%s %s%s\n' "$BOLD$CYN" "$S_STEP" "$*" "$RESET"; hr '═'; }
+
+# add_error <script> <message> — record a problem to the persistent error log.
+# The log + its dir are created lazily here, so the file only exists if an issue
+# actually occurred (the final report keys off that).
+add_error() {
+  local script="$1"; shift
+  mkdir -p "$LOG_DIR" 2>/dev/null || true
+  printf '[%s] %s: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$script" "$*" >> "$ERROR_LOG" 2>/dev/null || true
+  ERROR_COUNT=$((ERROR_COUNT + 1))
+}
+
+# log_diagnostics <script> <logfile> — append the script's own error lines and a
+# short tail of its output to the error log, for context after the run.
+log_diagnostics() {
+  local script="$1" logf="$2"
+  [[ -n "$logf" && -f "$logf" ]] || return 0
+  {
+    printf '    --- error lines from %s ---\n' "$script"
+    grep -F "$S_ERR" "$logf" 2>/dev/null | sed 's/^/    /' || true
+    printf '    --- last 20 lines of %s output ---\n' "$script"
+    tail -n 20 "$logf" 2>/dev/null | sed 's/^/    /' || true
+    printf '\n'
+  } >> "$ERROR_LOG" 2>/dev/null || true
+}
 
 # confirm "Q?" [default Y|N] -> 0 yes / 1 no  (reads /dev/tty)
 confirm() {
@@ -204,7 +236,7 @@ if in_selected harden.sh || in_selected docker.sh || in_selected ancillary.sh; t
   while true; do
     (( ${#HUMANS[@]} > 0 )) && note "Existing users: ${HUMANS[*]}"
     if in_selected harden.sh; then
-      PRIMARY_USER="$(ask "Primary admin username to create/harden (sudo + SSH key)?" "$default_user")"
+      PRIMARY_USER="$(ask "Admin username (sudo + SSH key) — enter an existing user to harden, or a new name to create one" "$default_user")"
     else
       PRIMARY_USER="$(ask "Existing user to configure?" "$default_user")"
     fi
@@ -248,7 +280,7 @@ if in_selected harden.sh; then
   confirm "Run a full system upgrade (apt full-upgrade)?" Y && export SKIP_UPGRADE=0 || export SKIP_UPGRADE=1
   confirm "Lock the root account password (sudo still works)?" N && export DISABLE_ROOT_LOGIN=1 || export DISABLE_ROOT_LOGIN=0
   confirm "Blacklist usb-storage module (disables USB drives)?" N && export BLACKLIST_USB_STORAGE=1 || export BLACKLIST_USB_STORAGE=0
-  ALLOW_TCP_PORTS="$(ask "Extra TCP ports to open in the firewall (e.g. published container ports)" "")"; export ALLOW_TCP_PORTS
+  ALLOW_TCP_PORTS="$(ask "Extra TCP ports to open in the firewall, space-separated (e.g. published container ports: 8080 8096 32400)" "")"; export ALLOW_TCP_PORTS
   export DOCKER_COMPAT=0   # rootless Docker doesn't need rootful forward/NAT tweaks
 fi
 
@@ -317,8 +349,8 @@ for s in "${SELECTED[@]}"; do
   else
     url="${REPO_RAW_BASE}/${s}"
     info "Downloading: ${DIM}${url}${RESET}"
-    if ! curl -fsSL "$url" -o "${WORKDIR}/${s}"; then err "Failed to download ${s}."; STATUS[$s]="failed"; DETAIL[$s]="download failed"; break; fi
-    head -n1 "${WORKDIR}/${s}" | grep -q '^#!' || { err "${s} is not a script (no shebang)."; STATUS[$s]="failed"; DETAIL[$s]="bad download"; break; }
+    if ! curl -fsSL "$url" -o "${WORKDIR}/${s}"; then err "Failed to download ${s}."; STATUS[$s]="failed"; DETAIL[$s]="download failed"; add_error "$s" "download failed from ${url}"; break; fi
+    head -n1 "${WORKDIR}/${s}" | grep -q '^#!' || { err "${s} is not a script (no shebang)."; STATUS[$s]="failed"; DETAIL[$s]="bad download"; add_error "$s" "downloaded file is not a script (no shebang) — from ${url}"; break; }
     chmod +x "${WORKDIR}/${s}"; src="${WORKDIR}/${s}"; srcdesc="downloaded"
   fi
 
@@ -331,9 +363,18 @@ for s in "${SELECTED[@]}"; do
   if ASSUME_YES=1 BOOTSTRAP_NESTED=1 bash "$src" 2>&1 | tee "$logf"; then
     STATUS[$s]="ran"; DETAIL[$s]="${srcdesc}; $(( $(date +%s) - s_start ))s"
     [[ -s "${SUMMARY_DIR}/${s}" ]] && SUMM[$s]="$(head -n1 "${SUMMARY_DIR}/${s}")"
+    # Succeeded overall, but flag any error lines the script emitted along the way.
+    if grep -qF "$S_ERR" "$logf" 2>/dev/null; then
+      warn "${s} finished but reported error lines — see ${ERROR_LOG}"
+      add_error "$s" "completed (exit 0) but emitted error lines"
+      log_diagnostics "$s" "$logf"
+    fi
   else
     rc="${PIPESTATUS[0]}"; err "${s} exited with status ${rc} — stopping; later scripts were NOT run."
-    STATUS[$s]="failed"; DETAIL[$s]="${srcdesc}; exit ${rc}"; break
+    STATUS[$s]="failed"; DETAIL[$s]="${srcdesc}; exit ${rc}"
+    add_error "$s" "exited with status ${rc} — bootstrap stopped, later scripts not run"
+    log_diagnostics "$s" "$logf"
+    break
   fi
 done
 
@@ -395,9 +436,21 @@ if [[ -n "${NEXTSTEPS//[[:space:]]/}" ]]; then
   printf '%s%s  ⏭ NEXT STEPS%s\n' "$BOLD" "$MAG" "$RESET"
   printf '%s' "$NEXTSTEPS"
 fi
+
+# --- Errors: surface the log location if anything went wrong ------------------
+if [[ "$ERROR_COUNT" -gt 0 && -s "$ERROR_LOG" ]]; then
+  hr '─'
+  printf '%s%s  ✗ ERRORS%s\n' "$BOLD" "$RED" "$RESET"
+  printf '   %s%d issue(s) recorded during this run. Full details saved to:%s\n' "$DIM" "$ERROR_COUNT" "$RESET"
+  printf '   %s%s%s\n' "$BOLD$WHT" "$ERROR_LOG" "$RESET"
+  printf '   %sReview it with: %sless %s%s\n' "$DIM" "$CYN" "$ERROR_LOG" "$RESET"
+fi
+
 hr '═'
 if [[ -n "$fail" ]]; then
-  printf '%s%s  Fix the issue above, then re-run — completed scripts are idempotent. 🔧%s\n\n' "$BOLD" "$YEL" "$RESET"
+  printf '%s%s  Fix the issue above, then re-run — completed scripts are idempotent. 🔧%s\n' "$BOLD" "$YEL" "$RESET"
+  [[ -s "$ERROR_LOG" ]] && printf '%s%s  Error log: %s%s\n' "$BOLD" "$YEL" "$ERROR_LOG" "$RESET"
+  printf '\n'
 else
   printf '%s%s  Done. 🚀%s\n\n' "$BOLD" "$GRN" "$RESET"
 fi
