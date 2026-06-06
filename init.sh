@@ -138,7 +138,7 @@ describe() {
     ancillary.sh) printf 'pick-and-install extra packages (+ fish as your default shell)';;
     docker.sh)    printf 'Docker Engine + Compose + rootless setup + /opt/docker layout';;
     motd.sh)      printf 'cool dynamic login banner (host, IP, uptime) + docs link';;
-    documentation.sh) printf 'generate docs/connect.html — how to SSH into this host on its hardened port';;
+    documentation.sh) printf 'generate /tmp/connect.html — how to SSH into this host on its hardened port';;
     *)            printf 'bootstrap script';;
   esac
 }
@@ -318,9 +318,9 @@ fi
 
 # --- documentation.sh inputs (it auto-detects everything else; reuse what we have)
 if in_selected documentation.sh; then
-  # Write next to where init was launched, so the downloaded-copy run doesn't
-  # land the doc in the throwaway temp dir.
-  export OUT_FILE="$(pwd)/docs/connect.html"
+  # Always write the doc to /tmp, regardless of who launched init.sh or from
+  # where (this also avoids landing it in the throwaway download temp dir).
+  export OUT_FILE="/tmp/connect.html"
   # Keep the doc consistent with the SSH port/user we just configured, rather
   # than re-detecting (in a dry run sshd_config still shows the old port).
   [[ -n "${SSH_PORT:-}" ]] && export CONN_PORT="$SSH_PORT"
