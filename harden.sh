@@ -101,7 +101,7 @@ if [[ -n "${DRY_RUN+x}" ]]; then DRY_RUN_EXPLICIT=1; else DRY_RUN_EXPLICIT=0; fi
 DRY_RUN="${DRY_RUN:-}"   # resolved later in choose_run_mode
 
 START_TS="$(date +%s)"
-BACKUP_DIR="/root/hardening-backups/$(date +%F-%H%M%S)"
+BACKUP_DIR="/tmp/hardening-backups/$(date +%F-%H%M%S)"
 
 # State shared with ancillary.sh: usernames this run NEWLY created.
 STATE_DIR="/var/lib/homelab-bootstrap"

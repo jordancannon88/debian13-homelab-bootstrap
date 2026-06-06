@@ -188,7 +188,6 @@ HTML="$(cat <<EOF
   <tr><th>User</th><td>${e_user}</td></tr>
   <tr><th>Root access</th><td>${e_root}</td></tr>
   <tr><th>SSH Key</th><td>${e_key}</td></tr>
-  <tr><th>Role</th><td>Rootless Docker host — services under <code>/opt/docker/&lt;service&gt;</code></td></tr>
 </table>
 <div class="tip">
   <strong>Name vs. address.</strong> Prefer the hostname <code>${e_fqdn}</code> so the box can
