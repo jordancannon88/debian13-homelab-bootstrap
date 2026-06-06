@@ -2,9 +2,10 @@
 # ==============================================================================
 #  Debian 13 Homelab Bootstrap — init
 #  Entry point. Must run as root. It:
-#    1. asks WHICH scripts to run
-#    2. asks EVERY question up front (a single wizard) — including which
-#       ancillary packages to install
+#    1. asks WHICH steps to run (harden, extra services, MOTD, connect doc) —
+#       "extra services" is one prompt covering the optional packages and
+#       rootless Docker
+#    2. asks EVERY question up front (a single wizard)
 #    3. runs each chosen script NON-INTERACTIVELY (answers passed via env), so
 #       nothing stops mid-run to ask you anything
 #    4. prints ONE consolidated report (review + next steps)
@@ -28,14 +29,16 @@ REPO_RAW_BASE="${REPO_RAW_BASE:-https://raw.githubusercontent.com/jordancannon88
 ASSUME_YES="${ASSUME_YES:-0}"
 START_TS="$(date +%s)"
 
-# Packages ancillary.sh can install. The wizard lets you pick which to install;
-# the chosen list is passed to ancillary.sh via ANCILLARY_PKGS. Order = display.
-ANCILLARY_ALL_PKGS=(btop fish rsync qemu-guest-agent)
-declare -A ANCILLARY_PKG_DESC=(
+# Extra services init can install, presented to the user as one "extra services"
+# group. The apt packages are handled by ancillary.sh (chosen list passed via
+# ANCILLARY_PKGS); "docker" runs docker.sh (rootless Docker). Order = display.
+EXTRA_SERVICES=(btop fish rsync qemu-guest-agent docker)
+declare -A EXTRA_DESC=(
   [btop]="resource monitor (htop-like)"
   [fish]="friendly interactive shell"
   [rsync]="fast file copy / sync"
   [qemu-guest-agent]="QEMU/KVM guest integration (VMs only)"
+  [docker]="Docker Engine + Compose + rootless setup + /opt/docker layout"
 )
 
 # Where each script drops a one-line summary of what it did (read for the recap).
@@ -107,8 +110,6 @@ describe() {
     *)            printf 'bootstrap script';;
   esac
 }
-details() { case "$1" in ancillary.sh) printf '   %sChoose from:%s %s\n' "$DIM" "$RESET" "${ANCILLARY_ALL_PKGS[*]}";; esac; }
-
 in_selected() { local x; for x in "${SELECTED[@]}"; do [[ "$x" == "$1" ]] && return 0; done; return 1; }
 # in_selected_arr <needle> <item...> — is <needle> among the remaining args?
 in_selected_arr() { local n="$1"; shift; local x; for x in "$@"; do [[ "$x" == "$n" ]] && return 0; done; return 1; }
@@ -154,15 +155,36 @@ export DRY_RUN
 # Select which scripts to run.
 declare -A STATUS DETAIL SUMM LOGS
 SELECTED=()
-for s in "${SCRIPTS[@]}"; do
-  printf '\n%s%s %s%s%s — %s%s%s\n' "$BOLD" "$S_STEP" "$CYN" "$s" "$RESET" "$DIM" "$(describe "$s")" "$RESET"
-  details "$s"
-  if confirm "Run ${s}?" Y; then
-    SELECTED+=("$s")
-  else
-    STATUS[$s]="skipped"; DETAIL[$s]="you chose not to run it"
-  fi
-done
+ANCILLARY_PICK=()   # apt packages chosen in the "extra services" group below
+
+skip_script() { STATUS[$1]="skipped"; DETAIL[$1]="you chose not to run it"; }
+
+# --- harden.sh
+printf '\n%s%s %s%s%s — %s%s%s\n' "$BOLD" "$S_STEP" "$CYN" "harden.sh" "$RESET" "$DIM" "$(describe harden.sh)" "$RESET"
+if confirm "Harden the system?" Y; then SELECTED+=(harden.sh); else skip_script harden.sh; fi
+
+# --- ancillary.sh + docker.sh — combined "extra services" group.
+printf '\n%s%s %sExtra services%s — %s%s%s\n' "$BOLD" "$S_STEP" "$CYN" "$RESET" "$DIM" "extra packages + optional rootless Docker" "$RESET"
+if confirm "Install extra services?" Y; then
+  info "Pick which services to install:"
+  INSTALL_DOCKER=0
+  for p in "${EXTRA_SERVICES[@]}"; do
+    confirm "Install ${p} — ${EXTRA_DESC[$p]}?" Y || continue
+    if [[ "$p" == "docker" ]]; then INSTALL_DOCKER=1; else ANCILLARY_PICK+=("$p"); fi
+  done
+  if (( ${#ANCILLARY_PICK[@]} > 0 )); then SELECTED+=(ancillary.sh); else skip_script ancillary.sh; fi
+  if (( INSTALL_DOCKER == 1 )); then SELECTED+=(docker.sh); else skip_script docker.sh; fi
+else
+  skip_script ancillary.sh; skip_script docker.sh
+fi
+
+# --- motd.sh
+printf '\n%s%s %s%s%s — %s%s%s\n' "$BOLD" "$S_STEP" "$CYN" "motd.sh" "$RESET" "$DIM" "$(describe motd.sh)" "$RESET"
+if confirm "Generate a custom MOTD for this system?" Y; then SELECTED+=(motd.sh); else skip_script motd.sh; fi
+
+# --- connect-doc.sh
+printf '\n%s%s %s%s%s — %s%s%s\n' "$BOLD" "$S_STEP" "$CYN" "connect-doc.sh" "$RESET" "$DIM" "$(describe connect-doc.sh)" "$RESET"
+if confirm "Run connect-doc.sh?" Y; then SELECTED+=(connect-doc.sh); else skip_script connect-doc.sh; fi
 
 if (( ${#SELECTED[@]} == 0 )); then
   warn "No scripts selected — nothing to do."
@@ -239,21 +261,10 @@ if in_selected docker.sh; then
   confirm "Also create an example app under /opt/docker?" Y && export CREATE_EXAMPLE_APP=1 || export CREATE_EXAMPLE_APP=0
 fi
 
-# --- ancillary.sh questions
+# --- ancillary.sh questions (packages were picked in Step 1's extra-services group)
 if in_selected ancillary.sh; then
-  info "Pick which packages ancillary.sh should install:"
-  ANCILLARY_PICK=()
-  for p in "${ANCILLARY_ALL_PKGS[@]}"; do
-    confirm "Install ${p} — ${ANCILLARY_PKG_DESC[$p]}?" Y && ANCILLARY_PICK+=("$p")
-  done
-  if (( ${#ANCILLARY_PICK[@]} == 0 )); then
-    # Sentinel: explicitly "install nothing" (distinct from the env being unset).
-    export ANCILLARY_PKGS="none"
-    note "No packages selected — ancillary.sh will install nothing."
-  else
-    export ANCILLARY_PKGS="${ANCILLARY_PICK[*]}"
-    log "Will install: ${BOLD}${ANCILLARY_PICK[*]}${RESET}"
-  fi
+  export ANCILLARY_PKGS="${ANCILLARY_PICK[*]}"
+  log "Will install: ${BOLD}${ANCILLARY_PICK[*]}${RESET}"
 
   # The fish default-shell question only matters if fish is being installed.
   if in_selected_arr fish "${ANCILLARY_PICK[@]}"; then
