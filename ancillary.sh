@@ -4,13 +4,16 @@
 #  Installs extra/quality-of-life packages and sets up the fish shell.
 #
 #  - Installs a selectable set of packages: btop, fish, rsync, qemu-guest-agent,
-#    zabbix-agent2. By default (standalone run) it installs them all; init.sh's
-#    wizard lets you pick a subset and passes it via ANCILLARY_PKGS.
+#    zabbix-agent2, alloy. By default (standalone run) it installs them all;
+#    init.sh's wizard lets you pick a subset and passes it via ANCILLARY_PKGS.
 #  - qemu-guest-agent (if selected) is started only when run inside a QEMU/KVM
 #    guest with the guest-agent channel; otherwise it's left inactive.
 #  - zabbix-agent2 (if selected) adds Zabbix's official apt repo, installs the
 #    agent, and writes a custom config with this host's name and the Zabbix
 #    server address (ZABBIX_SERVER_ACTIVE, or asked when run interactively).
+#  - alloy (if selected) adds Grafana's official apt repo, installs Grafana
+#    Alloy, and writes a journal-first log-shipping config pointing at the Loki
+#    server (LOKI_URL, or asked when run interactively; defaults to localhost).
 #  - fish shell (if selected): if harden.sh NEWLY created user(s) this run, fish
 #    is made their default shell automatically. Otherwise it asks which current
 #    users should get fish as their default shell. Affected users get it as their
@@ -25,6 +28,9 @@
 #    ZABBIX_SERVER_ACTIVE="host[:port]" -> Zabbix server/proxy for active checks
 #                                       (required when zabbix-agent2 is selected;
 #                                       asked interactively if unset)
+#    LOKI_URL="scheme://host:port" -> Loki base URL for Alloy to push to
+#                                       (used when alloy is selected; asked
+#                                       interactively, defaults to localhost:3100)
 #    DRY_RUN=1|0            -> force preview / actual (else asks)
 #    ASSUME_YES=1           -> answer "yes" to every prompt (automation)
 # ==============================================================================
@@ -33,6 +39,15 @@ set -euo pipefail
 
 # Ensure sbin paths are present even under non-login shells / restricted sudo.
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+
+# Directory this script lives in — used to find bundled assets (alloy/config.alloy).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Config templates. Default to the copies alongside this script; if absent
+# (e.g. this script was downloaded on its own), they're fetched from the repo.
+ALLOY_CONFIG_SRC="${ALLOY_CONFIG_SRC:-${SCRIPT_DIR}/alloy/config.alloy}"
+ZBX_CONFIG_SRC="${ZBX_CONFIG_SRC:-${SCRIPT_DIR}/zabbix/zabbix_agent2.conf}"
+# Raw base URL used to fetch the Alloy template when it isn't present locally.
+REPO_RAW_BASE="${REPO_RAW_BASE:-https://raw.githubusercontent.com/jordancannon88/debian13-homelab-bootstrap/main}"
 
 ASSUME_YES="${ASSUME_YES:-0}"
 FISH_USERS="${FISH_USERS:-}"
@@ -49,13 +64,21 @@ declare -A PKG_DESC=(
   [rsync]="fast file copy / sync"
   [qemu-guest-agent]="QEMU/KVM guest integration (VMs only)"
   [zabbix-agent2]="Zabbix agent 2 monitoring (needs a Zabbix server)"
+  [alloy]="Grafana Alloy log shipper (needs a Loki server)"
 )
-ALL_PKGS=(btop fish rsync qemu-guest-agent zabbix-agent2)
+ALL_PKGS=(btop fish rsync qemu-guest-agent zabbix-agent2 alloy)
 
 # Zabbix agent 2 specifics (its own repo + custom config; see the step below).
 ZBX_VERSION="7.4"
 ZBX_CONF="/etc/zabbix/zabbix_agent2.conf"
 ZBX_SERVER_ACTIVE="${ZABBIX_SERVER_ACTIVE:-}"
+
+# Grafana Alloy specifics (Grafana's apt repo + custom config; see the step below).
+ALLOY_CONF="/etc/alloy/config.alloy"
+# Base URL of the Loki server (scheme://host:port, no path). Required when alloy
+# is selected; asked interactively if unset. The /loki/api/v1/push path is added
+# automatically in the config template.
+LOKI_URL="${LOKI_URL:-}"
 
 # Which packages to install. ANCILLARY_PKGS (space-separated list, or "none")
 # overrides the selection — init.sh sets it from the wizard's package picker.
@@ -91,6 +114,7 @@ STEP_NO=0
 TOTAL_STEPS=1
 pkg_selected qemu-guest-agent && TOTAL_STEPS=$((TOTAL_STEPS + 1))
 pkg_selected zabbix-agent2    && TOTAL_STEPS=$((TOTAL_STEPS + 1))
+pkg_selected alloy           && TOTAL_STEPS=$((TOTAL_STEPS + 1))
 pkg_selected fish            && TOTAL_STEPS=$((TOTAL_STEPS + 1))
 SUMMARY=()
 record() { SUMMARY+=("$1"$'\t'"$2"); }
@@ -162,587 +186,44 @@ set_fish_default() {
   fi
 }
 
-# write_zabbix_conf <target> <hostname> <serveractive> <virtualized> — write the
-# custom zabbix_agent2.conf, substituting this host's name and the Zabbix server
-# address into the two relevant lines. The cpuTemperature UserParameter's key
-# prefix is rewritten from pve2 to this host's name; on a VM/container it's
-# commented out (no real CPU thermal sensors there). The body is written verbatim
-# (single-quoted heredoc, so $/`/awk snippets inside are preserved); awk -v then
-# swaps the values safely regardless of characters they contain.
-write_zabbix_conf() {
-  local target="$1" hn="$2" sa="$3" virt="${4:-0}" tmp
+# resolve_template <local_src> <repo_relpath> — locate a config template. Sets
+# RESOLVED_TEMPLATE to a readable path: the local copy alongside this script if
+# present, otherwise a freshly downloaded temp copy fetched from the repo (for
+# the case where this script was downloaded on its own). RESOLVED_TEMPLATE_IS_TMP
+# is 1 when it downloaded (so the caller knows to rm it). Returns non-zero if the
+# template is neither local nor fetchable.
+RESOLVED_TEMPLATE=""
+RESOLVED_TEMPLATE_IS_TMP=0
+resolve_template() {
+  local src="$1" rel="$2" url tmp
+  RESOLVED_TEMPLATE=""; RESOLVED_TEMPLATE_IS_TMP=0
+  if [[ -r "$src" ]]; then
+    RESOLVED_TEMPLATE="$src"
+    return 0
+  fi
+  url="${REPO_RAW_BASE}/${rel}"
   tmp="$(mktemp)"
-  cat > "$tmp" <<'ZBXEOF'
-# This is a configuration file for Zabbix agent 2 (Unix)
-# To get more information about Zabbix, visit https://www.zabbix.com
-
-############ GENERAL PARAMETERS #################
-
-### Option: PidFile
-#       Name of PID file.
-#
-# Mandatory: no
-# Default:
-# PidFile=/tmp/zabbix_agent2.pid
-
-PidFile=/run/zabbix/zabbix_agent2.pid
-
-### Option: LogType
-#       Specifies where log messages are written to:
-#               system  - syslog
-#               file    - file specified with LogFile parameter
-#               console - standard output
-#
-# Mandatory: no
-# Default:
-# LogType=file
-
-### Option: LogFile
-#       Log file name for LogType 'file' parameter.
-#
-# Mandatory: yes, if LogType is set to file, otherwise no
-# Default:
-# LogFile=/tmp/zabbix_agent2.log
-
-LogFile=/var/log/zabbix/zabbix_agent2.log
-
-### Option: LogFileSize
-#       Maximum size of log file in MB.
-#       0 - disable automatic log rotation.
-#
-# Mandatory: no
-# Range: 0-1024
-# Default:
-# LogFileSize=1
-
-LogFileSize=0
-
-### Option: DebugLevel
-#       Specifies debug level:
-#       0 - basic information about starting and stopping of Zabbix processes
-#       1 - critical information
-#       2 - error information
-#       3 - warnings
-#       4 - for debugging (produces lots of information)
-#       5 - extended debugging (produces even more information)
-#
-# Mandatory: no
-# Range: 0-5
-# Default:
-# DebugLevel=3
-
-### Option: SourceIP
-#       Source IP address for outgoing connections.
-#
-# Mandatory: no
-# Default:
-# SourceIP=
-
-##### Passive checks related
-
-### Option: Server
-#       List of comma delimited IP addresses, optionally in CIDR notation, or DNS names of Zabbix servers and Zabbix proxies.
-#       Incoming connections will be accepted only from the hosts listed here.
-#       If IPv6 support is enabled then '127.0.0.1', '::127.0.0.1', '::ffff:127.0.0.1' are treated equally
-#       and '::/0' will allow any IPv4 or IPv6 address.
-#       '0.0.0.0/0' can be used to allow any IPv4 address.
-#       Example: Server=127.0.0.1,192.168.1.0/24,::1,2001:db8::/32,zabbix.example.com
-#
-#   If left empty or not set will disable passive checks, and Zabbix agent 2 will not listen on the ListenPort.
-#
-# Mandatory: no
-# Default:
-# Server=
-
-Server=127.0.0.1
-
-### Option: ListenPort
-#       Agent will listen on this port for connections from the server.
-#
-# Mandatory: no
-# Range: 1024-32767
-# Default:
-# ListenPort=10050
-
-### Option: ListenIP
-#       List of comma delimited IP addresses that the agent should listen on.
-#       First IP address is sent to Zabbix server if connecting to it to retrieve list of active checks.
-#
-# Mandatory: no
-# Default:
-# ListenIP=0.0.0.0
-
-### Option: StatusPort
-#       Agent will listen on this port for HTTP status requests.
-#
-# Mandatory: no
-# Range: 1024-32767
-# Default:
-# StatusPort=
-
-##### Active checks related
-
-### Option: ServerActive
-#       Zabbix server/proxy address or cluster configuration to get active checks from.
-#       Server/proxy address is IP address or DNS name and optional port separated by colon.
-#       Cluster configuration is one or more server addresses separated by semicolon.
-#       Multiple Zabbix servers/clusters and Zabbix proxies can be specified, separated by comma.
-#       More than one Zabbix proxy should not be specified from each Zabbix server/cluster.
-#       If Zabbix proxy is specified then Zabbix server/cluster for that proxy should not be specified.
-#       Multiple comma-delimited addresses can be provided to use several independent Zabbix servers in parallel. Spaces are allowed.
-#       If port is not specified, default port is used.
-#       IPv6 addresses must be enclosed in square brackets if port for that host is specified.
-#       If port is not specified, square brackets for IPv6 addresses are optional.
-#       If this parameter is not specified, active checks are disabled.
-#       Example for Zabbix proxy:
-#               ServerActive=127.0.0.1:10051
-#       Example for multiple servers:
-#               ServerActive=127.0.0.1:20051,zabbix.domain,[::1]:30051,::1,[12fc::1]
-#       Example for high availability:
-#               ServerActive=zabbix.cluster.node1;zabbix.cluster.node2:20051;zabbix.cluster.node3
-#       Example for high availability with two clusters and one server:
-#               ServerActive=zabbix.cluster.node1;zabbix.cluster.node2:20051,zabbix.cluster2.node1;zabbix.cluster2.node2,zabbix.domain
-#
-# Mandatory: no
-# Default:
-# ServerActive=
-
-ServerActive=zabbix:10051
-
-### Option: Hostname
-#       List of comma delimited unique, case sensitive hostnames.
-#       Required for active checks and must match hostnames as configured on the server.
-#       Value is acquired from HostnameItem if undefined.
-#
-# Mandatory: no
-# Default:
-# Hostname=
-
-Hostname=machine001
-
-### Option: HostnameItem
-#       Item used for generating Hostname if it is undefined. Ignored if Hostname is defined.
-#       Does not support UserParameters or aliases.
-#
-# Mandatory: no
-# Default:
-# HostnameItem=system.hostname
-
-### Option: HostMetadata
-#       Optional parameter that defines host metadata.
-#       Host metadata is used at host auto-registration process.
-#       An agent will issue an error and not start if the value is over limit of 2034 bytes.
-#       If not defined, value will be acquired from HostMetadataItem.
-#
-# Mandatory: no
-# Range: 0-2034 bytes
-# Default:
-# HostMetadata=
-
-### Option: HostMetadataItem
-#       Optional parameter that defines an item used for getting host metadata.
-#       Host metadata is used at host auto-registration process.
-#       During an auto-registration request an agent will log a warning message if
-#       the value returned by specified item is over limit of 65535 characters.
-#       This option is only used when HostMetadata is not defined.
-#
-# Mandatory: no
-# Default:
-# HostMetadataItem=
-
-### Option: HostInterface
-#       Optional parameter that defines host interface.
-#       Host interface is used at host auto-registration process.
-#       An agent will issue an error and not start if the value is over limit of 255 characters.
-#       If not defined, value will be acquired from HostInterfaceItem.
-#
-# Mandatory: no
-# Range: 0-255 characters
-# Default:
-# HostInterface=
-
-### Option: HostInterfaceItem
-#       Optional parameter that defines an item used for getting host interface.
-#       Host interface is used at host auto-registration process.
-#       During an auto-registration request an agent will log a warning message if
-#       the value returned by specified item is over limit of 255 characters.
-#       This option is only used when HostInterface is not defined.
-#
-# Mandatory: no
-# Default:
-# HostInterfaceItem=
-
-### Option: RefreshActiveChecks
-#       How often list of active checks is refreshed, in seconds.
-#
-# Mandatory: no
-# Range: 1-86400
-# Default:
-# RefreshActiveChecks=5
-
-### Option: BufferSend
-#       Do not keep data longer than N seconds in buffer.
-#
-# Mandatory: no
-# Range: 1-3600
-# Default:
-# BufferSend=5
-
-### Option: BufferSize
-#       Maximum number of values in a memory buffer. The agent will send
-#       all collected data to Zabbix Server or Proxy if the buffer is full.
-#       Option is not valid if EnablePersistentBuffer=1
-#
-# Mandatory: no
-# Range: 2-65535
-# Default:
-# BufferSize=1000
-
-### Option: EnablePersistentBuffer
-#       Enable usage of local persistent storage for active items.
-#       0 - disabled, in-memory buffer is used (default); 1 - use persistent buffer
-# Mandatory: no
-# Range: 0-1
-# Default:
-# EnablePersistentBuffer=0
-
-### Option: PersistentBufferPeriod
-#       Zabbix Agent2 will keep data for this time period in case of no
-#       connectivity with Zabbix server or proxy. Older data will be lost. Log data will be preserved.
-#       Option is valid if EnablePersistentBuffer=1
-#
-# Mandatory: no
-# Range: 1m-365d
-# Default:
-# PersistentBufferPeriod=1h
-
-### Option: PersistentBufferFile
-#       Full filename. Zabbix Agent2 will keep SQLite database in this file.
-#       Option is valid if EnablePersistentBuffer=1
-#
-# Mandatory: no
-# Default:
-# PersistentBufferFile=
-
-### Option: HeartbeatFrequency
-#       Frequency of heartbeat messages in seconds.
-#       Used for monitoring availability of active checks.
-#       0 - heartbeat messages disabled.
-#
-# Mandatory: no
-# Range: 0-3600
-# Default: 60
-# HeartbeatFrequency=
-
-############ ADVANCED PARAMETERS #################
-
-### Option: Alias
-#       Sets an alias for an item key. It can be used to substitute long and complex item key with a smaller and simpler one.
-#       Multiple Alias parameters may be present. Multiple parameters with the same Alias key are not allowed.
-#       Different Alias keys may reference the same item key.
-#       For example, to retrieve the ID of user 'zabbix':
-#       Alias=zabbix.userid:vfs.file.regexp[/etc/passwd,^zabbix:.:([0-9]+),,,,\1]
-#       Now shorthand key zabbix.userid may be used to retrieve data.
-#       Aliases can be used in HostMetadataItem but not in HostnameItem parameters.
-#
-# Mandatory: no
-# Range:
-# Default:
-
-### Option: Timeout
-#       Specifies how long to wait (in seconds) for establishing connection and exchanging data with Zabbix proxy or server.
-#
-# Mandatory: no
-# Range: 1-30
-# Default:
-# Timeout=3
-
-### Option: Include
-#       You may include individual files or all files in a directory in the configuration file.
-#       Installing Zabbix will create include directory in /usr/local/etc, unless modified during the compile time.
-#
-# Mandatory: no
-# Default:
-# Include=
-
-Include=/etc/zabbix/zabbix_agent2.d/*.conf
-
-# Include=/usr/local/etc/zabbix_agent2.userparams.conf
-# Include=/usr/local/etc/zabbix_agent2.conf.d/
-# Include=/usr/local/etc/zabbix_agent2.conf.d/*.conf
-
-### Option:PluginTimeout
-#       Timeout for connections with external plugins.
-#
-# Mandatory: no
-# Range: 1-30
-# Default: <Global timeout>
-# PluginTimeout=
-
-### Option:PluginSocket
-#       Path to unix socket for external plugin communications.
-#
-# Mandatory: no
-# Default:/tmp/agent.plugin.sock
-# PluginSocket=
-
-PluginSocket=/run/zabbix/agent.plugin.sock
-
-####### USER-DEFINED MONITORED PARAMETERS #######
-
-### Option: UnsafeUserParameters
-#       Allow all characters to be passed in arguments to user-defined parameters.
-#       The following characters are not allowed:
-#       \ ' " ` * ? [ ] { } ~ $ ! & ; ( ) < > | # @
-#       Additionally, newline characters are not allowed.
-#       0 - do not allow
-#       1 - allow
-#
-# Mandatory: no
-# Range: 0-1
-# Default:
-# UnsafeUserParameters=0
-
-UnsafeUserParameters=1
-
-### Option: UserParameter
-#       User-defined parameter to monitor. There can be several user-defined parameters.
-#       Format: UserParameter=<key>,<shell command>
-#       See 'zabbix_agentd' directory for examples.
-#
-# Mandatory: no
-# Default:
-# UserParameter=
-
-#UserParameter=pve2.cpuTemperature,sensors | grep Tctl | awk -F'[:+°]' '{avg+=$3}END{print avg/NR}'
-
-### New command
-UserParameter=pve2.cpuTemperature,inxi -s | head -n 2 | tail -n 1 | awk '{print $6}'
-
-### Option: UserParameterDir
-#       Directory to execute UserParameter commands from. Only one entry is allowed.
-#       When executing UserParameter commands the agent will change the working directory to the one
-#       specified in the UserParameterDir option.
-#       This way UserParameter commands can be specified using the relative ./ prefix.
-#
-# Mandatory: no
-# Default:
-# UserParameterDir=
-
-### Option: ControlSocket
-#       The control socket, used to send runtime commands with '-R' option.
-#
-# Mandatory: no
-# Default:
-# ControlSocket=
-
-ControlSocket=/run/zabbix/agent.sock
-
-####### TLS-RELATED PARAMETERS #######
-
-### Option: TLSConnect
-#       How the agent should connect to server or proxy. Used for active checks.
-#       Only one value can be specified:
-#               unencrypted - connect without encryption
-#               psk         - connect using TLS and a pre-shared key
-#               cert        - connect using TLS and a certificate
-#
-# Mandatory: yes, if TLS certificate or PSK parameters are defined (even for 'unencrypted' connection)
-# Default:
-# TLSConnect=unencrypted
-
-### Option: TLSAccept
-#       What incoming connections to accept.
-#       Multiple values can be specified, separated by comma:
-#               unencrypted - accept connections without encryption
-#               psk         - accept connections secured with TLS and a pre-shared key
-#               cert        - accept connections secured with TLS and a certificate
-#
-# Mandatory: yes, if TLS certificate or PSK parameters are defined (even for 'unencrypted' connection)
-# Default:
-# TLSAccept=unencrypted
-
-### Option: TLSCAFile
-#       Full pathname of a file containing the top-level CA(s) certificates for
-#       peer certificate verification.
-#
-# Mandatory: no
-# Default:
-# TLSCAFile=
-
-### Option: TLSCRLFile
-#       Full pathname of a file containing revoked certificates.
-#
-# Mandatory: no
-# Default:
-# TLSCRLFile=
-
-### Option: TLSServerCertIssuer
-#               Allowed server certificate issuer.
-#
-# Mandatory: no
-# Default:
-# TLSServerCertIssuer=
-
-### Option: TLSServerCertSubject
-#               Allowed server certificate subject.
-#
-# Mandatory: no
-# Default:
-# TLSServerCertSubject=
-
-### Option: TLSCertFile
-#       Full pathname of a file containing the agent certificate or certificate chain.
-#
-# Mandatory: no
-# Default:
-# TLSCertFile=
-
-### Option: TLSKeyFile
-#       Full pathname of a file containing the agent private key.
-#
-# Mandatory: no
-# Default:
-# TLSKeyFile=
-
-### Option: TLSPSKIdentity
-#       Unique, case sensitive string used to identify the pre-shared key.
-#
-# Mandatory: no
-# Default:
-# TLSPSKIdentity=
-
-### Option: TLSPSKFile
-#       Full pathname of a file containing the pre-shared key.
-#
-# Mandatory: no
-# Default:
-# TLSPSKFile=
-
-####### PLUGIN-SPECIFIC PARAMETERS #######
-
-### Option: Plugins
-#       A plugin can have one or more plugin specific configuration parameters in format:
-#     Plugins.<PluginName>.<Parameter1>=<value1>
-#     Plugins.<PluginName>.<Parameter2>=<value2>
-#
-# Mandatory: no
-# Range:
-# Default:
-
-### Option: Plugins.Log.MaxLinesPerSecond
-#       Maximum number of new lines the agent will send per second to Zabbix Server
-#       or Proxy processing 'log' and 'logrt' active checks.
-#       The provided value will be overridden by the parameter 'maxlines',
-#       provided in 'log' or 'logrt' item keys.
-#
-# Mandatory: no
-# Range: 1-1000
-# Default:
-# Plugins.Log.MaxLinesPerSecond=20
-
-### Option: AllowKey
-#       Allow execution of item keys matching pattern.
-#       Multiple keys matching rules may be defined in combination with DenyKey.
-#       Key pattern is wildcard expression, which support "*" character to match any number of any characters in certain position. It might be used in both key name and key arguments.
-#       Parameters are processed one by one according their appearance order.
-#       If no AllowKey or DenyKey rules defined, all keys are allowed.
-#
-# Mandatory: no
-
-### Option: DenyKey
-#       Deny execution of items keys matching pattern.
-#       Multiple keys matching rules may be defined in combination with AllowKey.
-#       Key pattern is wildcard expression, which support "*" character to match any number of any characters in certain position. It might be used in both key name and key arguments.
-#       Parameters are processed one by one according their appearance order.
-#       If no AllowKey or DenyKey rules defined, all keys are allowed.
-#       Unless another system.run[*] rule is specified DenyKey=system.run[*] is added by default.
-#
-# Mandatory: no
-# Default:
-# DenyKey=system.run[*]
-
-### Option: Plugins.SystemRun.LogRemoteCommands
-#       Enable logging of executed shell commands as warnings.
-#       0 - disabled
-#       1 - enabled
-#
-# Mandatory: no
-# Default:
-# Plugins.SystemRun.LogRemoteCommands=0
-
-### Option: ForceActiveChecksOnStart
-#       Perform active checks immediately after restart for first received configuration.
-#       Also available as per plugin configuration, example: Plugins.Uptime.System.ForceActiveChecksOnStart=1
-#
-# Mandatory: no
-# Range: 0-1
-# Default:
-# ForceActiveChecksOnStart=0
-
-# Include configuration files for plugins
-Include=/etc/zabbix/zabbix_agent2.d/plugins.d/*.conf
-
-####### For advanced users - TLS ciphersuite selection criteria #######
-
-### Option: TLSCipherCert13
-#       Cipher string for OpenSSL 1.1.1 or newer in TLS 1.3.
-#       Override the default ciphersuite selection criteria for certificate-based encryption.
-#
-# Mandatory: no
-# Default:
-# TLSCipherCert13=
-
-### Option: TLSCipherCert
-#       OpenSSL (TLS 1.2) cipher string.
-#       Override the default ciphersuite selection criteria for certificate-based encryption.
-#       Example:
-#               EECDH+aRSA+AES128:RSA+aRSA+AES128
-#
-# Mandatory: no
-# Default:
-# TLSCipherCert=
-
-### Option: TLSCipherPSK13
-#       Cipher string for OpenSSL 1.1.1 or newer in TLS 1.3.
-#       Override the default ciphersuite selection criteria for PSK-based encryption.
-#       Example:
-#               TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256
-#
-# Mandatory: no
-# Default:
-# TLSCipherPSK13=
-
-### Option: TLSCipherPSK
-#       OpenSSL (TLS 1.2) cipher string.
-#       Override the default ciphersuite selection criteria for PSK-based encryption.
-#       Example:
-#               kECDHEPSK+AES128:kPSK+AES128
-#
-# Mandatory: no
-# Default:
-# TLSCipherPSK=
-
-### Option: TLSCipherAll13
-#       Cipher string for OpenSSL 1.1.1 or newer in TLS 1.3.
-#       Override the default ciphersuite selection criteria for certificate- and PSK-based encryption.
-#       Example:
-#               TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256
-#
-# Mandatory: no
-# Default:
-# TLSCipherAll13=
-
-### Option: TLSCipherAll
-#       OpenSSL (TLS 1.2) cipher string.
-#       Override the default ciphersuite selection criteria for certificate- and PSK-based encryption.
-#       Example:
-#               EECDH+aRSA+AES128:RSA+aRSA+AES128:kECDHEPSK+AES128:kPSK+AES128
-#
-# Mandatory: no
-# Default:
-# TLSCipherAll=
-ZBXEOF
+  if command -v curl >/dev/null 2>&1 && curl -fsSL "$url" -o "$tmp"; then
+    RESOLVED_TEMPLATE="$tmp"; RESOLVED_TEMPLATE_IS_TMP=1; return 0
+  elif command -v wget >/dev/null 2>&1 && wget -qO "$tmp" "$url"; then
+    RESOLVED_TEMPLATE="$tmp"; RESOLVED_TEMPLATE_IS_TMP=1; return 0
+  fi
+  rm -f "$tmp"
+  err "Config template not found at ${src} and could not be fetched from ${url}."
+  return 1
+}
+
+# write_zabbix_conf <target> <hostname> <serveractive> <virtualized> — render the
+# custom zabbix_agent2.conf to <target>, substituting this host's name and the
+# Zabbix server address into the two relevant lines. The cpuTemperature
+# UserParameter's key prefix is rewritten from pve2 to this host's name; on a
+# VM/container it's commented out (no real CPU thermal sensors there). The
+# template is zabbix/zabbix_agent2.conf alongside this script (or fetched from
+# the repo); awk -v then swaps the values safely regardless of characters they
+# contain. Returns non-zero if the template can't be found.
+write_zabbix_conf() {
+  local target="$1" hn="$2" sa="$3" virt="${4:-0}"
+  resolve_template "$ZBX_CONFIG_SRC" "zabbix/zabbix_agent2.conf" || return 1
   awk -v hn="$hn" -v sa="$sa" -v virt="$virt" '
     /^Hostname=machine001$/       { print "Hostname=" hn; next }
     /^ServerActive=zabbix:10051$/ { print "ServerActive=" sa; next }
@@ -752,8 +233,21 @@ ZBXEOF
       print; next
     }
     { print }
-  ' "$tmp" > "$target"
-  rm -f "$tmp"
+  ' "$RESOLVED_TEMPLATE" > "$target"
+  [[ "$RESOLVED_TEMPLATE_IS_TMP" == "1" ]] && rm -f "$RESOLVED_TEMPLATE"
+  return 0
+}
+
+# write_alloy_conf <target> <loki_base_url> — render the journal-first Alloy
+# config to <target>, substituting the Loki base URL into the loki.write
+# endpoint (awk swaps the @@LOKI_ENDPOINT@@ token for the URL, safe regardless
+# of the / and : it contains). Returns non-zero if the template can't be found.
+write_alloy_conf() {
+  local target="$1" url="$2"
+  resolve_template "$ALLOY_CONFIG_SRC" "alloy/config.alloy" || return 1
+  awk -v url="$url" '{ gsub(/@@LOKI_ENDPOINT@@/, url); print }' "$RESOLVED_TEMPLATE" > "$target"
+  [[ "$RESOLVED_TEMPLATE_IS_TMP" == "1" ]] && rm -f "$RESOLVED_TEMPLATE"
+  return 0
 }
 
 # ==============================================================================
@@ -810,10 +304,10 @@ else
   fi
 fi
 
-# qemu-guest-agent and zabbix-agent2 have their own steps below; install the rest here.
+# qemu-guest-agent, zabbix-agent2 and alloy have their own steps below; install the rest here.
 APT_PKGS=()
 for p in "${SELECTED_PKGS[@]}"; do
-  case "$p" in qemu-guest-agent|zabbix-agent2) ;; *) APT_PKGS+=("$p");; esac
+  case "$p" in qemu-guest-agent|zabbix-agent2|alloy) ;; *) APT_PKGS+=("$p");; esac
 done
 
 # ==============================================================================
@@ -909,7 +403,11 @@ if [[ -z "$ZBX_SERVER_ACTIVE" ]]; then
   record "Zabbix agent 2" "skipped (no ZABBIX_SERVER_ACTIVE)"
 elif [[ "$DRY_RUN" == "1" ]]; then
   dry "add Zabbix ${ZBX_VERSION} apt repo, then apt-get install zabbix-agent2 inxi"
-  dry "write ${ZBX_CONF} with Hostname=${ZBX_HOSTNAME} and ServerActive=${ZBX_SERVER_ACTIVE}"
+  if [[ -r "$ZBX_CONFIG_SRC" ]]; then
+    dry "render ${ZBX_CONFIG_SRC} -> ${ZBX_CONF} with Hostname=${ZBX_HOSTNAME} and ServerActive=${ZBX_SERVER_ACTIVE}"
+  else
+    dry "fetch zabbix/zabbix_agent2.conf from repo -> ${ZBX_CONF} with Hostname=${ZBX_HOSTNAME} and ServerActive=${ZBX_SERVER_ACTIVE}"
+  fi
   if [[ "$ZBX_VIRT" == "1" ]]; then
     dry "VM/container detected — comment out the ${ZBX_HOSTNAME}.cpuTemperature UserParameter"
   else
@@ -944,24 +442,115 @@ else
     cp -a "$ZBX_CONF" "${ZBX_CONF}.bak.$(date +%F-%H%M%S)"
   fi
   install -d -m 755 "$(dirname "$ZBX_CONF")"
-  write_zabbix_conf "$ZBX_CONF" "$ZBX_HOSTNAME" "$ZBX_SERVER_ACTIVE" "$ZBX_VIRT"
-  log "Wrote ${ZBX_CONF} (Hostname=${ZBX_HOSTNAME}, ServerActive=${ZBX_SERVER_ACTIVE})."
-  if [[ "$ZBX_VIRT" == "1" ]]; then
-    note "VM/container detected — ${ZBX_HOSTNAME}.cpuTemperature UserParameter commented out (no CPU sensors)."
-  else
-    note "cpuTemperature UserParameter key set to ${ZBX_HOSTNAME}.cpuTemperature."
-  fi
+  _zbx_tmp="$(mktemp)"
+  if write_zabbix_conf "$_zbx_tmp" "$ZBX_HOSTNAME" "$ZBX_SERVER_ACTIVE" "$ZBX_VIRT"; then
+    install -m 0644 "$_zbx_tmp" "$ZBX_CONF"
+    rm -f "$_zbx_tmp"
+    log "Wrote ${ZBX_CONF} (Hostname=${ZBX_HOSTNAME}, ServerActive=${ZBX_SERVER_ACTIVE})."
+    if [[ "$ZBX_VIRT" == "1" ]]; then
+      note "VM/container detected — ${ZBX_HOSTNAME}.cpuTemperature UserParameter commented out (no CPU sensors)."
+    else
+      note "cpuTemperature UserParameter key set to ${ZBX_HOSTNAME}.cpuTemperature."
+    fi
 
-  systemctl enable zabbix-agent2 >/dev/null 2>&1 || true
-  if systemctl restart zabbix-agent2 2>/dev/null; then
-    log "zabbix-agent2 enabled and running."
-    record "Zabbix agent 2" "installed; host=${ZBX_HOSTNAME}, server=${ZBX_SERVER_ACTIVE}"
+    systemctl enable zabbix-agent2 >/dev/null 2>&1 || true
+    if systemctl restart zabbix-agent2 2>/dev/null; then
+      log "zabbix-agent2 enabled and running."
+      record "Zabbix agent 2" "installed; host=${ZBX_HOSTNAME}, server=${ZBX_SERVER_ACTIVE}"
+    else
+      warn "zabbix-agent2 installed but did not start — check: systemctl status zabbix-agent2"
+      record "Zabbix agent 2" "installed; service not running (check status)"
+    fi
   else
-    warn "zabbix-agent2 installed but did not start — check: systemctl status zabbix-agent2"
-    record "Zabbix agent 2" "installed; service not running (check status)"
+    rm -f "$_zbx_tmp"
+    warn "zabbix-agent2 installed but its config could not be written — service left as-is."
+    record "Zabbix agent 2" "installed; config NOT written (template missing)"
   fi
 fi
 fi   # end: pkg_selected zabbix-agent2
+
+# ==============================================================================
+if pkg_selected alloy; then
+banner "Installing Grafana Alloy (log shipper)"
+# ==============================================================================
+# Adds Grafana's apt repo, installs alloy, then drops in the journal-first
+# config with the Loki endpoint substituted in. See https://grafana.com/docs/alloy
+ALLOY_LOKI_DEFAULT="http://localhost:3100"
+
+# Resolve the Loki base URL — prompt if unset; default to localhost:3100.
+if [[ -z "$LOKI_URL" ]]; then
+  if [[ "$INTERACTIVE" -eq 1 ]]; then
+    printf '%s%s Loki base URL for Alloy to push to (scheme://host:port) [default: %s]: %s' \
+      "$YEL" "$S_INFO" "$ALLOY_LOKI_DEFAULT" "$RESET" > /dev/tty
+    read -r LOKI_URL < /dev/tty || LOKI_URL=""
+    LOKI_URL="${LOKI_URL//[[:space:]]/}"
+  fi
+  LOKI_URL="${LOKI_URL:-$ALLOY_LOKI_DEFAULT}"
+fi
+# Normalise: add a scheme if the user omitted it, and trim any trailing slash
+# (the /loki/api/v1/push path is appended in the config template).
+[[ "$LOKI_URL" =~ ^https?:// ]] || LOKI_URL="http://${LOKI_URL}"
+LOKI_URL="${LOKI_URL%/}"
+
+if [[ "$DRY_RUN" == "1" ]]; then
+  dry "add Grafana apt repo, then apt-get install alloy"
+  if [[ -r "$ALLOY_CONFIG_SRC" ]]; then
+    dry "render ${ALLOY_CONFIG_SRC} -> ${ALLOY_CONF} (root:alloy 0640) pushing to ${LOKI_URL}/loki/api/v1/push"
+  else
+    dry "fetch alloy/config.alloy from repo -> ${ALLOY_CONF} (root:alloy 0640) pushing to ${LOKI_URL}/loki/api/v1/push"
+  fi
+  dry "enable + restart alloy"
+  record "Grafana Alloy" "[dry-run] would install + configure (Loki ${LOKI_URL})"
+else
+  # gpg --dearmor needs gnupg; ensure it's present before adding the repo key.
+  command -v gpg >/dev/null 2>&1 || apt-get install -y gnupg
+
+  info "Adding the Grafana apt repository..."
+  install -d -m 0755 /etc/apt/keyrings
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL https://apt.grafana.com/gpg.key | gpg --dearmor --yes -o /etc/apt/keyrings/grafana.gpg
+  else
+    wget -qO- https://apt.grafana.com/gpg.key | gpg --dearmor --yes -o /etc/apt/keyrings/grafana.gpg
+  fi
+  chmod 0644 /etc/apt/keyrings/grafana.gpg
+  echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" \
+    > /etc/apt/sources.list.d/grafana.list
+  apt-get update
+
+  info "Installing alloy..."
+  apt-get install -y alloy
+
+  # Back up the package default before replacing it with the custom config.
+  if [[ -f "$ALLOY_CONF" ]]; then
+    cp -a "$ALLOY_CONF" "${ALLOY_CONF}.bak.$(date +%F-%H%M%S)"
+  fi
+  # The alloy user/group is created by the package above. The config must be
+  # readable by the alloy user (root:alloy 0640) and /etc/alloy must be group
+  # accessible — otherwise the service exits with "permission denied" on start.
+  _alloy_grp="alloy"; getent group alloy >/dev/null 2>&1 || _alloy_grp="root"
+  install -d -o root -g "$_alloy_grp" -m 0750 /etc/alloy
+  _alloy_tmp="$(mktemp)"
+  if write_alloy_conf "$_alloy_tmp" "$LOKI_URL"; then
+    install -o root -g "$_alloy_grp" -m 0640 "$_alloy_tmp" "$ALLOY_CONF"
+    rm -f "$_alloy_tmp"
+    log "Wrote ${ALLOY_CONF} (pushing to ${LOKI_URL}/loki/api/v1/push)."
+
+    systemctl enable alloy >/dev/null 2>&1 || true
+    systemctl reset-failed alloy >/dev/null 2>&1 || true
+    if systemctl restart alloy 2>/dev/null; then
+      log "alloy enabled and running."
+      record "Grafana Alloy" "installed; pushing to ${LOKI_URL}"
+    else
+      warn "alloy installed but did not start — check: systemctl status alloy"
+      record "Grafana Alloy" "installed; service not running (check status)"
+    fi
+  else
+    rm -f "$_alloy_tmp"
+    warn "alloy installed but its config could not be written — service left as-is."
+    record "Grafana Alloy" "installed; config NOT written (template missing)"
+  fi
+fi
+fi   # end: pkg_selected alloy
 
 # ==============================================================================
 if pkg_selected fish; then
@@ -1011,6 +600,10 @@ fi
 if pkg_selected zabbix-agent2; then
   printf '   %s•%s  Add this host on your Zabbix server using hostname %s%s%s, then confirm data\n' "$BOLD" "$RESET" "$BOLD" "$(hostname)" "$RESET"
   printf '       with: %ssystemctl status zabbix-agent2%s and %stail -f /var/log/zabbix/zabbix_agent2.log%s\n' "$DIM" "$RESET" "$DIM" "$RESET"; _had_step=1
+fi
+if pkg_selected alloy; then
+  printf '   %s•%s  Confirm logs are flowing: %ssystemctl status alloy%s, then in Grafana query\n' "$BOLD" "$RESET" "$DIM" "$RESET"
+  printf '       %s{host="%s"}%s against your Loki source. Auditd logs need read access for the alloy user.\n' "$DIM" "$(hostname)" "$RESET"; _had_step=1
 fi
 if pkg_selected qemu-guest-agent; then
   if [[ "$DRY_RUN" == "1" || "${QEMU_ACTIVE:-0}" -ne 1 ]]; then
