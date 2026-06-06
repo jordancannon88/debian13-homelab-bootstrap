@@ -34,7 +34,7 @@ consolidated report** (a review of what ran, plus a single next-steps list).
 | --- | :---: | --- |
 | **`init.sh`** | 🚀 | Orchestrator — root check, then runs the scripts below (local copy or download), one at a time, with a single consolidated review + next-steps report at the end. |
 | **`harden.sh`** | 🔒 | System hardening — admin users + SSH keys, SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl & kernel hardening, AppArmor, AIDE, auditd, plus extra fixes to clear common Lynis findings, then a Lynis audit. **Detects VM vs LXC** and skips host-managed steps (e.g. AppArmor) inside containers. |
-| **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `btop`, `fish`, `rsync`, `qemu-guest-agent` — plus the **fish** shell set as the default shell for users `harden.sh` created (or current users you pick). |
+| **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `btop`, `fish`, `rsync`, `qemu-guest-agent`, `zabbix-agent2` — plus the **fish** shell set as the default shell for users `harden.sh` created (or current users you pick). **`zabbix-agent2`** adds Zabbix's official repo, installs the agent, and writes a custom config with this host's name and the Zabbix server address you provide. |
 | **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus the `/opt/docker` layout (always created) with an optional example app. |
 | **`motd.sh`** | 🖥️ | A cool **dynamic login banner** (MOTD) showing live host, IP, uptime, OS/kernel, load, memory, disk &amp; sessions — plus a link to your homelab documentation. |
 | **`documentation.sh`** | 🔌 | Generates the **connection doc** (`docs/connect.html` by default) — server details plus how to SSH in on the hardened port, with a `fish` alias and `~/.ssh/config` recipe. Auto-detects host / IP / port / user, or takes `CONN_*` overrides. _Offered by `init.sh` as the optional **final step**, reusing the SSH port/user you configured — when run via `init.sh` the doc is always written to `/tmp/connect.html`._ |
@@ -118,7 +118,7 @@ sudo ./init.sh
 
 ```bash
 sudo ./harden.sh     # 1️⃣  harden the system
-sudo ./ancillary.sh  # 2️⃣  extra packages (btop, fish, rsync, qemu-guest-agent) + fish shell
+sudo ./ancillary.sh  # 2️⃣  extra packages (btop, fish, rsync, qemu-guest-agent, zabbix-agent2) + fish shell
 sudo ./docker.sh     # 3️⃣  install Docker + Compose (rootless)
 sudo ./motd.sh       # 4️⃣  install the dynamic login banner (MOTD)
 ./documentation.sh   # 5️⃣  generate docs/connect.html (no sudo needed)
@@ -293,8 +293,9 @@ docker compose up -d
 
 | Variable | Effect |
 | --- | --- |
-| `ANCILLARY_PKGS="btop rsync"` | Install exactly these packages (any of `btop fish rsync qemu-guest-agent`), or `none` for nothing; **unset** installs the full default set |
+| `ANCILLARY_PKGS="btop rsync"` | Install exactly these packages (any of `btop fish rsync qemu-guest-agent zabbix-agent2`), or `none` for nothing; **unset** installs the full default set |
 | `FISH_USERS="u1 u2"` | Set fish as the default shell for exactly these users (skips prompts) |
+| `ZABBIX_SERVER_ACTIVE="host[:port]"` | Zabbix server/proxy for active checks — **required** when `zabbix-agent2` is selected (asked interactively if unset). Written into `ServerActive=` in `/etc/zabbix/zabbix_agent2.conf` |
 
 </details>
 
