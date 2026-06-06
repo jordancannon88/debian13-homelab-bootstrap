@@ -4,8 +4,8 @@
 
 `init.sh` is the entry point: it checks for root, then for each script asks
 whether to run it — using a **local copy** if present, or **downloading it from
-GitHub** if not. It asks **every question up front** (including which ancillary
-packages to install), runs the chosen scripts unattended, and ends with **one
+GitHub** if not. It asks **every question up front** (including which extra
+services to install), runs the chosen scripts unattended, and ends with **one
 consolidated report** (a review of what ran, plus a single next-steps list).
 
 <br>
@@ -34,7 +34,8 @@ consolidated report** (a review of what ran, plus a single next-steps list).
 | --- | :---: | --- |
 | **`init.sh`** | 🚀 | Orchestrator — root check, then runs the scripts below (local copy or download), one at a time, with a single consolidated review + next-steps report at the end. |
 | **`harden.sh`** | 🔒 | System hardening — admin users + SSH keys, SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl & kernel hardening, AppArmor, AIDE, auditd, plus extra fixes to clear common Lynis findings, then a Lynis audit. **Detects VM vs LXC** and skips host-managed steps (e.g. AppArmor) inside containers. |
-| **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `btop`, `fish`, `rsync`, `qemu-guest-agent`, `zabbix-agent2`, `alloy` — plus the **fish** shell set as the default shell for users `harden.sh` created (or current users you pick). **`zabbix-agent2`** adds Zabbix's official repo, installs the agent, and writes a custom config with this host's name and the Zabbix server address you provide. **`alloy`** adds Grafana's official repo and installs Grafana Alloy, a journal-first log shipper pointed at the Loki URL you provide. |
+| **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `btop`, `fish`, `rsync`, `qemu-guest-agent` — plus the **fish** shell set as the default shell for users `harden.sh` created (or current users you pick). |
+| **`monitoring.sh`** | 📈 | **Pick-and-install** monitoring agents from their vendor repos. **`zabbix-agent2`** adds Zabbix's official repo, installs the agent, and writes a custom config with this host's name and the Zabbix server address you provide. **`alloy`** adds Grafana's official repo and installs Grafana Alloy, a journal-first log shipper pointed at the Loki URL you provide. |
 | **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus the `/opt/docker` layout (always created) with an optional example app. |
 | **`motd.sh`** | 🖥️ | A cool **dynamic login banner** (MOTD) showing live host, IP, uptime, OS/kernel, load, memory, disk &amp; sessions — plus a link to your homelab documentation. |
 | **`documentation.sh`** | 🔌 | Generates the **connection doc** (`docs/connect.html` by default) — server details plus how to SSH in on the hardened port, with a `fish` alias and `~/.ssh/config` recipe. Auto-detects host / IP / port / user, or takes `CONN_*` overrides. _Offered by `init.sh` as the optional **final step**, reusing the SSH port/user you configured — when run via `init.sh` the doc is always written to `/tmp/connect.html`._ |
@@ -66,8 +67,8 @@ Every third-party package these scripts pull in is listed below, grouped by the
 script that installs it. Most come from **Debian's own repositories**; the ones
 that come from an added third-party repo are flagged in the **Source** column.
 Nothing here is installed without you selecting it — `harden.sh`'s core tools
-install when you run hardening; everything in `ancillary.sh` and `docker.sh` is
-opt-in.
+install when you run hardening; everything in `ancillary.sh`, `monitoring.sh`
+and `docker.sh` is opt-in.
 
 <br>
 
@@ -109,10 +110,20 @@ Only the packages you tick in the picker are installed.
 | `fish` | Debian | Friendly interactive shell (also settable as default shell). |
 | `rsync` | Debian | Fast file copy / sync. |
 | `qemu-guest-agent` | Debian | QEMU/KVM guest integration (VMs only). |
-| `gnupg` | Debian | Ensured present to import the Grafana repo key (usually already installed by `harden.sh`). |
+
+<br>
+
+### 📈 `monitoring.sh` — opt-in monitoring agents
+
+Each agent is installed from its vendor's official apt repo. Only the ones you
+tick in the picker are installed.
+
+| Package | Source | What it is |
+| --- | :---: | --- |
 | `zabbix-release` | **Zabbix repo** | `.deb` that registers Zabbix's official apt repository. |
 | `zabbix-agent2` | **Zabbix repo** | Zabbix monitoring agent 2. |
 | `inxi` | Debian | System-information CLI; backs the CPU-temperature monitoring item. Installed alongside `zabbix-agent2`. |
+| `gnupg` | Debian | Ensured present to import the Grafana repo key (usually already installed by `harden.sh`). |
 | `alloy` | **Grafana repo** | Grafana Alloy — journal-first log shipper to Loki. |
 
 <br>
@@ -142,8 +153,8 @@ Only the packages you tick in the picker are installed.
 | Repo | URL | Added by | Signing key |
 | --- | --- | :---: | --- |
 | Docker | `https://download.docker.com/linux/debian` | `docker.sh` | `/etc/apt/keyrings/docker.asc` |
-| Zabbix | `https://repo.zabbix.com` | `ancillary.sh` (via `zabbix-release`) | shipped in the `zabbix-release` package |
-| Grafana | `https://apt.grafana.com` | `ancillary.sh` | `/etc/apt/keyrings/grafana.gpg` |
+| Zabbix | `https://repo.zabbix.com` | `monitoring.sh` (via `zabbix-release`) | shipped in the `zabbix-release` package |
+| Grafana | `https://apt.grafana.com` | `monitoring.sh` | `/etc/apt/keyrings/grafana.gpg` |
 
 <br>
 
@@ -181,7 +192,7 @@ bash init.sh
 
 For each script, `init.sh` will:
 
-1. ❓ &nbsp; ask **whether to run it** (`Run harden.sh?` …) — and, for `ancillary.sh`, let you **pick which packages** to install;
+1. ❓ &nbsp; ask **whether to run it** (`Run harden.sh?` …) — and, under **Extra services**, let you **pick which packages and agents** to install (routed to `ancillary.sh`, `monitoring.sh`, `docker.sh`);
 2. 🧭 &nbsp; gather **every answer up front**, then use the **local file** if present, otherwise download it from GitHub;
 3. ▶️ &nbsp; run each chosen script **unattended** (no mid-run prompts), waiting for it to finish before the next;
 4. 📋 &nbsp; finish with **one consolidated report** — a review of what ran and a single, merged next-steps list.
@@ -210,11 +221,12 @@ sudo ./init.sh
 🛠️ Or run the steps yourself, in order:
 
 ```bash
-sudo ./harden.sh     # 1️⃣  harden the system
-sudo ./ancillary.sh  # 2️⃣  extra packages (btop, fish, rsync, qemu-guest-agent, zabbix-agent2) + fish shell
-sudo ./docker.sh     # 3️⃣  install Docker + Compose (rootless)
-sudo ./motd.sh       # 4️⃣  install the dynamic login banner (MOTD)
-./documentation.sh   # 5️⃣  generate docs/connect.html (no sudo needed)
+sudo ./harden.sh      # 1️⃣  harden the system
+sudo ./ancillary.sh   # 2️⃣  extra packages (btop, fish, rsync, qemu-guest-agent) + fish shell
+sudo ./monitoring.sh  # 3️⃣  monitoring agents (zabbix-agent2, alloy)
+sudo ./docker.sh      # 4️⃣  install Docker + Compose (rootless)
+sudo ./motd.sh        # 5️⃣  install the dynamic login banner (MOTD)
+./documentation.sh    # 6️⃣  generate docs/connect.html (no sudo needed)
 ```
 
 <br>
@@ -386,9 +398,23 @@ docker compose up -d
 
 | Variable | Effect |
 | --- | --- |
-| `ANCILLARY_PKGS="btop rsync"` | Install exactly these packages (any of `btop fish rsync qemu-guest-agent zabbix-agent2`), or `none` for nothing; **unset** installs the full default set |
+| `ANCILLARY_PKGS="btop rsync"` | Install exactly these packages (any of `btop fish rsync qemu-guest-agent`), or `none` for nothing; **unset** installs the full default set |
 | `FISH_USERS="u1 u2"` | Set fish as the default shell for exactly these users (skips prompts) |
+
+</details>
+
+<br>
+
+<details open>
+<summary>📈 &nbsp;<strong><code>monitoring.sh</code></strong></summary>
+
+<br>
+
+| Variable | Effect |
+| --- | --- |
+| `MONITORING_PKGS="zabbix-agent2 alloy"` | Install exactly these agents (any of `zabbix-agent2 alloy`), or `none` for nothing; **unset** installs the full default set |
 | `ZABBIX_SERVER_ACTIVE="host[:port]"` | Zabbix server/proxy for active checks — **required** when `zabbix-agent2` is selected (asked interactively if unset). Written into `ServerActive=` in `/etc/zabbix/zabbix_agent2.conf` |
+| `LOKI_URL="scheme://host:port"` | Loki base URL for Alloy to push to — used when `alloy` is selected (asked interactively; defaults to `http://localhost:3100`). The `/loki/api/v1/push` path is appended automatically |
 
 </details>
 
