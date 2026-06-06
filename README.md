@@ -37,7 +37,7 @@ consolidated report** (a review of what ran, plus a single next-steps list).
 | **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `btop`, `fish`, `rsync`, `qemu-guest-agent` — plus the **fish** shell set as the default shell for users `harden.sh` created (or current users you pick). |
 | **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus the `/opt/docker` layout (always created) with an optional example app. |
 | **`motd.sh`** | 🖥️ | A cool **dynamic login banner** (MOTD) showing live host, IP, uptime, OS/kernel, load, memory, disk &amp; sessions — plus a link to your homelab documentation. |
-| **`documentation.sh`** | 🔌 | Generates the **connection doc** (`docs/connect.html`) — server details plus how to SSH in on the hardened port, with a `fish` alias and `~/.ssh/config` recipe. Auto-detects host / IP / port / user, or takes `CONN_*` overrides. _Offered by `init.sh` as the optional **final step**, reusing the SSH port/user you configured._ |
+| **`documentation.sh`** | 🔌 | Generates the **connection doc** (`docs/connect.html` by default) — server details plus how to SSH in on the hardened port, with a `fish` alias and `~/.ssh/config` recipe. Auto-detects host / IP / port / user, or takes `CONN_*` overrides. _Offered by `init.sh` as the optional **final step**, reusing the SSH port/user you configured — when run via `init.sh` the doc is always written to `/tmp/connect.html`._ |
 
 <br>
 
