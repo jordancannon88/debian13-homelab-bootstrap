@@ -207,7 +207,7 @@ if in_selected harden.sh; then
   PUBKEY=""
   while true; do
     note "Paste ${PRIMARY_USER}'s PUBLIC SSH key. No key yet? On your machine run:"
-    printf '        %sssh-keygen -t ed25519 -C "admin@cannon.dev"%s\n' "$CYN" "$RESET" > /dev/tty 2>/dev/null || true
+    printf '        %sssh-keygen -t ed25519 -C "user@example.com"%s\n' "$CYN" "$RESET" > /dev/tty 2>/dev/null || true
     PUBKEY="$(ask "SSH public key for ${PRIMARY_USER}" "${PUBKEY:-}")"
     PUBKEY="${PUBKEY#"${PUBKEY%%[![:space:]]*}"}"; PUBKEY="${PUBKEY%"${PUBKEY##*[![:space:]]}"}"
     if [[ -z "$PUBKEY" ]]; then

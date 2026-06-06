@@ -250,7 +250,7 @@ prompt_for_pubkey() {
     printf '\n%s%sSSH key setup — paste the PUBLIC key to authorize for %s%s%s\n' \
       "$BOLD" "$WHT" "$BOLD" "$user" "$RESET" > /dev/tty
     note "No key yet? On YOUR machine (not this server) run:" > /dev/tty
-    printf '        %sssh-keygen -t ed25519 -C "admin@cannon.dev"%s\n' "$CYN" "$RESET" > /dev/tty
+    printf '        %sssh-keygen -t ed25519 -C "user@example.com"%s\n' "$CYN" "$RESET" > /dev/tty
     note "then paste the contents of ~/.ssh/id_ed25519.pub (the line below), e.g.:" > /dev/tty
     note "  ssh-ed25519 AAAAC3Nza... user@host" > /dev/tty
     if [[ "$haskey" -eq 1 ]]; then
