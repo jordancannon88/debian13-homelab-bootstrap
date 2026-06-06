@@ -1028,8 +1028,8 @@ fi
 # Validate sshd config before reload
 if [[ "$DRY_RUN" == "1" ]]; then
   dry "sshd -t  (validate config)  &&  apply Port ${SSH_PORT}"
-  dry "if ssh.socket is active: disable it so sshd_config's Port governs (Debian 13)"
-  dry "systemctl restart ssh && verify sshd is listening on ${SSH_PORT}"
+  dry "if ssh.socket is in use: mask it so sshd_config's Port governs and persists across reboot (Debian 13)"
+  dry "systemctl enable ssh && restart ssh && verify sshd is listening on ${SSH_PORT}"
 else
   info "Validating sshd configuration (sshd -t)..."
   if ! sshd -t; then
@@ -1042,20 +1042,28 @@ else
   # Debian 13 may socket-activate SSH via ssh.socket. When it's active, the
   # LISTENING port comes from the socket unit (ListenStream, default 22), NOT
   # from sshd_config's Port — so our port change would be silently ignored and
-  # connections to ${SSH_PORT} get refused. Disable socket activation so the
-  # traditional ssh.service listens on the configured Port.
+  # connections to ${SSH_PORT} get refused. Worse, even after a runtime restart
+  # binds the right port, on the NEXT BOOT only ssh.socket starts (ssh.service
+  # isn't enabled in socket mode), so SSH reverts to :22 and ${SSH_PORT} refuses.
+  # MASK the socket (not just disable) so neither boot nor a package preset can
+  # re-activate it, and run the standalone ssh.service on the configured Port.
   if systemctl is-active --quiet ssh.socket 2>/dev/null || systemctl is-enabled ssh.socket >/dev/null 2>&1; then
-    warn "ssh.socket is in use — disabling socket activation so Port ${SSH_PORT} takes effect."
+    warn "ssh.socket is in use — masking socket activation so Port ${SSH_PORT} persists across reboots."
     systemctl disable --now ssh.socket >/dev/null 2>&1 || true
-    record "SSH socket" "ssh.socket disabled (port now governed by sshd_config)"
+    systemctl mask ssh.socket >/dev/null 2>&1 || true
+    record "SSH socket" "ssh.socket masked (port now governed by sshd_config, survives reboot)"
   fi
 
-  # Ensure the daemon is enabled and (re)start it so the new Port is bound.
+  # Enable ssh.service for boot and (re)start it so the new Port is bound now.
   systemctl enable ssh >/dev/null 2>&1 || true
   systemctl restart ssh || systemctl reload ssh
 
-  # Verify sshd is actually listening on the new port; warn loudly if not, so a
-  # lockout is caught now (while port 22 may still be open as a fallback).
+  # Confirm the boot-time setup is correct: ssh.service enabled, and sshd is
+  # actually listening on the new port. Warn loudly otherwise so a lockout is
+  # caught now (while port 22 may still be open as a firewall fallback).
+  systemctl is-enabled ssh >/dev/null 2>&1 \
+    && log "ssh.service is enabled at boot (will bind Port ${SSH_PORT} on reboot)." \
+    || warn "ssh.service is NOT enabled at boot — run: systemctl enable ssh"
   if command -v ss >/dev/null 2>&1; then
     if ss -ltnH 2>/dev/null | grep -qE "[:.]${SSH_PORT}([[:space:]]|$)"; then
       log "Confirmed: sshd is listening on port ${SSH_PORT}."
