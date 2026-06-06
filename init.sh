@@ -121,6 +121,22 @@ ask() {
   printf '%s' "${reply:-$default}"
 }
 
+# ask_secret "Prompt" -> echoes a password typed twice to confirm (input hidden),
+# or empty if skipped / non-interactive. Reads /dev/tty.
+ask_secret() {
+  local prompt="$1" p1 p2
+  [[ "$ASSUME_YES" == "1" || ! -r /dev/tty ]] && return 0
+  while true; do
+    printf '%s%s %s %s' "$YEL" "$S_INFO" "$prompt" "$RESET" > /dev/tty
+    IFS= read -rs p1 < /dev/tty || p1=""; printf '\n' > /dev/tty
+    [[ -z "$p1" ]] && return 0
+    printf '%s%s %s (confirm) %s' "$YEL" "$S_INFO" "$prompt" "$RESET" > /dev/tty
+    IFS= read -rs p2 < /dev/tty || p2=""; printf '\n' > /dev/tty
+    [[ "$p1" == "$p2" ]] && { printf '%s' "$p1"; return 0; }
+    printf '%s%s Passwords do not match — try again.%s\n' "$RED" "$S_ERR" "$RESET" > /dev/tty
+  done
+}
+
 valid_user()  { [[ "$1" =~ ^[a-z_][a-z0-9_-]*$ ]]; }
 valid_pubkey() {
   local key="$1" tmp
@@ -275,6 +291,18 @@ if in_selected harden.sh; then
     if valid_pubkey "$PUBKEY"; then log "SSH key accepted."; export PUBKEY; break; fi
     warn "That does not look like a valid SSH public key — try again."
   done
+
+  # If the admin user doesn't exist yet, harden.sh will create it — collect a
+  # password to set on the new account (optional; blank = SSH-key only).
+  if ! id "$PRIMARY_USER" >/dev/null 2>&1; then
+    note "User '${PRIMARY_USER}' will be created."
+    ADMIN_PASSWORD="$(ask_secret "Password for new user ${PRIMARY_USER} (blank to skip)")"
+    if [[ -n "$ADMIN_PASSWORD" ]]; then
+      export ADMIN_PASSWORD; log "Password will be set for ${PRIMARY_USER}."
+    else
+      note "No password entered — ${PRIMARY_USER} will be SSH-key only."
+    fi
+  fi
 
   SSH_PORT="$(ask "SSH port" "${SSH_PORT:-22}")"; export SSH_PORT
   confirm "Run a full system upgrade (apt full-upgrade)?" Y && export SKIP_UPGRADE=0 || export SKIP_UPGRADE=1
