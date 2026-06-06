@@ -34,7 +34,7 @@ consolidated report** (a review of what ran, plus a single next-steps list).
 | --- | :---: | --- |
 | **`init.sh`** | 🚀 | Orchestrator — root check, then runs the scripts below (local copy or download), one at a time, with a single consolidated review + next-steps report at the end. |
 | **`harden.sh`** | 🔒 | System hardening — admin users + SSH keys, SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl & kernel hardening, AppArmor, AIDE, auditd, plus extra fixes to clear common Lynis findings, then a Lynis audit. **Detects VM vs LXC** and skips host-managed steps (e.g. AppArmor) inside containers. |
-| **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `btop`, `fish`, `rsync`, `qemu-guest-agent`, `zabbix-agent2` — plus the **fish** shell set as the default shell for users `harden.sh` created (or current users you pick). **`zabbix-agent2`** adds Zabbix's official repo, installs the agent, and writes a custom config with this host's name and the Zabbix server address you provide. |
+| **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `btop`, `fish`, `rsync`, `qemu-guest-agent`, `zabbix-agent2`, `alloy` — plus the **fish** shell set as the default shell for users `harden.sh` created (or current users you pick). **`zabbix-agent2`** adds Zabbix's official repo, installs the agent, and writes a custom config with this host's name and the Zabbix server address you provide. **`alloy`** adds Grafana's official repo and installs Grafana Alloy, a journal-first log shipper pointed at the Loki URL you provide. |
 | **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus the `/opt/docker` layout (always created) with an optional example app. |
 | **`motd.sh`** | 🖥️ | A cool **dynamic login banner** (MOTD) showing live host, IP, uptime, OS/kernel, load, memory, disk &amp; sessions — plus a link to your homelab documentation. |
 | **`documentation.sh`** | 🔌 | Generates the **connection doc** (`docs/connect.html` by default) — server details plus how to SSH in on the hardened port, with a `fish` alias and `~/.ssh/config` recipe. Auto-detects host / IP / port / user, or takes `CONN_*` overrides. _Offered by `init.sh` as the optional **final step**, reusing the SSH port/user you configured — when run via `init.sh` the doc is always written to `/tmp/connect.html`._ |
@@ -51,6 +51,99 @@ changing the system, so it needs no root and backs nothing up.)
 > ⚠️ **Run on a fresh host, VM, or LXC container.** `harden.sh` changes SSH and
 > the firewall. **Keep your current session open** and test a new SSH login
 > before disconnecting.
+
+<br>
+
+---
+
+<br>
+
+## 📥 Packages installed
+
+<br>
+
+Every third-party package these scripts pull in is listed below, grouped by the
+script that installs it. Most come from **Debian's own repositories**; the ones
+that come from an added third-party repo are flagged in the **Source** column.
+Nothing here is installed without you selecting it — `harden.sh`'s core tools
+install when you run hardening; everything in `ancillary.sh` and `docker.sh` is
+opt-in.
+
+<br>
+
+### 🔒 `harden.sh` — core security tools
+
+Installed when you run hardening (skipped individually if already present).
+
+| Package | Source | What it is |
+| --- | :---: | --- |
+| `openssh-server` | Debian | OpenSSH server daemon — remote login. |
+| `sudo` | Debian | Run commands as root / another user. |
+| `vim` | Debian | Text editor. |
+| `gnupg` | Debian | GnuPG — key handling and signature verification (e.g. apt repo keys). |
+| `lsb-release` | Debian | Reports the distro / release version for other tooling. |
+| `ca-certificates` | Debian | Trusted root CA certificates for TLS. |
+| `nftables` | Debian | Linux kernel firewall — the deny-by-default backend. |
+| `fail2ban` | Debian | Bans IPs after repeated failed logins (watches sshd). |
+| `aide` | Debian | Advanced Intrusion Detection Environment — file-integrity database. |
+| `apparmor` | Debian | Mandatory Access Control framework confining programs. |
+| `apparmor-utils` | Debian | Tools to manage and audit AppArmor profiles. |
+| `unattended-upgrades` | Debian | Applies security updates automatically. |
+| `apt-listchanges` | Debian | Shows package changelogs at upgrade time. |
+| `rsyslog` | Debian | System logging daemon. |
+| `rsyslog-gnutls` | Debian | TLS transport for rsyslog (encrypted remote logging). |
+| `logwatch` | Debian | Summarizes system logs into readable reports. |
+| `lynis` | Debian | Security auditing / hardening scanner (run at the end). |
+| `needrestart` | Debian | Flags services that need a restart after library upgrades. |
+| `libpam-google-authenticator` | Debian | **Optional** — TOTP one-time-password PAM module; only installed when SSH 2FA is enabled. |
+
+<br>
+
+### 🐟 `ancillary.sh` — opt-in extras
+
+Only the packages you tick in the picker are installed.
+
+| Package | Source | What it is |
+| --- | :---: | --- |
+| `btop` | Debian | Resource monitor (htop-like). |
+| `fish` | Debian | Friendly interactive shell (also settable as default shell). |
+| `rsync` | Debian | Fast file copy / sync. |
+| `qemu-guest-agent` | Debian | QEMU/KVM guest integration (VMs only). |
+| `gnupg` | Debian | Ensured present to import the Grafana repo key (usually already installed by `harden.sh`). |
+| `zabbix-release` | **Zabbix repo** | `.deb` that registers Zabbix's official apt repository. |
+| `zabbix-agent2` | **Zabbix repo** | Zabbix monitoring agent 2. |
+| `inxi` | Debian | System-information CLI; backs the CPU-temperature monitoring item. Installed alongside `zabbix-agent2`. |
+| `alloy` | **Grafana repo** | Grafana Alloy — journal-first log shipper to Loki. |
+
+<br>
+
+### 🐳 `docker.sh` — Docker Engine + rootless
+
+| Package | Source | What it is |
+| --- | :---: | --- |
+| `docker-ce` | **Docker repo** | Docker Engine (the daemon). |
+| `docker-ce-cli` | **Docker repo** | Docker command-line client. |
+| `containerd.io` | **Docker repo** | containerd container runtime. |
+| `docker-buildx-plugin` | **Docker repo** | Buildx build plugin. |
+| `docker-compose-plugin` | **Docker repo** | Compose v2 plugin (`docker compose`). |
+| `docker-ce-rootless-extras` | **Docker repo** | Rootless-mode support files. |
+| `uidmap` | Debian | `newuidmap`/`newgidmap` — user-namespace ID mapping for rootless. |
+| `dbus-user-session` | Debian | Per-user D-Bus session, required for rootless systemd. |
+| `slirp4netns` | Debian | User-mode networking for rootless containers. |
+
+> 🧹 `docker.sh` also **removes** any conflicting legacy packages it finds
+> (`docker.io`, `docker-doc`, `docker-compose`, `podman-docker`, `containerd`,
+> `runc`) before installing the above.
+
+<br>
+
+### 🌐 Third-party apt repositories added
+
+| Repo | URL | Added by | Signing key |
+| --- | --- | :---: | --- |
+| Docker | `https://download.docker.com/linux/debian` | `docker.sh` | `/etc/apt/keyrings/docker.asc` |
+| Zabbix | `https://repo.zabbix.com` | `ancillary.sh` (via `zabbix-release`) | shipped in the `zabbix-release` package |
+| Grafana | `https://apt.grafana.com` | `ancillary.sh` | `/etc/apt/keyrings/grafana.gpg` |
 
 <br>
 
