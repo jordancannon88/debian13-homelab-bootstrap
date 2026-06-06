@@ -162,13 +162,15 @@ set_fish_default() {
   fi
 }
 
-# write_zabbix_conf <target> <hostname> <serveractive> — write the custom
-# zabbix_agent2.conf, substituting this host's name and the Zabbix server
-# address into the two relevant lines. The body is written verbatim (single-
-# quoted heredoc, so $/`/awk snippets inside are preserved); awk -v then swaps
-# the two values safely regardless of characters they contain.
+# write_zabbix_conf <target> <hostname> <serveractive> <virtualized> — write the
+# custom zabbix_agent2.conf, substituting this host's name and the Zabbix server
+# address into the two relevant lines. The cpuTemperature UserParameter's key
+# prefix is rewritten from pve2 to this host's name; on a VM/container it's
+# commented out (no real CPU thermal sensors there). The body is written verbatim
+# (single-quoted heredoc, so $/`/awk snippets inside are preserved); awk -v then
+# swaps the values safely regardless of characters they contain.
 write_zabbix_conf() {
-  local target="$1" hn="$2" sa="$3" tmp
+  local target="$1" hn="$2" sa="$3" virt="${4:-0}" tmp
   tmp="$(mktemp)"
   cat > "$tmp" <<'ZBXEOF'
 # This is a configuration file for Zabbix agent 2 (Unix)
@@ -741,9 +743,14 @@ Include=/etc/zabbix/zabbix_agent2.d/plugins.d/*.conf
 # Default:
 # TLSCipherAll=
 ZBXEOF
-  awk -v hn="$hn" -v sa="$sa" '
+  awk -v hn="$hn" -v sa="$sa" -v virt="$virt" '
     /^Hostname=machine001$/       { print "Hostname=" hn; next }
     /^ServerActive=zabbix:10051$/ { print "ServerActive=" sa; next }
+    /^UserParameter=pve2\.cpuTemperature,/ {
+      sub(/^UserParameter=pve2\./, "UserParameter=" hn ".")   # key prefix -> hostname
+      if (virt == "1") $0 = "#" $0                            # VM/container: no CPU sensors
+      print; next
+    }
     { print }
   ' "$tmp" > "$target"
   rm -f "$tmp"
@@ -878,6 +885,13 @@ banner "Installing Zabbix agent 2"
 # address provided). See https://www.zabbix.com/documentation/7.4/en/manual/concepts/agent
 ZBX_HOSTNAME="$(hostname)"
 
+# CPU thermal sensors only exist on bare metal. If this is a VM or a container
+# (LXC/etc.), the cpuTemperature UserParameter is commented out in the config.
+ZBX_VIRT=0
+if command -v systemd-detect-virt >/dev/null 2>&1 && systemd-detect-virt -q 2>/dev/null; then
+  ZBX_VIRT=1
+fi
+
 # Resolve the Zabbix server address for active checks — required, no default.
 if [[ -z "$ZBX_SERVER_ACTIVE" ]]; then
   if [[ "$INTERACTIVE" -eq 1 ]]; then
@@ -896,6 +910,11 @@ if [[ -z "$ZBX_SERVER_ACTIVE" ]]; then
 elif [[ "$DRY_RUN" == "1" ]]; then
   dry "add Zabbix ${ZBX_VERSION} apt repo, then apt-get install zabbix-agent2 inxi"
   dry "write ${ZBX_CONF} with Hostname=${ZBX_HOSTNAME} and ServerActive=${ZBX_SERVER_ACTIVE}"
+  if [[ "$ZBX_VIRT" == "1" ]]; then
+    dry "VM/container detected — comment out the ${ZBX_HOSTNAME}.cpuTemperature UserParameter"
+  else
+    dry "set the cpuTemperature UserParameter key to ${ZBX_HOSTNAME}.cpuTemperature"
+  fi
   dry "enable + restart zabbix-agent2"
   record "Zabbix agent 2" "[dry-run] would install + configure (server ${ZBX_SERVER_ACTIVE})"
 else
@@ -925,8 +944,13 @@ else
     cp -a "$ZBX_CONF" "${ZBX_CONF}.bak.$(date +%F-%H%M%S)"
   fi
   install -d -m 755 "$(dirname "$ZBX_CONF")"
-  write_zabbix_conf "$ZBX_CONF" "$ZBX_HOSTNAME" "$ZBX_SERVER_ACTIVE"
+  write_zabbix_conf "$ZBX_CONF" "$ZBX_HOSTNAME" "$ZBX_SERVER_ACTIVE" "$ZBX_VIRT"
   log "Wrote ${ZBX_CONF} (Hostname=${ZBX_HOSTNAME}, ServerActive=${ZBX_SERVER_ACTIVE})."
+  if [[ "$ZBX_VIRT" == "1" ]]; then
+    note "VM/container detected — ${ZBX_HOSTNAME}.cpuTemperature UserParameter commented out (no CPU sensors)."
+  else
+    note "cpuTemperature UserParameter key set to ${ZBX_HOSTNAME}.cpuTemperature."
+  fi
 
   systemctl enable zabbix-agent2 >/dev/null 2>&1 || true
   if systemctl restart zabbix-agent2 2>/dev/null; then
