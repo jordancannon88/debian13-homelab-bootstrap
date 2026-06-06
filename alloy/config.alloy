@@ -1,0 +1,152 @@
+// ─────────────────────────────────────────────────────────────
+// Grafana Alloy — ship logs from a Debian 13 host to Loki
+//
+// TEMPLATE: ancillary.sh reads this file and replaces @@LOKI_ENDPOINT@@
+//   with the Loki base URL (LOKI_URL) before installing it to
+//   /etc/alloy/config.alloy. To deploy by hand, swap @@LOKI_ENDPOINT@@
+//   for your Loki base URL (e.g. http://localhost:3100).
+//
+// Strategy: JOURNAL-FIRST.
+//   On a systemd host the journal already holds kernel, every
+//   service unit, sshd/sudo/PAM auth, and cron — with accurate
+//   timestamps and a real severity level. We treat it as the
+//   primary source and only scrape FILES that do NOT flow into
+//   the journal (apt/dpkg/unattended-upgrades/auditd).
+//
+//   This avoids the double-ingest you get from scraping both the
+//   journal *and* rsyslog's /var/log/*.log copies of the same data.
+// ─────────────────────────────────────────────────────────────
+
+// ====================  SOURCE 1: systemd journal (PRIMARY)  ====================
+loki.source.journal "journal_scrape" {
+  forward_to    = [loki.process.journal_labels.receiver]
+  max_age       = "12h"
+  relabel_rules = loki.relabel.journal.rules
+  labels        = {
+    job  = "systemd-journal",
+    host = constants.hostname,
+  }
+}
+
+// Promote useful journal fields to labels (all low-cardinality).
+loki.relabel "journal" {
+  forward_to = []  // exported as .rules only
+
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"
+  }
+  rule {
+    source_labels = ["__journal__transport"]
+    target_label  = "transport"
+  }
+  rule {
+    source_labels = ["__journal_syslog_identifier"]
+    target_label  = "process"
+  }
+}
+
+loki.process "journal_labels" {
+  // Journal entries already carry a real timestamp and level —
+  // nothing to parse, just hand off to the shared filter stage.
+  forward_to = [loki.process.filter_logs.receiver]
+}
+
+// ====================  SOURCE 2: file-only logs  ====================
+// Only sources that do NOT appear in the journal. Each target sets
+// a meaningful `job`; loki.source.file adds a `filename` label so
+// you can still tell e.g. apt history.log from term.log.
+local.file_match "app_logs" {
+  path_targets = [
+    // Package management — what changed on the box and when.
+    { __path__ = "/var/log/apt/*.log",                 job = "apt",                 host = constants.hostname },
+    { __path__ = "/var/log/dpkg.log",                  job = "dpkg",                host = constants.hostname },
+    { __path__ = "/var/log/unattended-upgrades/*.log", job = "unattended-upgrades", host = constants.hostname },
+
+    // Security auditing (auditd). Comment out if auditd isn't installed.
+    { __path__ = "/var/log/audit/audit.log",           job = "audit",               host = constants.hostname },
+
+    // ── Extend here for app/web logs that log to their own files ──
+    // { __path__ = "/var/log/nginx/*.log",   job = "nginx",   host = constants.hostname },
+    // { __path__ = "/var/log/myapp/*.log",   job = "myapp",   host = constants.hostname },
+  ]
+  sync_period = "5s"
+}
+
+loki.source.file "app_log_scrape" {
+  targets       = local.file_match.app_logs.targets
+  forward_to    = [loki.process.parse_files.receiver]
+  tail_from_end = true   // don't replay full history on first start (audit.log can be huge)
+}
+
+// These files use varied formats. Try the common ISO prefix
+// (dpkg + many apps: "2026-06-06 12:34:56"); if a line doesn't
+// match (apt history blocks, auditd epoch lines) we skip and fall
+// back to ingest time rather than corrupting the timestamp.
+loki.process "parse_files" {
+  stage.regex {
+    expression = "^(?P<ts>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})"
+  }
+  stage.timestamp {
+    source            = "ts"
+    format            = "2006-01-02 15:04:05"
+    action_on_failure = "skip"
+  }
+
+  forward_to = [loki.process.filter_logs.receiver]
+}
+
+// ====================  SHARED: filtering + static labels  ====================
+loki.process "filter_logs" {
+  // Stamp every stream with environment metadata.
+  stage.static_labels {
+    values = {
+      os  = "debian13",
+      env = "homelab",
+    }
+  }
+
+  // NOTE: the original config dropped SSH "Connection closed by
+  // authenticating user root" lines. That throws away your only
+  // signal of brute-force / credential-stuffing against SSH, so it
+  // is intentionally DISABLED here. Re-enable only if the volume is
+  // genuinely overwhelming — you lose security visibility.
+  //
+  // stage.drop {
+  //   expression          = ".*Connection closed by authenticating user root"
+  //   drop_counter_reason = "noisy"
+  // }
+
+  // Drop empty lines.
+  stage.drop {
+    expression          = "^\\s*$"
+    drop_counter_reason = "empty"
+  }
+
+  forward_to = [loki.write.grafana_loki.receiver]
+}
+
+// ====================  OUTPUT: push to Loki  ====================
+loki.write "grafana_loki" {
+  endpoint {
+    url = "@@LOKI_ENDPOINT@@/loki/api/v1/push"
+
+    // Batch tuning — flush when either limit is hit.
+    batch_wait = "1s"
+    batch_size = "1MiB"
+
+    // basic_auth {
+    //   username = "admin"
+    //   password = "admin"
+    // }
+  }
+
+  // Buffer to disk so logs survive an Alloy restart or a Loki outage.
+  wal {
+    enabled = true
+  }
+}

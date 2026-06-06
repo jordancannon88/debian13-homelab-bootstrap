@@ -32,13 +32,14 @@ START_TS="$(date +%s)"
 # Extra services init can install, presented to the user as one "extra services"
 # group. The apt packages are handled by ancillary.sh (chosen list passed via
 # ANCILLARY_PKGS); "docker" runs docker.sh (rootless Docker). Order = display.
-EXTRA_SERVICES=(btop fish rsync qemu-guest-agent zabbix-agent2 docker)
+EXTRA_SERVICES=(btop fish rsync qemu-guest-agent zabbix-agent2 alloy docker)
 declare -A EXTRA_DESC=(
   [btop]="resource monitor (htop-like)"
   [fish]="friendly interactive shell"
   [rsync]="fast file copy / sync"
   [qemu-guest-agent]="QEMU/KVM guest integration (VMs only)"
   [zabbix-agent2]="Zabbix agent 2 monitoring (needs a Zabbix server)"
+  [alloy]="Grafana Alloy log shipper (needs a Loki server)"
   [docker]="Docker Engine + Compose + rootless setup + /opt/docker layout"
 )
 
@@ -354,6 +355,14 @@ if in_selected ancillary.sh; then
     done
     export ZABBIX_SERVER_ACTIVE
     log "Zabbix server (active checks): ${BOLD}${ZABBIX_SERVER_ACTIVE}${RESET}"
+  fi
+
+  # Grafana Alloy needs the Loki base URL to push logs to (defaults to localhost).
+  if in_selected_arr alloy "${ANCILLARY_PICK[@]}"; then
+    LOKI_URL="$(ask "Loki base URL for Alloy to push to (scheme://host:port)" "http://localhost:3100")"
+    LOKI_URL="${LOKI_URL//[[:space:]]/}"
+    export LOKI_URL
+    log "Loki endpoint (Alloy): ${BOLD}${LOKI_URL}${RESET}"
   fi
 
   # The fish default-shell question only matters if fish is being installed.
