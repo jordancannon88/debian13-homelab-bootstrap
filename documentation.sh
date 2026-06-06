@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-#  Debian 13 Homelab Bootstrap — connect-doc
+#  Debian 13 Homelab Bootstrap — documentation
 #  Generates the "Connecting to the Server" HTML doc (docs/connect.html) that
 #  documents a server and how to SSH into it on its hardened port. The page is
 #  an HTML fragment matching the other files in docs/ (subtitle / note / warn /
@@ -9,7 +9,7 @@
 #  Everything is parameterised: run it on the box itself to auto-detect the
 #  details, or pass overrides via the environment for any other host.
 #
-#  Run as your normal user, e.g.  ./connect-doc.sh
+#  Run as your normal user, e.g.  ./documentation.sh
 #
 #  Environment overrides (each is prompted/auto-detected if unset):
 #    CONN_FQDN=<name>     -> DNS name           (default: hostname -f)
@@ -312,5 +312,5 @@ printf '%s%s  Done. 🖥️%s\n\n' "$BOLD" "$GRN" "$RESET"
 if [[ "$DRY_RUN" != "1" ]]; then
   mkdir -p /var/lib/homelab-bootstrap/summaries 2>/dev/null \
     && printf 'connection doc generated (%s) for %s on port %s\n' "$OUT_FILE" "$FQDN" "$PORT" \
-       > /var/lib/homelab-bootstrap/summaries/connect-doc.sh 2>/dev/null || true
+       > /var/lib/homelab-bootstrap/summaries/documentation.sh 2>/dev/null || true
 fi
