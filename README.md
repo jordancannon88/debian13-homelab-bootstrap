@@ -33,7 +33,7 @@ consolidated report** (a review of what ran, plus a single next-steps list).
 | Script | Icon | What it does |
 | --- | :---: | --- |
 | **`init.sh`** | 🚀 | Orchestrator — root check, then runs the scripts below (local copy or download), one at a time, with a single consolidated review + next-steps report at the end. |
-| **`harden.sh`** | 🔒 | System hardening — admin users + SSH keys, SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl & kernel hardening, AppArmor, AIDE, auditd, plus extra fixes to clear common Lynis findings, then a Lynis audit. |
+| **`harden.sh`** | 🔒 | System hardening — admin users + SSH keys, SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl & kernel hardening, AppArmor, AIDE, auditd, plus extra fixes to clear common Lynis findings, then a Lynis audit. **Detects VM vs LXC** and skips host-managed steps (e.g. AppArmor) inside containers. |
 | **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `btop`, `fish`, `rsync`, `qemu-guest-agent` — plus the **fish** shell set as the default shell for users `harden.sh` created (or current users you pick). |
 | **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus the `/opt/docker` layout (always created) with an optional example app. |
 | **`motd.sh`** | 🖥️ | A cool **dynamic login banner** (MOTD) showing live host, IP, uptime, OS/kernel, load, memory, disk &amp; sessions — plus a link to your homelab documentation. |
@@ -48,8 +48,9 @@ changing the system, so it needs no root and backs nothing up.)
 
 <br>
 
-> ⚠️ **Run on a fresh host / VM.** `harden.sh` changes SSH and the firewall.
-> **Keep your current session open** and test a new SSH login before disconnecting.
+> ⚠️ **Run on a fresh host, VM, or LXC container.** `harden.sh` changes SSH and
+> the firewall. **Keep your current session open** and test a new SSH login
+> before disconnecting.
 
 <br>
 
@@ -443,3 +444,13 @@ and that nothing upstream (cloud security group, router) is filtering the port.
 - 🐧 &nbsp; **Debian 13 (Trixie)** — also works on Debian 12 / 11 for most steps
 - 👑 &nbsp; **Root** (`sudo`)
 - 🌐 &nbsp; **Outbound HTTPS** — for Option 1 and for Docker installation
+- 🖥️ &nbsp; **Bare metal, a VM, or an LXC container** — all supported (tested on Proxmox VMs and LXC containers)
+
+<br>
+
+> 🧱 **VM vs LXC.** `harden.sh` **auto-detects** whether it's running in an LXC
+> container and **skips host-managed steps** that can't work inside one — most
+> notably **AppArmor**, which is owned by the Proxmox host kernel (enable/confirm
+> it on the host, not in the container). On bare metal and full VMs every step
+> runs as normal. The optional `qemu-guest-agent` package (via `ancillary.sh`)
+> is only useful inside a VM.
