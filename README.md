@@ -37,13 +37,13 @@ consolidated report** (a review of what ran, plus a single next-steps list).
 | **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `btop`, `fish`, `rsync`, `qemu-guest-agent` — plus the **fish** shell set as the default shell for users `harden.sh` created (or current users you pick). |
 | **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus the `/opt/docker` layout (always created) with an optional example app. |
 | **`motd.sh`** | 🖥️ | A cool **dynamic login banner** (MOTD) showing live host, IP, uptime, OS/kernel, load, memory, disk &amp; sessions — plus a link to your homelab documentation. |
-| **`connect-doc.sh`** | 🔌 | Generates the **connection doc** (`docs/connect.html`) — server details plus how to SSH in on the hardened port, with a `fish` alias and `~/.ssh/config` recipe. Auto-detects host / IP / port / user, or takes `CONN_*` overrides. _Offered by `init.sh` as the optional **final step**, reusing the SSH port/user you configured._ |
+| **`documentation.sh`** | 🔌 | Generates the **connection doc** (`docs/connect.html`) — server details plus how to SSH in on the hardened port, with a `fish` alias and `~/.ssh/config` recipe. Auto-detects host / IP / port / user, or takes `CONN_*` overrides. _Offered by `init.sh` as the optional **final step**, reusing the SSH port/user you configured._ |
 
 <br>
 
 ✨ Every setup script is **idempotent**, has a **dry-run** preview, **prompts**
 before changes, **backs up** files it edits, and prints a **recap** at the end.
-(`connect-doc.sh` follows the same conventions but writes a doc rather than
+(`documentation.sh` follows the same conventions but writes a doc rather than
 changing the system, so it needs no root and backs nothing up.)
 
 <br>
@@ -120,7 +120,7 @@ sudo ./harden.sh     # 1️⃣  harden the system
 sudo ./ancillary.sh  # 2️⃣  extra packages (btop, fish, rsync, qemu-guest-agent) + fish shell
 sudo ./docker.sh     # 3️⃣  install Docker + Compose (rootless)
 sudo ./motd.sh       # 4️⃣  install the dynamic login banner (MOTD)
-./connect-doc.sh     # 5️⃣  generate docs/connect.html (no sudo needed)
+./documentation.sh   # 5️⃣  generate docs/connect.html (no sudo needed)
 ```
 
 <br>
@@ -143,7 +143,7 @@ sudo DRY_RUN=1 ./harden.sh
 sudo DRY_RUN=1 ./ancillary.sh
 sudo DRY_RUN=1 ./docker.sh
 sudo DRY_RUN=1 ./motd.sh
-DRY_RUN=1 ./connect-doc.sh   # no sudo — just previews the generated HTML
+DRY_RUN=1 ./documentation.sh # no sudo — just previews the generated HTML
 ```
 
 <br>
@@ -331,7 +331,7 @@ docker compose up -d
 <br>
 
 <details open>
-<summary>🔌 &nbsp;<strong><code>connect-doc.sh</code></strong></summary>
+<summary>🔌 &nbsp;<strong><code>documentation.sh</code></strong></summary>
 
 <br>
 
