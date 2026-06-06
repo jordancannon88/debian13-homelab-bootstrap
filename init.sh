@@ -44,9 +44,9 @@ declare -A EXTRA_DESC=(
 # Where each script drops a one-line summary of what it did (read for the recap).
 SUMMARY_DIR="/var/lib/homelab-bootstrap/summaries"
 
-# Scripts offered, in order. connect-doc.sh is last: it documents the host you
+# Scripts offered, in order. documentation.sh is last: it documents the host you
 # just set up (it generates a doc, it doesn't change the system).
-SCRIPTS=(harden.sh ancillary.sh docker.sh motd.sh connect-doc.sh)
+SCRIPTS=(harden.sh ancillary.sh docker.sh motd.sh documentation.sh)
 
 # ==============================================================================
 #  Output helpers
@@ -106,7 +106,7 @@ describe() {
     ancillary.sh) printf 'pick-and-install extra packages (+ fish as your default shell)';;
     docker.sh)    printf 'Docker Engine + Compose + rootless setup + /opt/docker layout';;
     motd.sh)      printf 'cool dynamic login banner (host, IP, uptime) + docs link';;
-    connect-doc.sh) printf 'generate docs/connect.html — how to SSH into this host on its hardened port';;
+    documentation.sh) printf 'generate docs/connect.html — how to SSH into this host on its hardened port';;
     *)            printf 'bootstrap script';;
   esac
 }
@@ -182,9 +182,9 @@ fi
 printf '\n%s%s %s%s%s — %s%s%s\n' "$BOLD" "$S_STEP" "$CYN" "motd.sh" "$RESET" "$DIM" "$(describe motd.sh)" "$RESET"
 if confirm "Generate a custom MOTD for this system?" Y; then SELECTED+=(motd.sh); else skip_script motd.sh; fi
 
-# --- connect-doc.sh
-printf '\n%s%s %s%s%s — %s%s%s\n' "$BOLD" "$S_STEP" "$CYN" "connect-doc.sh" "$RESET" "$DIM" "$(describe connect-doc.sh)" "$RESET"
-if confirm "Run connect-doc.sh?" Y; then SELECTED+=(connect-doc.sh); else skip_script connect-doc.sh; fi
+# --- documentation.sh
+printf '\n%s%s %s%s%s — %s%s%s\n' "$BOLD" "$S_STEP" "$CYN" "documentation.sh" "$RESET" "$DIM" "$(describe documentation.sh)" "$RESET"
+if confirm "Generate documentation?" Y; then SELECTED+=(documentation.sh); else skip_script documentation.sh; fi
 
 if (( ${#SELECTED[@]} == 0 )); then
   warn "No scripts selected — nothing to do."
@@ -284,8 +284,8 @@ if in_selected motd.sh; then
   export DOC_URL
 fi
 
-# --- connect-doc.sh inputs (it auto-detects everything else; reuse what we have)
-if in_selected connect-doc.sh; then
+# --- documentation.sh inputs (it auto-detects everything else; reuse what we have)
+if in_selected documentation.sh; then
   # Write next to where init was launched, so the downloaded-copy run doesn't
   # land the doc in the throwaway temp dir.
   export OUT_FILE="$(pwd)/docs/connect.html"
