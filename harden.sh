@@ -1583,13 +1583,19 @@ detect_reboot_required() {
     fi
   fi
   running="$(uname -r)"
-  newest="$(ls -1 /boot/vmlinuz-* 2>/dev/null | sed 's#.*/vmlinuz-##' | sort -V | tail -n1)"
-  if [[ -n "$newest" && "$newest" != "$running" ]]; then
-    REBOOT_REQUIRED=1
-    if [[ -n "$REBOOT_REASON" ]]; then
-      REBOOT_REASON="${REBOOT_REASON}; newer kernel installed (${newest}, running ${running})"
-    else
-      REBOOT_REASON="newer kernel installed (${newest}; running ${running})"
+  # Containers share the HOST kernel and have no /boot/vmlinuz-*, so comparing
+  # the running kernel to an "installed" one is meaningless inside one (and the
+  # non-matching glob would make `ls` fail with exit 2, aborting under set -e).
+  # Only do the kernel comparison on bare metal / full VMs.
+  if [[ "$IS_CONTAINER" != "1" ]]; then
+    newest="$(ls -1 /boot/vmlinuz-* 2>/dev/null | sed 's#.*/vmlinuz-##' | sort -V | tail -n1 || true)"
+    if [[ -n "$newest" && "$newest" != "$running" ]]; then
+      REBOOT_REQUIRED=1
+      if [[ -n "$REBOOT_REASON" ]]; then
+        REBOOT_REASON="${REBOOT_REASON}; newer kernel installed (${newest}, running ${running})"
+      else
+        REBOOT_REASON="newer kernel installed (${newest}; running ${running})"
+      fi
     fi
   fi
 }
