@@ -56,7 +56,7 @@ ERROR_COUNT=0
 
 # Scripts offered, in order. documentation.sh is last: it documents the host you
 # just set up (it generates a doc, it doesn't change the system).
-SCRIPTS=(harden.sh ancillary.sh docker.sh motd.sh documentation.sh)
+SCRIPTS=(harden.sh ancillary.sh monitoring.sh docker.sh motd.sh documentation.sh)
 
 # ==============================================================================
 #  Output helpers
@@ -154,6 +154,7 @@ describe() {
   case "$1" in
     harden.sh)    printf 'system hardening (users, SSH, firewall, fail2ban, sysctl, AppArmor, AIDE, Lynis)';;
     ancillary.sh) printf 'pick-and-install extra packages (+ fish as your default shell)';;
+    monitoring.sh) printf 'install Zabbix agent + Grafana Alloy (monitoring & log shipping)';;
     docker.sh)    printf 'Docker Engine + Compose + rootless setup + /opt/docker layout';;
     motd.sh)      printf 'cool dynamic login banner (host, IP, uptime) + docs link';;
     documentation.sh) printf 'generate /tmp/connect.html — how to SSH into this host on its hardened port';;
@@ -205,7 +206,8 @@ export DRY_RUN
 # Select which scripts to run.
 declare -A STATUS DETAIL SUMM LOGS
 SELECTED=()
-ANCILLARY_PICK=()   # apt packages chosen in the "extra services" group below
+ANCILLARY_PICK=()    # apt packages chosen in the "extra services" group below
+MONITORING_PICK=()   # monitoring agents (zabbix-agent2, alloy) chosen below
 
 skip_script() { STATUS[$1]="skipped"; DETAIL[$1]="you chose not to run it"; }
 
@@ -220,12 +222,17 @@ if confirm "Install extra services?" Y; then
   INSTALL_DOCKER=0
   for p in "${EXTRA_SERVICES[@]}"; do
     confirm "Install ${p} — ${EXTRA_DESC[$p]}?" Y || continue
-    if [[ "$p" == "docker" ]]; then INSTALL_DOCKER=1; else ANCILLARY_PICK+=("$p"); fi
+    case "$p" in
+      docker)              INSTALL_DOCKER=1 ;;
+      zabbix-agent2|alloy) MONITORING_PICK+=("$p") ;;
+      *)                   ANCILLARY_PICK+=("$p") ;;
+    esac
   done
-  if (( ${#ANCILLARY_PICK[@]} > 0 )); then SELECTED+=(ancillary.sh); else skip_script ancillary.sh; fi
-  if (( INSTALL_DOCKER == 1 )); then SELECTED+=(docker.sh); else skip_script docker.sh; fi
+  if (( ${#ANCILLARY_PICK[@]} > 0 ));  then SELECTED+=(ancillary.sh);  else skip_script ancillary.sh; fi
+  if (( ${#MONITORING_PICK[@]} > 0 )); then SELECTED+=(monitoring.sh); else skip_script monitoring.sh; fi
+  if (( INSTALL_DOCKER == 1 ));        then SELECTED+=(docker.sh);     else skip_script docker.sh; fi
 else
-  skip_script ancillary.sh; skip_script docker.sh
+  skip_script ancillary.sh; skip_script monitoring.sh; skip_script docker.sh
 fi
 
 # --- motd.sh
@@ -343,8 +350,25 @@ if in_selected ancillary.sh; then
   export ANCILLARY_PKGS="${ANCILLARY_PICK[*]}"
   log "Will install: ${BOLD}${ANCILLARY_PICK[*]}${RESET}"
 
+  # The fish default-shell question only matters if fish is being installed.
+  if in_selected_arr fish "${ANCILLARY_PICK[@]}"; then
+    if confirm "Set fish as ${PRIMARY_USER}'s default shell?" Y; then
+      export FISH_USERS="$PRIMARY_USER"
+    else
+      export FISH_USERS="none"
+    fi
+  else
+    export FISH_USERS="none"
+  fi
+fi
+
+# --- monitoring.sh questions (agents were picked in Step 1's extra-services group)
+if in_selected monitoring.sh; then
+  export MONITORING_PKGS="${MONITORING_PICK[*]}"
+  log "Will install: ${BOLD}${MONITORING_PICK[*]}${RESET}"
+
   # Zabbix agent 2 needs the server/proxy address for active checks (no default).
-  if in_selected_arr zabbix-agent2 "${ANCILLARY_PICK[@]}"; then
+  if in_selected_arr zabbix-agent2 "${MONITORING_PICK[@]}"; then
     ZABBIX_SERVER_ACTIVE=""
     while [[ -z "$ZABBIX_SERVER_ACTIVE" ]]; do
       ZABBIX_SERVER_ACTIVE="$(ask "Zabbix server/proxy for active checks (host or host:port, e.g. zbx.example.com:10051)" "")"
@@ -358,22 +382,11 @@ if in_selected ancillary.sh; then
   fi
 
   # Grafana Alloy needs the Loki base URL to push logs to (defaults to localhost).
-  if in_selected_arr alloy "${ANCILLARY_PICK[@]}"; then
+  if in_selected_arr alloy "${MONITORING_PICK[@]}"; then
     LOKI_URL="$(ask "Loki base URL for Alloy to push to (scheme://host:port)" "http://localhost:3100")"
     LOKI_URL="${LOKI_URL//[[:space:]]/}"
     export LOKI_URL
     log "Loki endpoint (Alloy): ${BOLD}${LOKI_URL}${RESET}"
-  fi
-
-  # The fish default-shell question only matters if fish is being installed.
-  if in_selected_arr fish "${ANCILLARY_PICK[@]}"; then
-    if confirm "Set fish as ${PRIMARY_USER}'s default shell?" Y; then
-      export FISH_USERS="$PRIMARY_USER"
-    else
-      export FISH_USERS="none"
-    fi
-  else
-    export FISH_USERS="none"
   fi
 fi
 
