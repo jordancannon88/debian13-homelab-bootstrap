@@ -347,15 +347,6 @@ if in_selected harden.sh; then
   export DOCKER_COMPAT=0   # rootless Docker doesn't need rootful forward/NAT tweaks
 fi
 
-# --- docker.sh questions
-if in_selected docker.sh; then
-  export DOCKER_USER="${PRIMARY_USER}"
-  export SETUP_ROOTLESS=1
-  export USERNS_METHOD=apparmor
-  confirm "Disable the system-wide (root) Docker daemon — rootless only?" Y && export DISABLE_ROOTFUL=1 || export DISABLE_ROOTFUL=0
-  confirm "Also create an example app under /opt/docker?" Y && export CREATE_EXAMPLE_APP=1 || export CREATE_EXAMPLE_APP=0
-fi
-
 # --- ancillary.sh questions (packages were picked in Step 1's extra-services group)
 if in_selected ancillary.sh; then
   export ANCILLARY_PKGS="${ANCILLARY_PICK[*]}"
@@ -399,13 +390,32 @@ if in_selected monitoring.sh; then
     export LOKI_URL
     log "Loki endpoint (Alloy): ${BOLD}${LOKI_URL}${RESET}"
 
-    # Optionally also tail Docker container logs (needs Docker on this host).
-    if confirm "Also capture Docker container logs with Alloy? (needs Docker installed)" N; then
+    # Optionally also capture Docker container logs (via the journald log-driver).
+    if confirm "Also capture Docker container logs? (Docker must use the journald log-driver)" N; then
       export ALLOY_DOCKER_LOGS=1
-      log "Alloy will also tail Docker container logs."
+      log "Alloy will keep the journald container-log relabel rules."
     else
       export ALLOY_DOCKER_LOGS=0
     fi
+  fi
+fi
+
+# --- docker.sh questions (after monitoring, so we can reuse the Alloy answer below)
+if in_selected docker.sh; then
+  export DOCKER_USER="${PRIMARY_USER}"
+  export SETUP_ROOTLESS=1
+  export USERNS_METHOD=apparmor
+  confirm "Disable the system-wide (root) Docker daemon — rootless only?" Y && export DISABLE_ROOTFUL=1 || export DISABLE_ROOTFUL=0
+  confirm "Also create an example app under /opt/docker?" Y && export CREATE_EXAMPLE_APP=1 || export CREATE_EXAMPLE_APP=0
+
+  # If they already opted into Alloy Docker-log capture, wire Docker to the
+  # journald log-driver automatically (no point asking the same thing twice).
+  if [[ "${ALLOY_DOCKER_LOGS:-0}" == "1" ]]; then
+    export DOCKER_JOURNALD_LOGS=1
+    log "Docker will log to the journal (journald) so Alloy can ship container logs."
+  else
+    confirm "Send Docker container logs to the journal (journald log-driver)?" N \
+      && export DOCKER_JOURNALD_LOGS=1 || export DOCKER_JOURNALD_LOGS=0
   fi
 fi
 

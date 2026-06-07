@@ -6,10 +6,12 @@
 //   /etc/alloy/config.alloy. To deploy by hand, swap @@LOKI_ENDPOINT@@
 //   for your Loki base URL (e.g. http://localhost:3100).
 //
-//   The Docker-container log block is delimited by @@ALLOY_DOCKER_BEGIN@@ /
-//   @@ALLOY_DOCKER_END@@. monitoring.sh strips it unless Docker log capture is
-//   enabled; to deploy by hand without it, delete those lines (or the whole
-//   block) yourself.
+//   Docker container logs are captured via the JOURNAL, not the Docker socket:
+//   point Docker's log-driver at journald and the lines flow in like any other
+//   journal entry. The relabel rules that promote container/image fields to
+//   labels are delimited by @@ALLOY_DOCKER_BEGIN@@ / @@ALLOY_DOCKER_END@@;
+//   monitoring.sh strips them unless Docker log capture is enabled. (This works
+//   for both rootful and rootless Docker — no socket access needed.)
 //
 // Strategy: JOURNAL-FIRST.
 //   On a systemd host the journal already holds kernel, every
@@ -53,6 +55,19 @@ loki.relabel "journal" {
     source_labels = ["__journal_syslog_identifier"]
     target_label  = "process"
   }
+  // @@ALLOY_DOCKER_BEGIN@@
+  // Docker's journald log-driver stamps each line with the container name and
+  // image; promote them to labels so container logs are queryable, e.g.
+  //   {job="systemd-journal", container="myapp"}
+  rule {
+    source_labels = ["__journal_container_name"]
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__journal_image_name"]
+    target_label  = "image"
+  }
+  // @@ALLOY_DOCKER_END@@
 }
 
 loki.process "journal_labels" {
@@ -104,48 +119,6 @@ loki.process "parse_files" {
 
   forward_to = [loki.process.filter_logs.receiver]
 }
-
-// ====================  SOURCE 3: Docker containers (optional)  ====================
-// @@ALLOY_DOCKER_BEGIN@@
-// Tail stdout/stderr of every Docker container via the Docker API. The daemon's
-// own logs already arrive through the journal (docker.service); this adds the
-// per-container application logs. The alloy user must be able to read the Docker
-// socket (monitoring.sh adds it to the `docker` group when this is enabled).
-// monitoring.sh removes this whole block (BEGIN..END) when Docker log capture
-// is declined.
-discovery.docker "containers" {
-  host = "unix:///var/run/docker.sock"
-}
-
-discovery.relabel "docker" {
-  targets = discovery.docker.containers.targets
-
-  rule {
-    source_labels = ["__meta_docker_container_name"]
-    regex         = "/?(.*)"
-    target_label  = "container"
-  }
-  rule {
-    source_labels = ["__meta_docker_container_log_stream"]
-    target_label  = "stream"
-  }
-  rule {
-    source_labels = ["__meta_docker_container_id"]
-    target_label  = "container_id"
-  }
-}
-
-loki.source.docker "containers" {
-  host          = "unix:///var/run/docker.sock"
-  targets       = discovery.docker.containers.targets
-  relabel_rules = discovery.relabel.docker.rules
-  forward_to    = [loki.process.filter_logs.receiver]
-  labels        = {
-    job  = "docker",
-    host = constants.hostname,
-  }
-}
-// @@ALLOY_DOCKER_END@@
 
 // ====================  SHARED: filtering + static labels  ====================
 loki.process "filter_logs" {
