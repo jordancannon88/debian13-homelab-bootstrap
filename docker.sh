@@ -32,6 +32,11 @@
 #                               (the /opt/docker hierarchy is ALWAYS created)
 #    EXAMPLE_APP=<name>      -> example app folder name (default example-app)
 #    EXAMPLE_PORT=<port>     -> host port for the example app (default 8080)
+#    DOCKER_JOURNALD_LOGS=1|0 -> set Docker's log-driver to journald so container
+#                               logs flow into the systemd journal (a log shipper
+#                               like Grafana Alloy then picks them up with no
+#                               socket access). Applies to the active daemon(s),
+#                               rootful and/or rootless. Else asks; default no.
 # ==============================================================================
 
 set -euo pipefail
@@ -48,6 +53,7 @@ SETUP_ROOTLESS="${SETUP_ROOTLESS:-}"           # empty = prompt
 DISABLE_ROOTFUL="${DISABLE_ROOTFUL:-}"         # empty = prompt
 USERNS_METHOD="${USERNS_METHOD:-}"             # apparmor|sysctl|none ; empty = prompt
 CREATE_EXAMPLE_APP="${CREATE_EXAMPLE_APP:-}"   # empty = prompt ; example app (layout is always created)
+DOCKER_JOURNALD_LOGS="${DOCKER_JOURNALD_LOGS:-}"  # empty = prompt ; journald log-driver
 ASSUME_YES="${ASSUME_YES:-0}"
 
 # /opt/docker production layout (per the "organizing Docker files" guide)
@@ -82,7 +88,7 @@ fi
 S_OK="✔"; S_INFO="•"; S_WARN="!"; S_ERR="✗"; S_STEP="▸"
 
 STEP_NO=0
-TOTAL_STEPS=6
+TOTAL_STEPS=7
 SUMMARY=()
 WARNINGS=()
 record()        { SUMMARY+=("$1"$'\t'"$2"); }
@@ -119,6 +125,41 @@ run_as_user() {
   if [[ "$DRY_RUN" == "1" ]]; then dry "su - $DOCKER_USER -c '$*'"; return 0; fi
   runuser -l "$DOCKER_USER" -c \
     "export XDG_RUNTIME_DIR=/run/user/${uid} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus PATH=/usr/bin:/usr/sbin:/sbin:\$PATH; $*"
+}
+
+# write_journald_daemon_json <path> <owner:group> — ensure "log-driver":"journald"
+# in a Docker daemon.json without clobbering other settings. Creates the file (and
+# parent dirs) if absent; merges with jq if present; otherwise leaves an existing
+# file untouched and warns. Returns non-zero if it couldn't apply the setting.
+write_journald_daemon_json() {
+  local path="$1" owner="$2" dir; dir="$(dirname "$path")"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    dry "set \"log-driver\":\"journald\" in ${path} (owner ${owner})"
+    return 0
+  fi
+  install -d -o "${owner%:*}" -g "${owner#*:}" -m 0755 "$dir"
+  if [[ -s "$path" ]]; then
+    if grep -q '"log-driver"[[:space:]]*:[[:space:]]*"journald"' "$path"; then
+      log "${path} already uses the journald log-driver."
+      return 0
+    fi
+    if command -v jq >/dev/null 2>&1; then
+      cp -a "$path" "${path}.bak.$(date +%F-%H%M%S)"
+      local tmp; tmp="$(mktemp)"
+      if jq '. + {"log-driver":"journald"}' "$path" > "$tmp" && mv "$tmp" "$path"; then
+        chown "$owner" "$path"; chmod 0644 "$path"
+        log "Merged journald log-driver into existing ${path} (backup kept)."
+        return 0
+      fi
+      rm -f "$tmp"
+    fi
+    warn "${path} already exists and couldn't be merged (no jq) — add '\"log-driver\": \"journald\"' to it yourself, then restart Docker."
+    return 1
+  fi
+  printf '{\n  "log-driver": "journald"\n}\n' > "$path"
+  chown "$owner" "$path"; chmod 0644 "$path"
+  log "Wrote ${path} with the journald log-driver."
+  return 0
 }
 
 # install_rootlesskit_apparmor_profile — grant ONLY rootlesskit the userns
@@ -316,6 +357,11 @@ USERNS_METHOD="${USERNS_METHOD:-none}"
 [[ -z "$CREATE_EXAMPLE_APP" ]] && { confirm "Also create an example app under ${OPT_DOCKER_DIR}?" Y && CREATE_EXAMPLE_APP=1 || CREATE_EXAMPLE_APP=0; }
 CREATE_EXAMPLE_APP="${CREATE_EXAMPLE_APP:-1}"
 
+# Optionally route container logs to the journal (so a shipper like Grafana Alloy
+# picks them up). Default no — it changes the log-driver and needs containers recreated.
+[[ -z "$DOCKER_JOURNALD_LOGS" ]] && { confirm "Send container logs to the journal (journald log-driver, so Grafana Alloy can ship them)?" N && DOCKER_JOURNALD_LOGS=1 || DOCKER_JOURNALD_LOGS=0; }
+DOCKER_JOURNALD_LOGS="${DOCKER_JOURNALD_LOGS:-0}"
+
 # Offer to remove conflicts.
 PURGE_CONFLICTS=0
 if (( ${#FOUND_CONFLICTS[@]} > 0 )) && [[ "$DRY_RUN" != "1" ]]; then
@@ -501,6 +547,46 @@ else
 fi
 
 # ==============================================================================
+banner "Container log-driver (journald)"
+# ==============================================================================
+# Optional: send container stdout/stderr to the systemd journal so a log shipper
+# (e.g. Grafana Alloy) picks them up with NO Docker socket access — the clean way
+# to ship rootless container logs. Applies to whichever daemon(s) are active:
+# rootful (/etc/docker/daemon.json) and/or the rootless user's
+# (~/.config/docker/daemon.json). Existing containers must be recreated to adopt it.
+if [[ "$DOCKER_JOURNALD_LOGS" != "1" ]]; then
+  note "Container log-driver left at Docker's default (json-file)."
+  record "Log driver" "default (json-file)"
+else
+  _jrnl_done=0
+  # Rootful daemon — only if it's still active (not disabled for rootless-only).
+  if [[ "$DISABLE_ROOTFUL" != "1" ]]; then
+    if write_journald_daemon_json /etc/docker/daemon.json "root:root"; then
+      run systemctl restart docker 2>/dev/null || true
+      _jrnl_done=1
+    fi
+  fi
+  # Rootless daemon — the user's own dockerd.
+  if [[ "$SETUP_ROOTLESS" == "1" ]]; then
+    if write_journald_daemon_json "${USER_HOME}/.config/docker/daemon.json" "${DOCKER_USER}:${DOCKER_USER}"; then
+      run_as_user "systemctl --user restart docker" || true
+      _jrnl_done=1
+    fi
+  fi
+  if [[ "$_jrnl_done" == "1" ]]; then
+    if [[ "$DRY_RUN" == "1" ]]; then
+      record "Log driver" "[dry-run] would set journald"
+    else
+      log "Container logs now go to the systemd journal (journald log-driver)."
+      note "Recreate existing containers to adopt it: ${DIM}docker compose up -d --force-recreate${RESET}"
+      record "Log driver" "journald$( [[ $SETUP_ROOTLESS == 1 ]] && echo ' (rootless)' )$( [[ $DISABLE_ROOTFUL != 1 ]] && echo ' (rootful)' )"
+    fi
+  else
+    record "Log driver" "journald requested but not applied (see warnings)"
+  fi
+fi
+
+# ==============================================================================
 banner "Creating /opt/docker structure"
 # ==============================================================================
 # Layout per the "organizing Docker files for production" guide. The directory
@@ -666,6 +752,10 @@ else
   fi
   printf '   %s•%s  Add more apps as %s%s/<app>/docker-compose.yml%s (one folder per app).\n' \
     "$BOLD" "$RESET" "$DIM" "$OPT_DOCKER_DIR" "$RESET"
+  if [[ "$DOCKER_JOURNALD_LOGS" == "1" ]]; then
+    printf '   %s•%s  Container logs go to the journal — recreate running containers (%sdocker compose up -d --force-recreate%s)\n' "$BOLD" "$RESET" "$DIM" "$RESET"
+    printf '       to adopt it. With Grafana Alloy installed they show in Loki as %s{host="%s", container=~".+"}%s\n' "$DIM" "$(hostname)" "$RESET"
+  fi
 
   # Troubleshooting (from README → "A container isn't reachable on the machine's IP").
   printf '\n   %s%sTroubleshooting — published port not reachable from another machine:%s\n' "$BOLD" "$YEL" "$RESET"

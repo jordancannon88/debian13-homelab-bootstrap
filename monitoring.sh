@@ -10,8 +10,10 @@
 #  - alloy (if selected) adds Grafana's official apt repo, installs Grafana
 #    Alloy, and writes a journal-first log-shipping config pointing at the Loki
 #    server (LOKI_URL, or asked when run interactively; defaults to localhost).
-#    Optionally also tails Docker container logs (ALLOY_DOCKER_LOGS, or asked) —
-#    when enabled, the alloy user is added to the docker group for socket access.
+#    Optionally also captures Docker container logs (ALLOY_DOCKER_LOGS, or
+#    asked): when enabled, Alloy keeps relabel rules that promote the journal's
+#    container/image fields to labels. This relies on Docker using the journald
+#    log-driver (set that separately — works for both rootful and rootless).
 #
 #  Config templates live alongside this script in zabbix/ and alloy/; if this
 #  script is run on its own (no repo checkout) they're fetched from the repo.
@@ -27,9 +29,11 @@
 #    LOKI_URL="scheme://host:port" -> Loki base URL for Alloy to push to
 #                                       (used when alloy is selected; asked
 #                                       interactively, defaults to localhost:3100)
-#    ALLOY_DOCKER_LOGS=1|0 -> also tail Docker container logs with Alloy
-#                                       (used when alloy is selected; asked
-#                                       interactively, defaults to off)
+#    ALLOY_DOCKER_LOGS=1|0 -> also capture Docker container logs (keeps the
+#                                       journald container/image relabel rules;
+#                                       needs Docker on the journald log-driver).
+#                                       Used when alloy is selected; asked
+#                                       interactively, defaults to off
 #    DRY_RUN=1|0            -> force preview / actual (else asks)
 #    ASSUME_YES=1           -> answer "yes" to every prompt (automation)
 # ==============================================================================
@@ -73,8 +77,9 @@ ALLOY_CONF="/etc/alloy/config.alloy"
 # is selected; asked interactively if unset. The /loki/api/v1/push path is added
 # automatically in the config template.
 LOKI_URL="${LOKI_URL:-}"
-# Whether Alloy should also tail Docker container logs (1/0). Asked interactively
-# when alloy is selected and this is unset; defaults to off (no Docker assumed).
+# Whether to capture Docker container logs (1/0): keeps the journald
+# container/image relabel rules in the Alloy config. Relies on Docker using the
+# journald log-driver. Asked interactively when alloy is selected and unset.
 ALLOY_DOCKER_LOGS="${ALLOY_DOCKER_LOGS:-}"
 
 # Which agents to install. MONITORING_PKGS (space-separated list, or "none")
@@ -202,12 +207,12 @@ write_zabbix_conf() {
 write_alloy_conf() {
   local target="$1" url="$2" docker="${3:-0}"
   resolve_template "$ALLOY_CONFIG_SRC" "alloy/config.alloy" || return 1
-  # Anchor to the dedicated marker lines ("// @@ALLOY_DOCKER_BEGIN@@") so the
-  # header prose that merely mentions the tokens isn't matched.
+  # Anchor to the dedicated marker lines ("// @@ALLOY_DOCKER_BEGIN@@", possibly
+  # indented) so the header prose that merely mentions the tokens isn't matched.
   awk -v url="$url" -v docker="$docker" '
-    /^\/\/ @@ALLOY_DOCKER_BEGIN@@$/ { indocker=1; next }   # drop the begin marker line
-    /^\/\/ @@ALLOY_DOCKER_END@@$/   { indocker=0; next }    # drop the end marker line
-    indocker && docker != "1" { next }                     # skip the block body when disabled
+    /^[[:space:]]*\/\/ @@ALLOY_DOCKER_BEGIN@@[[:space:]]*$/ { indocker=1; next }   # drop begin marker
+    /^[[:space:]]*\/\/ @@ALLOY_DOCKER_END@@[[:space:]]*$/   { indocker=0; next }    # drop end marker
+    indocker && docker != "1" { next }                                            # skip body when disabled
     { gsub(/@@LOKI_ENDPOINT@@/, url); print }
   ' "$RESOLVED_TEMPLATE" > "$target"
   [[ "$RESOLVED_TEMPLATE_IS_TMP" == "1" ]] && rm -f "$RESOLVED_TEMPLATE"
@@ -366,7 +371,7 @@ LOKI_URL="${LOKI_URL%/}"
 if [[ -z "$ALLOY_DOCKER_LOGS" ]]; then
   ALLOY_DOCKER_LOGS=0
   if [[ "$INTERACTIVE" -eq 1 ]]; then
-    printf '%s%s Also capture Docker container logs? (needs Docker on this host) [y/N]: %s' \
+    printf '%s%s Also capture Docker container logs (via the journald log-driver)? [y/N]: %s' \
       "$YEL" "$S_WARN" "$RESET" > /dev/tty
     read -r _dl < /dev/tty || _dl=""
     [[ "$_dl" =~ ^[Yy] ]] && ALLOY_DOCKER_LOGS=1
@@ -383,7 +388,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
   else
     dry "fetch alloy/config.alloy from repo -> ${ALLOY_CONF} (root:alloy 0640) pushing to ${LOKI_URL}/loki/api/v1/push${_docker_note}"
   fi
-  [[ "$ALLOY_DOCKER_LOGS" == "1" ]] && dry "add the alloy user to the 'docker' group so it can read /var/run/docker.sock"
+  [[ "$ALLOY_DOCKER_LOGS" == "1" ]] && dry "keep the journald container/image relabel rules (set Docker's log-driver to journald separately)"
   dry "enable + restart alloy"
   record "Grafana Alloy" "[dry-run] would install + configure (Loki ${LOKI_URL}${_docker_note})"
 else
@@ -414,17 +419,6 @@ else
   # accessible — otherwise the service exits with "permission denied" on start.
   _alloy_grp="alloy"; getent group alloy >/dev/null 2>&1 || _alloy_grp="root"
   install -d -o root -g "$_alloy_grp" -m 0750 /etc/alloy
-
-  # For Docker container logs, the alloy user needs to read /var/run/docker.sock
-  # (owned root:docker). Add it to the docker group if that group exists.
-  if [[ "$ALLOY_DOCKER_LOGS" == "1" ]]; then
-    if getent group docker >/dev/null 2>&1; then
-      usermod -aG docker alloy 2>/dev/null || true
-      log "Added the alloy user to the 'docker' group (to read the Docker socket)."
-    else
-      warn "Docker log capture enabled but no 'docker' group exists yet — install Docker, then run: usermod -aG docker alloy && systemctl restart alloy"
-    fi
-  fi
 
   _alloy_tmp="$(mktemp)"
   if write_alloy_conf "$_alloy_tmp" "$LOKI_URL" "$ALLOY_DOCKER_LOGS"; then
@@ -479,8 +473,11 @@ if pkg_selected alloy; then
   printf '   %s•%s  Confirm logs are flowing: %ssystemctl status alloy%s, then in Grafana query\n' "$BOLD" "$RESET" "$DIM" "$RESET"
   printf '       %s{host="%s"}%s against your Loki source. Auditd logs need read access for the alloy user.\n' "$DIM" "$(hostname)" "$RESET"; _had_step=1
   if [[ "${ALLOY_DOCKER_LOGS:-0}" == "1" ]]; then
-    printf '       Docker container logs ship under %s{job="docker"}%s — if empty, the alloy user may need a\n' "$DIM" "$RESET"
-    printf '       re-login for docker-group membership: %ssystemctl restart alloy%s (Docker must be installed).\n' "$DIM" "$RESET"
+    printf '   %s•%s  Docker container logs: point Docker at the %sjournald%s log-driver, then they ship via\n' "$BOLD" "$RESET" "$BOLD" "$RESET"
+    printf '       the journal — query %s{host="%s", container=~".+"}%s in Grafana.\n' "$DIM" "$(hostname)" "$RESET"
+    printf '       %s• rootful:%s  set %s{"log-driver":"journald"}%s in /etc/docker/daemon.json, then %ssystemctl restart docker%s\n' "$BOLD" "$RESET" "$DIM" "$RESET" "$DIM" "$RESET"
+    printf '       %s• rootless:%s set it in %s~/.config/docker/daemon.json%s, then %ssystemctl --user restart docker%s\n' "$BOLD" "$RESET" "$DIM" "$RESET" "$DIM" "$RESET"
+    printf '       then recreate containers (%sdocker compose up -d --force-recreate%s) so the driver applies.\n' "$DIM" "$RESET"
   fi
 fi
 (( _had_step == 0 )) && printf '   %s•%s  Nothing further to do.\n' "$BOLD" "$RESET"
