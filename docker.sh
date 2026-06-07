@@ -139,9 +139,9 @@ run_as_user() {
 # write_journald_daemon_json <path> <owner:group> — set "log-driver":"journald"
 # (and, if DOCKER_LOG_LABELS is non-empty, "log-opts":{"labels":"..."} so those
 # container labels are attached to each line for grouping in Loki). Creates the
-# file + parent dirs if absent; merges with jq if present (preserving other
-# keys); otherwise leaves an existing file untouched and warns. Returns non-zero
-# if it couldn't apply the setting.
+# file + parent dirs if absent; to merge into an EXISTING file (preserving other
+# keys) it uses jq, installing it first if missing. Returns non-zero only if it
+# couldn't apply the setting (e.g. jq unavailable and uninstallable).
 write_journald_daemon_json() {
   local path="$1" owner="$2" dir; dir="$(dirname "$path")"
   local labels="$DOCKER_LOG_LABELS"
@@ -151,6 +151,12 @@ write_journald_daemon_json() {
   fi
   install -d -o "${owner%:*}" -g "${owner#*:}" -m 0755 "$dir"
   if [[ -s "$path" ]]; then
+    # Merging into an existing file without clobbering other keys needs jq —
+    # install it if it's missing (it usually is on a fresh Debian box).
+    if ! command -v jq >/dev/null 2>&1; then
+      info "Installing jq (needed to merge the existing ${path})..."
+      apt-get install -y jq >/dev/null 2>&1 || true
+    fi
     if command -v jq >/dev/null 2>&1; then
       cp -a "$path" "${path}.bak.$(date +%F-%H%M%S)"
       local tmp; tmp="$(mktemp)"
@@ -164,7 +170,7 @@ write_journald_daemon_json() {
       fi
       rm -f "$tmp"
     fi
-    warn "${path} exists and jq isn't available to merge — set log-driver=journald${labels:+ and log-opts.labels=${labels}} in it yourself, then restart Docker."
+    warn "${path} exists and jq couldn't be installed to merge it — set log-driver=journald${labels:+ and log-opts.labels=${labels}} in it yourself, then restart Docker."
     return 1
   fi
   if [[ -n "$labels" ]]; then
