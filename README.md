@@ -131,11 +131,14 @@ tick in the picker are installed.
 > journal** (no extra package, no Docker socket access): point Docker at the
 > `journald` log-driver and the lines flow in like any other journal entry,
 > tagged with `container` / `image` labels. This works for **both rootful and
-> rootless** Docker. `docker.sh` can set the driver for you (its
-> `DOCKER_JOURNALD_LOGS` step — auto-enabled when you opt into Alloy Docker logs
-> via `init.sh`); to do it by hand, put `{"log-driver":"journald"}` in
-> `/etc/docker/daemon.json` (rootful) or `~/.config/docker/daemon.json`
-> (rootless), restart Docker, and recreate your containers. Query them with
+> rootless** Docker. **You don't have to set the driver by hand:** if Docker is
+> already installed, `monitoring.sh` detects it and offers to set the `journald`
+> driver itself (rootful and/or rootless) when you enable Docker-log capture; and
+> `docker.sh` sets it on fresh installs (its `DOCKER_JOURNALD_LOGS` step, auto-enabled
+> when you opt into Alloy Docker logs via `init.sh`). To do it manually instead, put
+> `{"log-driver":"journald"}` in `/etc/docker/daemon.json` (rootful) or
+> `~/.config/docker/daemon.json` (rootless), restart Docker, and recreate your
+> containers. Query them with
 > `{host="<host>", container=~".+"}`, or **group by Compose stack/service** with
 > `{compose_project="media"}` / `{compose_service="nginx"}` — `docker.sh` attaches
 > those labels by default (`DOCKER_LOG_LABELS`) and Alloy promotes them. (The
@@ -430,7 +433,9 @@ docker compose up -d
 | `MONITORING_PKGS="zabbix-agent2 alloy"` | Install exactly these agents (any of `zabbix-agent2 alloy`), or `none` for nothing; **unset** installs the full default set |
 | `ZABBIX_SERVER_ACTIVE="host[:port]"` | Zabbix server/proxy for active checks — **required** when `zabbix-agent2` is selected (asked interactively if unset). Written into `ServerActive=` in `/etc/zabbix/zabbix_agent2.conf` |
 | `LOKI_URL="scheme://host:port"` | Loki base URL for Alloy to push to — used when `alloy` is selected (asked interactively; defaults to `http://localhost:3100`). The `/loki/api/v1/push` path is appended automatically |
-| `ALLOY_DOCKER_LOGS=1` | Also capture **Docker container** logs — used when `alloy` is selected (asked interactively; defaults to off). Keeps the journald relabel rules that promote `container`/`image` labels; relies on Docker using the `journald` log-driver (rootful **or** rootless). Container logs then ship via the journal under `{host="<host>", container=~".+"}` |
+| `ALLOY_DOCKER_LOGS=1` | Also capture **Docker container** logs — used when `alloy` is selected (asked interactively; defaults to off). Keeps the journald relabel rules that promote `container`/`image`/`compose_project`/`compose_service` labels; relies on Docker using the `journald` log-driver (rootful **or** rootless). Container logs then ship via the journal under `{host="<host>", container=~".+"}` |
+| `ALLOY_SET_DOCKER_DRIVER=1\|0` | When `ALLOY_DOCKER_LOGS=1` **and Docker is already installed here**, set Docker's `journald` log-driver from `monitoring.sh` itself (rootful via `/etc/docker/daemon.json`, rootless via the user's `~/.config/docker/daemon.json`) — so an existing Docker host needs no separate `docker.sh` run. Empty = ask; default yes |
+| `DOCKER_LOG_LABELS=<csv>` | Container labels the journald driver attaches for grouping in Loki (default `com.docker.compose.project,com.docker.compose.service`, promoted to `compose_project`/`compose_service`). Empty = none |
 
 </details>
 

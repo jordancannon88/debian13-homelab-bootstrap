@@ -78,6 +78,17 @@ loki.relabel "journal" {
     source_labels = ["__journal_com_docker_compose_service"]
     target_label  = "compose_service"
   }
+  // Container logs already carry a `container` label, and journald sets their
+  // syslog identifier to the container name — which would duplicate into
+  // `process`. Clear `process` for any entry that has a container name, so that
+  // label stays meaningful for real host services. (replace with "" → Loki
+  // drops the empty label; non-container entries don't match, so keep theirs.)
+  rule {
+    source_labels = ["__journal_container_name"]
+    regex         = ".+"
+    target_label  = "process"
+    replacement   = ""
+  }
   // @@ALLOY_DOCKER_END@@
 }
 
