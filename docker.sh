@@ -37,6 +37,10 @@
 #                               like Grafana Alloy then picks them up with no
 #                               socket access). Applies to the active daemon(s),
 #                               rootful and/or rootless. Else asks; default no.
+#    DOCKER_LOG_LABELS=<csv> -> container labels the journald driver attaches to
+#                               each line (default the Compose project+service,
+#                               which Alloy promotes to compose_project /
+#                               compose_service labels). Empty = attach none.
 # ==============================================================================
 
 set -euo pipefail
@@ -54,6 +58,11 @@ DISABLE_ROOTFUL="${DISABLE_ROOTFUL:-}"         # empty = prompt
 USERNS_METHOD="${USERNS_METHOD:-}"             # apparmor|sysctl|none ; empty = prompt
 CREATE_EXAMPLE_APP="${CREATE_EXAMPLE_APP:-}"   # empty = prompt ; example app (layout is always created)
 DOCKER_JOURNALD_LOGS="${DOCKER_JOURNALD_LOGS:-}"  # empty = prompt ; journald log-driver
+# Container labels the journald driver attaches to each line (comma-separated).
+# Defaults to the Compose project + service so logs group per stack/service in
+# Loki; set empty to attach none. Alloy promotes these to compose_project /
+# compose_service labels.
+DOCKER_LOG_LABELS="${DOCKER_LOG_LABELS:-com.docker.compose.project,com.docker.compose.service}"
 ASSUME_YES="${ASSUME_YES:-0}"
 
 # /opt/docker production layout (per the "organizing Docker files" guide)
@@ -127,38 +136,44 @@ run_as_user() {
     "export XDG_RUNTIME_DIR=/run/user/${uid} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus PATH=/usr/bin:/usr/sbin:/sbin:\$PATH; $*"
 }
 
-# write_journald_daemon_json <path> <owner:group> — ensure "log-driver":"journald"
-# in a Docker daemon.json without clobbering other settings. Creates the file (and
-# parent dirs) if absent; merges with jq if present; otherwise leaves an existing
-# file untouched and warns. Returns non-zero if it couldn't apply the setting.
+# write_journald_daemon_json <path> <owner:group> — set "log-driver":"journald"
+# (and, if DOCKER_LOG_LABELS is non-empty, "log-opts":{"labels":"..."} so those
+# container labels are attached to each line for grouping in Loki). Creates the
+# file + parent dirs if absent; merges with jq if present (preserving other
+# keys); otherwise leaves an existing file untouched and warns. Returns non-zero
+# if it couldn't apply the setting.
 write_journald_daemon_json() {
   local path="$1" owner="$2" dir; dir="$(dirname "$path")"
+  local labels="$DOCKER_LOG_LABELS"
   if [[ "$DRY_RUN" == "1" ]]; then
-    dry "set \"log-driver\":\"journald\" in ${path} (owner ${owner})"
+    dry "set \"log-driver\":\"journald\"${labels:+ + log-opts labels=${labels}} in ${path} (owner ${owner})"
     return 0
   fi
   install -d -o "${owner%:*}" -g "${owner#*:}" -m 0755 "$dir"
   if [[ -s "$path" ]]; then
-    if grep -q '"log-driver"[[:space:]]*:[[:space:]]*"journald"' "$path"; then
-      log "${path} already uses the journald log-driver."
-      return 0
-    fi
     if command -v jq >/dev/null 2>&1; then
       cp -a "$path" "${path}.bak.$(date +%F-%H%M%S)"
       local tmp; tmp="$(mktemp)"
-      if jq '. + {"log-driver":"journald"}' "$path" > "$tmp" && mv "$tmp" "$path"; then
+      if jq --arg labels "$labels" '
+            ."log-driver" = "journald"
+            | if $labels != "" then ."log-opts" = ((."log-opts" // {}) + {"labels": $labels}) else . end
+          ' "$path" > "$tmp" && mv "$tmp" "$path"; then
         chown "$owner" "$path"; chmod 0644 "$path"
         log "Merged journald log-driver into existing ${path} (backup kept)."
         return 0
       fi
       rm -f "$tmp"
     fi
-    warn "${path} already exists and couldn't be merged (no jq) — add '\"log-driver\": \"journald\"' to it yourself, then restart Docker."
+    warn "${path} exists and jq isn't available to merge — set log-driver=journald${labels:+ and log-opts.labels=${labels}} in it yourself, then restart Docker."
     return 1
   fi
-  printf '{\n  "log-driver": "journald"\n}\n' > "$path"
+  if [[ -n "$labels" ]]; then
+    printf '{\n  "log-driver": "journald",\n  "log-opts": {\n    "labels": "%s"\n  }\n}\n' "$labels" > "$path"
+  else
+    printf '{\n  "log-driver": "journald"\n}\n' > "$path"
+  fi
   chown "$owner" "$path"; chmod 0644 "$path"
-  log "Wrote ${path} with the journald log-driver."
+  log "Wrote ${path} with the journald log-driver${labels:+ (labels: ${labels})}."
   return 0
 }
 
@@ -578,6 +593,7 @@ else
       record "Log driver" "[dry-run] would set journald"
     else
       log "Container logs now go to the systemd journal (journald log-driver)."
+      [[ -n "$DOCKER_LOG_LABELS" ]] && note "Attached container labels for grouping in Loki: ${DIM}${DOCKER_LOG_LABELS}${RESET}"
       note "Recreate existing containers to adopt it: ${DIM}docker compose up -d --force-recreate${RESET}"
       record "Log driver" "journald$( [[ $SETUP_ROOTLESS == 1 ]] && echo ' (rootless)' )$( [[ $DISABLE_ROOTFUL != 1 ]] && echo ' (rootful)' )"
     fi
