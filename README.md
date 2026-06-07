@@ -36,8 +36,8 @@ ran, plus a single next-steps list).
 | **`init.sh`** | 🚀 | Orchestrator — root check, then runs the scripts below (local copy or download), one at a time, with a single consolidated review + next-steps report at the end. |
 | **`harden.sh`** | 🔒 | System hardening — admin users + SSH keys, SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl & kernel hardening, AppArmor, AIDE, auditd, plus extra fixes to clear common Lynis findings, then a Lynis audit. **Detects VM vs LXC** and skips host-managed steps (e.g. AppArmor) inside containers. |
 | **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `btop`, `fish`, `rsync`, `qemu-guest-agent` — plus the **fish** shell set as the default shell for users `harden.sh` created (or current users you pick). |
-| **`monitoring.sh`** | 📈 | **Pick-and-install** monitoring agents from their vendor repos. **`zabbix-agent2`** adds Zabbix's official repo, installs the agent, and writes a custom config with this host's name and the Zabbix server address you provide. **`alloy`** adds Grafana's official repo and installs Grafana Alloy, a journal-first log shipper pointed at the Loki URL you provide — with an **optional prompt to also tail Docker container logs** (adds the `alloy` user to the `docker` group for socket access). |
-| **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus the `/opt/docker` layout (always created) with an optional example app. |
+| **`monitoring.sh`** | 📈 | **Pick-and-install** monitoring agents from their vendor repos. **`zabbix-agent2`** adds Zabbix's official repo, installs the agent, and writes a custom config with this host's name and the Zabbix server address you provide. **`alloy`** adds Grafana's official repo and installs Grafana Alloy, a journal-first log shipper pointed at the Loki URL you provide — with an **optional prompt to also capture Docker container logs** (via Docker's `journald` log-driver, so it works for both rootful and rootless Docker). |
+| **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus the `/opt/docker` layout (always created) with an optional example app. Optionally sets Docker's **`journald` log-driver** so container logs flow to the journal (and on to Loki via Alloy) — works for rootful and rootless. |
 | **`motd.sh`** | 🖥️ | A cool **dynamic login banner** (MOTD) showing live host, IP, uptime, OS/kernel, load, memory, disk &amp; sessions — plus a link to your homelab documentation. |
 | **`documentation.sh`** | 🔌 | Generates the **connection doc** (`docs/connect.html` by default) — server details plus how to SSH in on the hardened port, with a `fish` alias and `~/.ssh/config` recipe. Auto-detects host / IP / port / user, or takes `CONN_*` overrides. _Offered by `init.sh` as the optional **final step**, reusing the SSH port/user you configured — when run via `init.sh` the doc is always written to `/tmp/connect.html`._ |
 
@@ -127,10 +127,17 @@ tick in the picker are installed.
 | `gnupg` | Debian | Ensured present to import the Grafana repo key (usually already installed by `harden.sh`). |
 | `alloy` | **Grafana repo** | Grafana Alloy — journal-first log shipper to Loki. |
 
-> 📦 If you opt into **Docker container logs**, Alloy reads them straight from
-> `/var/run/docker.sock` (no extra package). `monitoring.sh` adds the `alloy`
-> user to the `docker` group so it can access the socket; the daemon's own logs
-> already arrive via the journal (`docker.service`).
+> 📦 If you opt into **Docker container logs**, Alloy captures them **via the
+> journal** (no extra package, no Docker socket access): point Docker at the
+> `journald` log-driver and the lines flow in like any other journal entry,
+> tagged with `container` / `image` labels. This works for **both rootful and
+> rootless** Docker. `docker.sh` can set the driver for you (its
+> `DOCKER_JOURNALD_LOGS` step — auto-enabled when you opt into Alloy Docker logs
+> via `init.sh`); to do it by hand, put `{"log-driver":"journald"}` in
+> `/etc/docker/daemon.json` (rootful) or `~/.config/docker/daemon.json`
+> (rootless), restart Docker, and recreate your containers. Query them with
+> `{host="<host>", container=~".+"}`. (The daemon's own logs already arrive via
+> `docker.service`.)
 
 <br>
 
@@ -421,7 +428,7 @@ docker compose up -d
 | `MONITORING_PKGS="zabbix-agent2 alloy"` | Install exactly these agents (any of `zabbix-agent2 alloy`), or `none` for nothing; **unset** installs the full default set |
 | `ZABBIX_SERVER_ACTIVE="host[:port]"` | Zabbix server/proxy for active checks — **required** when `zabbix-agent2` is selected (asked interactively if unset). Written into `ServerActive=` in `/etc/zabbix/zabbix_agent2.conf` |
 | `LOKI_URL="scheme://host:port"` | Loki base URL for Alloy to push to — used when `alloy` is selected (asked interactively; defaults to `http://localhost:3100`). The `/loki/api/v1/push` path is appended automatically |
-| `ALLOY_DOCKER_LOGS=1` | Also tail **Docker container** logs with Alloy — used when `alloy` is selected (asked interactively; defaults to off). Adds the `alloy` user to the `docker` group so it can read `/var/run/docker.sock`; container logs ship under `{job="docker"}` |
+| `ALLOY_DOCKER_LOGS=1` | Also capture **Docker container** logs — used when `alloy` is selected (asked interactively; defaults to off). Keeps the journald relabel rules that promote `container`/`image` labels; relies on Docker using the `journald` log-driver (rootful **or** rootless). Container logs then ship via the journal under `{host="<host>", container=~".+"}` |
 
 </details>
 
@@ -439,6 +446,7 @@ docker compose up -d
 | `USERNS_METHOD=apparmor\|sysctl\|none` | How to allow unprivileged user namespaces |
 | `CREATE_EXAMPLE_APP=1\|0` | Also drop an example app into the layout (the `/opt/docker` hierarchy is always created) |
 | `EXAMPLE_APP=<name>` · `EXAMPLE_PORT=8080` | Example app name / host port |
+| `DOCKER_JOURNALD_LOGS=1\|0` | Set Docker's `journald` log-driver so container logs flow to the systemd journal (and on to Loki via Alloy, no socket needed). Applies to the active daemon(s) — rootful (`/etc/docker/daemon.json`) and/or rootless (`~/.config/docker/daemon.json`). Else asks; default no. When run via `init.sh`, auto-enabled if you opted into Alloy Docker-log capture |
 
 </details>
 
