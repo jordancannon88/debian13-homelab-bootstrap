@@ -13,7 +13,9 @@
 #    Optionally also captures Docker container logs (ALLOY_DOCKER_LOGS, or
 #    asked): when enabled, Alloy keeps relabel rules that promote the journal's
 #    container/image fields to labels. This relies on Docker using the journald
-#    log-driver (set that separately — works for both rootful and rootless).
+#    log-driver — and if Docker is already installed on this host, monitoring.sh
+#    offers to set that driver itself (rootful and/or rootless), so you don't
+#    need to (re)run docker.sh. Works for both rootful and rootless Docker.
 #
 #  Config templates live alongside this script in zabbix/ and alloy/; if this
 #  script is run on its own (no repo checkout) they're fetched from the repo.
@@ -34,6 +36,13 @@
 #                                       needs Docker on the journald log-driver).
 #                                       Used when alloy is selected; asked
 #                                       interactively, defaults to off
+#    ALLOY_SET_DOCKER_DRIVER=1|0 -> when the above is on and Docker is already
+#                                       installed, set Docker's journald
+#                                       log-driver here (rootful + rootless).
+#                                       Empty = ask; default yes
+#    DOCKER_LOG_LABELS=<csv> -> container labels the journald driver attaches for
+#                                       grouping in Loki (default the Compose
+#                                       project+service). Empty = none
 #    DRY_RUN=1|0            -> force preview / actual (else asks)
 #    ASSUME_YES=1           -> answer "yes" to every prompt (automation)
 # ==============================================================================
@@ -81,6 +90,15 @@ LOKI_URL="${LOKI_URL:-}"
 # container/image relabel rules in the Alloy config. Relies on Docker using the
 # journald log-driver. Asked interactively when alloy is selected and unset.
 ALLOY_DOCKER_LOGS="${ALLOY_DOCKER_LOGS:-}"
+# When ALLOY_DOCKER_LOGS=1 and Docker is already installed here, whether to set
+# Docker's journald log-driver ourselves (1/0). Empty = ask (default yes). This
+# means an existing Docker host needs no separate docker.sh run.
+ALLOY_SET_DOCKER_DRIVER="${ALLOY_SET_DOCKER_DRIVER:-}"
+# Container labels the journald driver attaches to each line so they can be
+# grouped in Loki (Alloy promotes compose project/service to labels). Default
+# the Compose project+service; empty = attach none.
+DOCKER_LOG_LABELS="${DOCKER_LOG_LABELS:-com.docker.compose.project,com.docker.compose.service}"
+DOCKER_DRIVER_SET=0   # set to 1 once we've configured Docker's journald driver
 
 # Which agents to install. MONITORING_PKGS (space-separated list, or "none")
 # overrides the selection — init.sh sets it from the wizard's picker.
@@ -217,6 +235,131 @@ write_alloy_conf() {
   ' "$RESOLVED_TEMPLATE" > "$target"
   [[ "$RESOLVED_TEMPLATE_IS_TMP" == "1" ]] && rm -f "$RESOLVED_TEMPLATE"
   return 0
+}
+
+# write_journald_daemon_json <path> <owner:group> — set "log-driver":"journald"
+# (and, if DOCKER_LOG_LABELS is non-empty, "log-opts":{"labels":"..."}). Creates
+# the file + parent dirs if absent; to merge into an EXISTING file (preserving
+# other keys) it uses jq, installing it first if missing. Returns non-zero only
+# if it couldn't apply the setting. (Same logic as docker.sh.)
+write_journald_daemon_json() {
+  local path="$1" owner="$2" dir; dir="$(dirname "$path")"
+  local labels="$DOCKER_LOG_LABELS"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    dry "set \"log-driver\":\"journald\"${labels:+ + log-opts labels=${labels}} in ${path} (owner ${owner})"
+    return 0
+  fi
+  install -d -o "${owner%:*}" -g "${owner#*:}" -m 0755 "$dir"
+  if [[ -s "$path" ]]; then
+    if ! command -v jq >/dev/null 2>&1; then
+      info "Installing jq (needed to merge the existing ${path})..."
+      apt-get install -y jq >/dev/null 2>&1 || true
+    fi
+    if command -v jq >/dev/null 2>&1; then
+      cp -a "$path" "${path}.bak.$(date +%F-%H%M%S)"
+      local tmp; tmp="$(mktemp)"
+      if jq --arg labels "$labels" '
+            ."log-driver" = "journald"
+            | if $labels != "" then ."log-opts" = ((."log-opts" // {}) + {"labels": $labels}) else . end
+          ' "$path" > "$tmp" && mv "$tmp" "$path"; then
+        chown "$owner" "$path"; chmod 0644 "$path"
+        log "Merged journald log-driver into existing ${path} (backup kept)."
+        return 0
+      fi
+      rm -f "$tmp"
+    fi
+    warn "${path} exists and jq couldn't be installed to merge it — set log-driver=journald${labels:+ and log-opts.labels=${labels}} in it yourself, then restart Docker."
+    return 1
+  fi
+  if [[ -n "$labels" ]]; then
+    printf '{\n  "log-driver": "journald",\n  "log-opts": {\n    "labels": "%s"\n  }\n}\n' "$labels" > "$path"
+  else
+    printf '{\n  "log-driver": "journald"\n}\n' > "$path"
+  fi
+  chown "$owner" "$path"; chmod 0644 "$path"
+  log "Wrote ${path} with the journald log-driver${labels:+ (labels: ${labels})}."
+  return 0
+}
+
+# run_as_user_docker <user> <cmd...> — run a command in <user>'s systemd/D-Bus
+# session (needed to restart their rootless `docker` user service).
+run_as_user_docker() {
+  local u="$1"; shift
+  local uid; uid="$(id -u "$u" 2>/dev/null)" || return 1
+  if [[ "$DRY_RUN" == "1" ]]; then dry "su - $u -c '$*'"; return 0; fi
+  runuser -l "$u" -c \
+    "export XDG_RUNTIME_DIR=/run/user/${uid} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus PATH=/usr/bin:/usr/sbin:/sbin:\$PATH; $*"
+}
+
+# configure_docker_journald — when Docker is installed here, detect the active
+# daemon(s) and (after a prompt) point them at the journald log-driver so the
+# Alloy journal scrape captures container logs. Handles BOTH the rootful system
+# daemon (/etc/docker/daemon.json) and any running rootless daemon
+# (~user/.config/docker/daemon.json, restarted via the user's systemd session).
+configure_docker_journald() {
+  local rootful=0; local -a rl_users=(); local sock uid u home
+  systemctl is-active --quiet docker 2>/dev/null && rootful=1
+  # A running rootless daemon exposes a socket at /run/user/<uid>/docker.sock.
+  for sock in /run/user/*/docker.sock; do
+    [[ -S "$sock" ]] || continue
+    uid="$(basename "$(dirname "$sock")")"
+    u="$(id -un "$uid" 2>/dev/null)" || continue
+    rl_users+=("$u")
+  done
+
+  if (( rootful == 0 && ${#rl_users[@]} == 0 )); then
+    note "Docker is installed but no running daemon was detected — set its journald log-driver yourself (see next steps)."
+    return 0
+  fi
+
+  local targets=""
+  (( rootful )) && targets+="rootful(/etc/docker) "
+  (( ${#rl_users[@]} )) && targets+="rootless(${rl_users[*]})"
+  info "Docker detected here — can set its journald log-driver so Alloy captures container logs."
+  note "Would configure: ${targets}"
+
+  local do_it="$ALLOY_SET_DOCKER_DRIVER" _r=""
+  if [[ -z "$do_it" ]]; then
+    if [[ "$INTERACTIVE" -eq 1 ]]; then
+      printf '%s%s Set Docker'"'"'s journald log-driver now? [Y/n]: %s' "$YEL" "$S_WARN" "$RESET" > /dev/tty
+      read -r _r < /dev/tty || _r=""
+      [[ "$_r" =~ ^[Nn] ]] && do_it=0 || do_it=1
+    else
+      do_it=1   # non-interactive: they already asked for Docker logs
+    fi
+  fi
+  [[ "${do_it,,}" =~ ^(1|y|yes|true|on)$ ]] && do_it=1 || do_it=0
+  if [[ "$do_it" != "1" ]]; then
+    note "Left Docker's log-driver unchanged — see next steps to set it manually."
+    record "Docker log-driver" "skipped (set manually)"
+    return 0
+  fi
+
+  local applied=0
+  if (( rootful )); then
+    if write_journald_daemon_json /etc/docker/daemon.json "root:root"; then
+      if [[ "$DRY_RUN" == "1" ]]; then dry "systemctl restart docker"; else systemctl restart docker 2>/dev/null || true; fi
+      applied=1
+    fi
+  fi
+  for u in "${rl_users[@]}"; do
+    home="$(getent passwd "$u" | cut -d: -f6)"
+    if write_journald_daemon_json "${home}/.config/docker/daemon.json" "${u}:${u}"; then
+      run_as_user_docker "$u" "systemctl --user restart docker" || true
+      applied=1
+    fi
+  done
+
+  if (( applied )); then
+    DOCKER_DRIVER_SET=1
+    if [[ "$DRY_RUN" == "1" ]]; then
+      record "Docker log-driver" "[dry-run] would set journald (${targets})"
+    else
+      log "Docker now logs to the journal (journald)${DOCKER_LOG_LABELS:+; grouping labels: ${DOCKER_LOG_LABELS}}."
+      note "Recreate running containers to adopt it: ${DIM}docker compose up -d --force-recreate${RESET}"
+      record "Docker log-driver" "journald (${targets})"
+    fi
+  fi
 }
 
 # ==============================================================================
@@ -442,6 +585,14 @@ else
     record "Grafana Alloy" "installed; config NOT written (template missing)"
   fi
 fi
+
+# If Docker-log capture is on and Docker is already installed on THIS host, offer
+# to set its journald log-driver ourselves — so an existing Docker host needs no
+# separate docker.sh run. (On a fresh host where docker.sh installs Docker later,
+# Docker isn't present yet here, so this is skipped and docker.sh handles it.)
+if [[ "$ALLOY_DOCKER_LOGS" == "1" ]] && command -v docker >/dev/null 2>&1; then
+  configure_docker_journald
+fi
 fi   # end: pkg_selected alloy
 
 # ==============================================================================
@@ -473,11 +624,19 @@ if pkg_selected alloy; then
   printf '   %s•%s  Confirm logs are flowing: %ssystemctl status alloy%s, then in Grafana query\n' "$BOLD" "$RESET" "$DIM" "$RESET"
   printf '       %s{host="%s"}%s against your Loki source. Auditd logs need read access for the alloy user.\n' "$DIM" "$(hostname)" "$RESET"; _had_step=1
   if [[ "${ALLOY_DOCKER_LOGS:-0}" == "1" ]]; then
-    printf '   %s•%s  Docker container logs: point Docker at the %sjournald%s log-driver, then they ship via\n' "$BOLD" "$RESET" "$BOLD" "$RESET"
-    printf '       the journal — query %s{host="%s", container=~".+"}%s in Grafana.\n' "$DIM" "$(hostname)" "$RESET"
-    printf '       %s• rootful:%s  set %s{"log-driver":"journald"}%s in /etc/docker/daemon.json, then %ssystemctl restart docker%s\n' "$BOLD" "$RESET" "$DIM" "$RESET" "$DIM" "$RESET"
-    printf '       %s• rootless:%s set it in %s~/.config/docker/daemon.json%s, then %ssystemctl --user restart docker%s\n' "$BOLD" "$RESET" "$DIM" "$RESET" "$DIM" "$RESET"
-    printf '       then recreate containers (%sdocker compose up -d --force-recreate%s) so the driver applies.\n' "$DIM" "$RESET"
+    if [[ "${DOCKER_DRIVER_SET:-0}" == "1" ]]; then
+      # We configured Docker's journald driver — only the container recreate is left.
+      printf '   %s•%s  Docker journald log-driver set. Recreate running containers to adopt it\n' "$BOLD" "$RESET"
+      printf '       (%sdocker compose up -d --force-recreate%s), then group them in Grafana with\n' "$DIM" "$RESET"
+      printf '       %s{host="%s", compose_project="<stack>"}%s or %s{container=~".+"}%s.\n' "$DIM" "$(hostname)" "$RESET" "$DIM" "$RESET"
+    else
+      # Docker not present / not configured here — give the manual instructions.
+      printf '   %s•%s  Docker container logs: point Docker at the %sjournald%s log-driver, then they ship via\n' "$BOLD" "$RESET" "$BOLD" "$RESET"
+      printf '       the journal — query %s{host="%s", container=~".+"}%s in Grafana.\n' "$DIM" "$(hostname)" "$RESET"
+      printf '       %s• rootful:%s  set %s{"log-driver":"journald"}%s in /etc/docker/daemon.json, then %ssystemctl restart docker%s\n' "$BOLD" "$RESET" "$DIM" "$RESET" "$DIM" "$RESET"
+      printf '       %s• rootless:%s set it in %s~/.config/docker/daemon.json%s, then %ssystemctl --user restart docker%s\n' "$BOLD" "$RESET" "$DIM" "$RESET" "$DIM" "$RESET"
+      printf '       then recreate containers (%sdocker compose up -d --force-recreate%s) so the driver applies.\n' "$DIM" "$RESET"
+    fi
   fi
 fi
 (( _had_step == 0 )) && printf '   %s•%s  Nothing further to do.\n' "$BOLD" "$RESET"
