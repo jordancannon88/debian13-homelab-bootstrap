@@ -37,7 +37,7 @@ ran, plus a single next-steps list).
 | **`harden.sh`** | 🔒 | System hardening — admin users + SSH keys, SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl & kernel hardening, AppArmor, AIDE, auditd, plus extra fixes to clear common Lynis findings, then a Lynis audit. **Detects VM vs LXC** and skips host-managed steps (e.g. AppArmor) inside containers. |
 | **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `btop`, `fish`, `rsync`, `qemu-guest-agent` — plus the **fish** shell set as the default shell for users `harden.sh` created (or current users you pick). |
 | **`monitoring.sh`** | 📈 | **Pick-and-install** monitoring agents from their vendor repos. **`zabbix-agent2`** adds Zabbix's official repo, installs the agent, and writes a custom config with this host's name and the Zabbix server address you provide. **`alloy`** adds Grafana's official repo and installs Grafana Alloy, a journal-first log shipper pointed at the Loki URL you provide — with an **optional prompt to also capture Docker container logs** (via Docker's `journald` log-driver, so it works for both rootful and rootless Docker). |
-| **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus the `/opt/docker` layout (always created) with an optional example app. Optionally sets Docker's **`journald` log-driver** so container logs flow to the journal (and on to Loki via Alloy) — works for rootful and rootless. |
+| **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus the `/opt/docker` layout (always created) with an optional example app. Optionally sets Docker's **`journald` log-driver** so container logs flow to the journal (and on to Loki via Alloy) — works for rootful and rootless, and tags lines with the **Compose project/service** so you can group by stack in Loki. |
 | **`motd.sh`** | 🖥️ | A cool **dynamic login banner** (MOTD) showing live host, IP, uptime, OS/kernel, load, memory, disk &amp; sessions — plus a link to your homelab documentation. |
 | **`documentation.sh`** | 🔌 | Generates the **connection doc** (`docs/connect.html` by default) — server details plus how to SSH in on the hardened port, with a `fish` alias and `~/.ssh/config` recipe. Auto-detects host / IP / port / user, or takes `CONN_*` overrides. _Offered by `init.sh` as the optional **final step**, reusing the SSH port/user you configured — when run via `init.sh` the doc is always written to `/tmp/connect.html`._ |
 
@@ -136,8 +136,10 @@ tick in the picker are installed.
 > via `init.sh`); to do it by hand, put `{"log-driver":"journald"}` in
 > `/etc/docker/daemon.json` (rootful) or `~/.config/docker/daemon.json`
 > (rootless), restart Docker, and recreate your containers. Query them with
-> `{host="<host>", container=~".+"}`. (The daemon's own logs already arrive via
-> `docker.service`.)
+> `{host="<host>", container=~".+"}`, or **group by Compose stack/service** with
+> `{compose_project="media"}` / `{compose_service="nginx"}` — `docker.sh` attaches
+> those labels by default (`DOCKER_LOG_LABELS`) and Alloy promotes them. (The
+> daemon's own logs already arrive via `docker.service`.)
 
 <br>
 
@@ -447,6 +449,7 @@ docker compose up -d
 | `CREATE_EXAMPLE_APP=1\|0` | Also drop an example app into the layout (the `/opt/docker` hierarchy is always created) |
 | `EXAMPLE_APP=<name>` · `EXAMPLE_PORT=8080` | Example app name / host port |
 | `DOCKER_JOURNALD_LOGS=1\|0` | Set Docker's `journald` log-driver so container logs flow to the systemd journal (and on to Loki via Alloy, no socket needed). Applies to the active daemon(s) — rootful (`/etc/docker/daemon.json`) and/or rootless (`~/.config/docker/daemon.json`). Else asks; default no. When run via `init.sh`, auto-enabled if you opted into Alloy Docker-log capture |
+| `DOCKER_LOG_LABELS=<csv>` | Container labels the journald driver attaches to each line for grouping in Loki (default `com.docker.compose.project,com.docker.compose.service`, which Alloy promotes to `compose_project` / `compose_service` labels). Empty = attach none |
 
 </details>
 
