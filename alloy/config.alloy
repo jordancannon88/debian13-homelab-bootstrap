@@ -89,6 +89,18 @@ loki.relabel "journal" {
     target_label  = "process"
     replacement   = ""
   }
+  // Loki auto-fills a `service_name` label and, left to itself, uses the
+  // container name for it. Loki always assigns one (blanking it just makes it
+  // re-detect), so set a single fixed service_name for container logs instead
+  // of per-container names — you still group via container/compose_* labels.
+  // Swap "docker" for $1 of __journal_com_docker_compose_service if you'd rather
+  // service_name be the compose service.
+  rule {
+    source_labels = ["__journal_container_name"]
+    regex         = ".+"
+    target_label  = "service_name"
+    replacement   = "docker"
+  }
   // @@ALLOY_DOCKER_END@@
 }
 
