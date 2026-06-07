@@ -493,12 +493,12 @@ banner "Installing Grafana Alloy (log shipper)"
 # ==============================================================================
 # Adds Grafana's apt repo, installs alloy, then drops in the journal-first
 # config with the Loki endpoint substituted in. See https://grafana.com/docs/alloy
-ALLOY_LOKI_DEFAULT="http://localhost:3100"
+ALLOY_LOKI_DEFAULT="localhost:3100"
 
 # Resolve the Loki base URL — prompt if unset; default to localhost:3100.
 if [[ -z "$LOKI_URL" ]]; then
   if [[ "$INTERACTIVE" -eq 1 ]]; then
-    printf '%s%s Loki base URL for Alloy to push to (scheme://host:port) [default: %s]: %s' \
+    printf '%s%s Loki base URL for Alloy to push to (host:port) [default: %s]: %s' \
       "$YEL" "$S_INFO" "$ALLOY_LOKI_DEFAULT" "$RESET" > /dev/tty
     read -r LOKI_URL < /dev/tty || LOKI_URL=""
     LOKI_URL="${LOKI_URL//[[:space:]]/}"

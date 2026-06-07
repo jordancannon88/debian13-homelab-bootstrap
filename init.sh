@@ -385,7 +385,7 @@ if in_selected monitoring.sh; then
 
   # Grafana Alloy needs the Loki base URL to push logs to (defaults to localhost).
   if in_selected_arr alloy "${MONITORING_PICK[@]}"; then
-    LOKI_URL="$(ask "Loki base URL for Alloy to push to (scheme://host:port)" "http://localhost:3100")"
+    LOKI_URL="$(ask "Loki base URL for Alloy to push to (host:port)" "localhost:3100")"
     LOKI_URL="${LOKI_URL//[[:space:]]/}"
     export LOKI_URL
     log "Loki endpoint (Alloy): ${BOLD}${LOKI_URL}${RESET}"
