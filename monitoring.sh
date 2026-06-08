@@ -6,7 +6,11 @@
 #  - zabbix-agent2 (if selected) adds Zabbix's official apt repo, installs the
 #    agent (+ inxi for CPU-temperature), and writes a custom config with this
 #    host's name and the Zabbix server address (ZABBIX_SERVER_ACTIVE, or asked
-#    when run interactively).
+#    when run interactively). When a ROOTLESS Docker daemon is detected it also
+#    offers to set the agent up to monitor it (ZABBIX_MONITOR_ROOTLESS_DOCKER,
+#    or asked): rootless Docker's socket lives in the owner's runtime dir, so
+#    this points the Docker plugin at it, enables lingering, and runs the agent
+#    as that user so it can reach the socket.
 #  - alloy (if selected) adds Grafana's official apt repo, installs Grafana
 #    Alloy, and writes a journal-first log-shipping config pointing at the Loki
 #    server (LOKI_URL, or asked when run interactively; defaults to localhost).
@@ -28,6 +32,11 @@
 #    ZABBIX_SERVER_ACTIVE="host[:port]" -> Zabbix server/proxy for active checks
 #                                       (required when zabbix-agent2 is selected;
 #                                       asked interactively if unset)
+#    ZABBIX_MONITOR_ROOTLESS_DOCKER=1|0 -> set the agent up to monitor a rootless
+#                                       Docker daemon. Empty = ask when a rootless
+#                                       daemon is detected (default no)
+#    ZABBIX_DOCKER_USER=<user> -> the rootless Docker owner to monitor (default:
+#                                       auto-detected from the running daemon)
 #    LOKI_URL="scheme://host:port" -> Loki base URL for Alloy to push to
 #                                       (used when alloy is selected; asked
 #                                       interactively, defaults to localhost:3100)
@@ -79,6 +88,11 @@ ALL_PKGS=(zabbix-agent2 alloy)
 ZBX_VERSION="7.4"
 ZBX_CONF="/etc/zabbix/zabbix_agent2.conf"
 ZBX_SERVER_ACTIVE="${ZABBIX_SERVER_ACTIVE:-}"
+# Whether to also set the agent up to monitor a ROOTLESS Docker daemon (1/0).
+# Empty = ask interactively when a rootless Docker socket is detected (default
+# no). The owning user is auto-detected unless ZABBIX_DOCKER_USER overrides it.
+ZBX_ROOTLESS_DOCKER="${ZABBIX_MONITOR_ROOTLESS_DOCKER:-}"
+ZBX_DOCKER_USER="${ZABBIX_DOCKER_USER:-}"
 
 # Grafana Alloy specifics (Grafana's apt repo + custom config; see the step below).
 ALLOY_CONF="/etc/alloy/config.alloy"
@@ -213,6 +227,105 @@ write_zabbix_conf() {
   ' "$RESOLVED_TEMPLATE" > "$target"
   [[ "$RESOLVED_TEMPLATE_IS_TMP" == "1" ]] && rm -f "$RESOLVED_TEMPLATE"
   return 0
+}
+
+# detect_rootless_docker_users — print the username(s) that currently own a
+# running ROOTLESS Docker daemon (one per line), discovered from their API
+# sockets at /run/user/<uid>/docker.sock. Empty output = none running right now.
+detect_rootless_docker_users() {
+  local sock uid u
+  for sock in /run/user/*/docker.sock; do
+    [[ -S "$sock" ]] || continue
+    uid="$(basename "$(dirname "$sock")")"
+    u="$(id -un "$uid" 2>/dev/null)" || continue
+    printf '%s\n' "$u"
+  done
+}
+
+# setup_zabbix_rootless_docker <docker_user> — make zabbix-agent2 monitor <user>'s
+# ROOTLESS Docker. Rootless Docker exposes its API at /run/user/<uid>/docker.sock
+# (not the rootful /var/run/docker.sock), inside a 0700 runtime dir only the
+# owner can traverse — so the agent's Docker plugin both looks in the wrong place
+# AND lacks permission. The durable fix, in four parts:
+#   [1] a Docker-plugin drop-in pointing Plugins.Docker.Endpoint at the socket;
+#   [2] lingering, so the runtime dir + socket survive logout/reboot;
+#   [3] a systemd override running the agent AS that user (shares socket owner);
+#   [4] ownership/group repair so the re-usered agent can start and read its
+#       0640 root:zabbix configs.
+# Then reload + restart + verify docker.info. Honors DRY_RUN. Idempotent.
+# (Folds in the former fix-zabbix-rootless-docker.sh.)
+setup_zabbix_rootless_docker() {
+  local du="$1" uid runtime sock dropin_dir dropin ovr_dir ovr d
+  if ! uid="$(id -u "$du" 2>/dev/null)"; then
+    warn "User '$du' does not exist — skipping rootless Docker monitoring."
+    record "Zabbix rootless Docker" "skipped (no such user: $du)"
+    return 1
+  fi
+  runtime="/run/user/${uid}"
+  sock="${runtime}/docker.sock"
+  dropin_dir="/etc/zabbix/zabbix_agent2.d/plugins.d"
+  dropin="${dropin_dir}/docker.conf"
+  ovr_dir="/etc/systemd/system/zabbix-agent2.service.d"
+  ovr="${ovr_dir}/override.conf"
+
+  info "Configuring zabbix-agent2 to monitor rootless Docker for ${BOLD}${du}${RESET} (UID ${uid}, socket ${sock})."
+  [[ -S "$sock" ]] || warn "${sock} not present yet — lingering (below) plus a running rootless daemon will create it."
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    dry "write ${dropin} -> Plugins.Docker.Endpoint=unix://${sock}"
+    dry "loginctl enable-linger ${du}"
+    dry "write ${ovr} -> run zabbix-agent2 as User=${du} Group=${du}, XDG_RUNTIME_DIR=${runtime}"
+    dry "chown -R ${du}:${du} /var/log/zabbix /run/zabbix (if present); usermod -aG zabbix ${du}"
+    dry "systemctl daemon-reload + restart zabbix-agent2, then verify docker.info"
+    record "Zabbix rootless Docker" "[dry-run] would monitor ${du}'s rootless Docker"
+    return 0
+  fi
+
+  # [1] Docker-plugin drop-in pointing at the rootless socket. Agent 2 reads
+  #     every *.conf under plugins.d/, so this overrides the endpoint without
+  #     editing the main config (upgrade-safe and easy to remove).
+  install -d -m 755 "$dropin_dir"
+  cat > "$dropin" <<EOF
+# Zabbix Agent 2 - Docker plugin endpoint for ROOTLESS Docker.
+# Rootless Docker for ${du} (UID ${uid}); the default
+# unix:///var/run/docker.sock does not exist under rootless mode.
+Plugins.Docker.Endpoint=unix://${sock}
+EOF
+  chmod 644 "$dropin"
+
+  # [2] Keep the runtime dir (and socket) alive without an active login.
+  loginctl enable-linger "$du"
+
+  # [3] Run the agent as the rootless user so it shares ownership of the socket.
+  install -d -m 755 "$ovr_dir"
+  cat > "$ovr" <<EOF
+[Service]
+User=${du}
+Group=${du}
+Environment=XDG_RUNTIME_DIR=${runtime}
+EOF
+
+  # [4] Repair ownership/group so the re-usered agent can start and read configs.
+  for d in /var/log/zabbix /run/zabbix; do
+    [[ -d "$d" ]] && chown -R "${du}:${du}" "$d"
+  done
+  getent group zabbix >/dev/null 2>&1 && usermod -aG zabbix "$du"
+
+  # Apply the override and verify the Docker plugin can reach the socket.
+  systemctl daemon-reload
+  if systemctl restart zabbix-agent2 2>/dev/null; then
+    sleep 1
+    if runuser -u "$du" -- env XDG_RUNTIME_DIR="$runtime" zabbix_agent2 -t docker.info >/dev/null 2>&1; then
+      log "zabbix-agent2 now monitoring ${du}'s rootless Docker (docker.info returned data)."
+      record "Zabbix rootless Docker" "monitoring ${du} (UID ${uid})"
+    else
+      warn "Agent restarted but docker.info is still failing — check: journalctl -u zabbix-agent2 -n 40 --no-pager"
+      record "Zabbix rootless Docker" "configured for ${du}; docker.info not yet returning (check the rootless daemon)"
+    fi
+  else
+    warn "zabbix-agent2 did not restart after the rootless Docker override — check: systemctl status zabbix-agent2"
+    record "Zabbix rootless Docker" "configured for ${du}; service not running (check status)"
+  fi
 }
 
 # write_alloy_conf <target> <loki_base_url> <docker_logs> — render the
@@ -483,6 +596,50 @@ else
     rm -f "$_zbx_tmp"
     warn "zabbix-agent2 installed but its config could not be written — service left as-is."
     record "Zabbix agent 2" "installed; config NOT written (template missing)"
+  fi
+fi
+
+# --- Optionally monitor a ROOTLESS Docker daemon from this agent --------------
+# Only worth offering once the agent itself was set up (server address present).
+if [[ -n "$ZBX_SERVER_ACTIVE" ]]; then
+  # Auto-detect the rootless Docker owner (first running daemon) unless told.
+  [[ -z "$ZBX_DOCKER_USER" ]] && ZBX_DOCKER_USER="$(detect_rootless_docker_users | head -n1)"
+  _do_rootless="$ZBX_ROOTLESS_DOCKER"
+
+  if [[ -z "$_do_rootless" ]]; then
+    # Ask only when we actually found a rootless daemon worth monitoring.
+    if [[ -n "$ZBX_DOCKER_USER" && "$INTERACTIVE" -eq 1 ]]; then
+      info "Rootless Docker detected for ${BOLD}${ZBX_DOCKER_USER}${RESET}."
+      note "Monitoring it needs extra tweaks: point the plugin at the user's socket, enable lingering, and run the agent as that user."
+      printf '%s%s Set up zabbix-agent2 to monitor rootless Docker for %s? [y/N]: %s' \
+        "$YEL" "$S_WARN" "$ZBX_DOCKER_USER" "$RESET" > /dev/tty
+      read -r _r < /dev/tty || _r=""
+      [[ "$_r" =~ ^[Yy] ]] && _do_rootless=1 || _do_rootless=0
+    else
+      _do_rootless=0
+    fi
+  fi
+  [[ "${_do_rootless,,}" =~ ^(1|y|yes|true|on)$ ]] && _do_rootless=1 || _do_rootless=0
+
+  if [[ "$_do_rootless" == "1" ]]; then
+    # Forced on via env without a detected daemon — resolve the owner.
+    if [[ -z "$ZBX_DOCKER_USER" ]]; then
+      if [[ "$INTERACTIVE" -eq 1 ]]; then
+        printf '%s%s Which user owns the rootless Docker daemon?%s%s ' \
+          "$YEL" "$S_INFO" "${SUDO_USER:+ [default: $SUDO_USER]}" "$RESET" > /dev/tty
+        read -r ZBX_DOCKER_USER < /dev/tty || ZBX_DOCKER_USER=""
+      fi
+      ZBX_DOCKER_USER="${ZBX_DOCKER_USER:-${SUDO_USER:-}}"
+    fi
+    if [[ -n "$ZBX_DOCKER_USER" ]]; then
+      setup_zabbix_rootless_docker "$ZBX_DOCKER_USER" || true
+    else
+      warn "Rootless Docker monitoring requested but no owning user resolved — set ZABBIX_DOCKER_USER=<user>."
+      record "Zabbix rootless Docker" "skipped (no user resolved)"
+    fi
+  elif [[ -n "$ZBX_DOCKER_USER" ]]; then
+    note "Skipped rootless Docker monitoring (agent left on the default rootful socket)."
+    record "Zabbix rootless Docker" "skipped (declined)"
   fi
 fi
 fi   # end: pkg_selected zabbix-agent2

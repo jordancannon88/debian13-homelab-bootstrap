@@ -381,6 +381,18 @@ if in_selected monitoring.sh; then
     done
     export ZABBIX_SERVER_ACTIVE
     log "Zabbix server (active checks): ${BOLD}${ZABBIX_SERVER_ACTIVE}${RESET}"
+
+    # Optionally set the agent up to monitor a ROOTLESS Docker daemon. Rootless
+    # Docker's socket lives in the owner's runtime dir, so monitoring.sh points
+    # the Docker plugin at it, enables lingering, and runs the agent as that
+    # user. Default the owner to the admin user (the one docker.sh sets up).
+    if confirm "Also set the Zabbix agent up to monitor rootless Docker?" N; then
+      export ZABBIX_MONITOR_ROOTLESS_DOCKER=1
+      export ZABBIX_DOCKER_USER="${PRIMARY_USER}"
+      log "Zabbix will monitor rootless Docker for ${BOLD}${PRIMARY_USER}${RESET}."
+    else
+      export ZABBIX_MONITOR_ROOTLESS_DOCKER=0
+    fi
   fi
 
   # Grafana Alloy needs the Loki base URL to push logs to (defaults to localhost).
