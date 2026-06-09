@@ -34,7 +34,7 @@ ran, plus a single next-steps list).
 | Script | Icon | What it does |
 | --- | :---: | --- |
 | **`init.sh`** | 🚀 | Orchestrator — root check, then runs the scripts below (local copy or download), one at a time, with a single consolidated review + next-steps report at the end. |
-| **`harden.sh`** | 🔒 | System hardening — admin users + SSH keys, SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl & kernel hardening, AppArmor, AIDE, auditd, plus extra fixes to clear common Lynis findings, then a Lynis audit. **Detects VM vs LXC** and skips host-managed steps (e.g. AppArmor) inside containers. |
+| **`harden.sh`** | 🔒 | System hardening — admin users + SSH keys, SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl & kernel hardening, AppArmor, AIDE, auditd, plus extra fixes to clear common Lynis findings, then a Lynis audit. **Detects VM vs LXC** and skips host-managed steps (e.g. AppArmor, auditd) inside containers. |
 | **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `btop`, `fish`, `rsync`, `qemu-guest-agent` — plus the **fish** shell set as the default shell for users `harden.sh` created (or current users you pick). |
 | **`monitoring.sh`** | 📈 | **Pick-and-install** monitoring agents from their vendor repos. **`zabbix-agent2`** adds Zabbix's official repo, installs the agent, and writes a custom config with this host's name and the Zabbix server address you provide — and when a **rootless Docker** daemon is detected, offers to set the agent up to monitor it (socket path + lingering + running the agent as that user). **`alloy`** adds Grafana's official repo and installs Grafana Alloy, a journal-first log shipper pointed at the Loki URL you provide — with an **optional prompt to also capture Docker container logs** (via Docker's `journald` log-driver, so it works for both rootful and rootless Docker). |
 | **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus the `/opt/docker` layout (always created) with an optional example app. Optionally sets Docker's **`journald` log-driver** so container logs flow to the journal (and on to Loki via Alloy) — works for rootful and rootless, and tags lines with the **Compose project/service** so you can group by stack in Loki. |
@@ -627,7 +627,8 @@ sudo ss -ltnp | grep <port>          # confirm sshd is listening on the new port
 
 > 🧱 **VM vs LXC.** `harden.sh` **auto-detects** whether it's running in an LXC
 > container and **skips host-managed steps** that can't work inside one — most
-> notably **AppArmor**, which is owned by the Proxmox host kernel (enable/confirm
-> it on the host, not in the container). On bare metal and full VMs every step
+> notably **AppArmor** and **auditd**, whose subsystems are owned by the Proxmox
+> host kernel (enable/confirm them on the host, not in the container; auditd
+> isn't even installed inside a container). On bare metal and full VMs every step
 > runs as normal. The optional `qemu-guest-agent` package (via `ancillary.sh`)
 > is only useful inside a VM.

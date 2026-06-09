@@ -1370,8 +1370,16 @@ set_logindef() {
 # 1) Packages: PAM/tmp, package auditing, accounting, malware scanner, etc.
 EXTRA_PKGS=(
   libpam-tmpdir libpam-pwquality apt-listbugs debsums apt-show-versions
-  acct sysstat auditd rkhunter
+  acct sysstat rkhunter
 )
+# auditd's kernel audit subsystem is host-owned and cannot run inside an
+# (unprivileged) LXC/container — its postinst even errors out trying to start
+# the service. Only install it on bare metal / full VMs (see header comment).
+if [[ "$IS_CONTAINER" != "1" ]]; then
+  EXTRA_PKGS+=(auditd)
+else
+  note "Skipping auditd install — audit subsystem is host-managed in a ${CONTAINER_TYPE} container."
+fi
 info "Installing hardening helpers: ${DIM}${EXTRA_PKGS[*]}${RESET}"
 run apt -y install "${EXTRA_PKGS[@]}"
 record "Extra pkgs" "${#EXTRA_PKGS[@]} installed (pwquality, debsums, auditd, sysstat, acct, rkhunter, ...)"
@@ -1383,9 +1391,13 @@ else
   [[ -f /etc/default/sysstat ]] && sed -i 's/^ENABLED=.*/ENABLED="true"/' /etc/default/sysstat
 fi
 run systemctl enable --now sysstat 2>/dev/null || true
-run systemctl enable --now auditd 2>/dev/null || true
+[[ "$IS_CONTAINER" != "1" ]] && run systemctl enable --now auditd 2>/dev/null || true
 run systemctl enable --now acct 2>/dev/null || run systemctl enable --now acct.service 2>/dev/null || true
-log "Process accounting (acct), sysstat and auditd enabled."
+if [[ "$IS_CONTAINER" != "1" ]]; then
+  log "Process accounting (acct), sysstat and auditd enabled."
+else
+  log "Process accounting (acct) and sysstat enabled (auditd skipped in container)."
+fi
 
 # 3) /etc/login.defs: password aging, hashing rounds, umask (AUTH-9230/9286/9328).
 info "Hardening /etc/login.defs..."
@@ -1423,7 +1435,9 @@ fi
   printf '%s\n' "install rds /bin/true"
   printf '%s\n' "install tipc /bin/true"
   printf '%s\n' "install firewire-core /bin/true"
-  [[ "$BLACKLIST_USB_STORAGE" == "1" ]] && printf '%s\n' "install usb-storage /bin/true"
+  # NB: keep this `if` (not `[[ ]] && printf`) — as the brace group's last command,
+  # a false `&&` test exits 1, which pipefail+set -e would turn into a script abort.
+  if [[ "$BLACKLIST_USB_STORAGE" == "1" ]]; then printf '%s\n' "install usb-storage /bin/true"; fi
 } | write_file /etc/modprobe.d/99-hardening-blacklist.conf
 if [[ "$BLACKLIST_USB_STORAGE" == "1" ]]; then
   log "Blacklisted dccp, sctp, rds, tipc, firewire-core, usb-storage (reversible)."
@@ -1489,6 +1503,10 @@ fi
 record "debsums" "CRON_CHECK=weekly in ${DEBSUMS_DEFAULT}"
 
 # 8) auditd: install a basic ruleset so it is not "enabled with empty ruleset" (ACCT-9630).
+#    Skipped in containers — auditd isn't installed there (host-owned subsystem).
+if [[ "$IS_CONTAINER" == "1" ]]; then
+  note "Skipping auditd ruleset — audit subsystem is host-managed in a ${CONTAINER_TYPE} container."
+else
 write_file /etc/audit/rules.d/99-hardening.rules <<'EOF'
 ## Minimal hardening audit ruleset (Lynis ACCT-9630)
 -D
@@ -1512,6 +1530,7 @@ if [[ "$DRY_RUN" != "1" ]]; then
 fi
 log "auditd given a basic ruleset (identity, sudoers, sshd, pam)."
 record "auditd rules" "basic ruleset installed (ACCT-9630)"
+fi
 
 # 9) Backup DNS resolver so 2 nameservers are reachable (NETW-2705).
 BACKUP_DNS="${BACKUP_DNS:-1.1.1.1 9.9.9.9}"
