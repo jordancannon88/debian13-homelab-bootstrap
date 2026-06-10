@@ -249,13 +249,19 @@ detect_rootless_docker_users() {
 # AND lacks permission. The durable fix, in four parts:
 #   [1] a Docker-plugin drop-in pointing Plugins.Docker.Endpoint at the socket;
 #   [2] lingering, so the runtime dir + socket survive logout/reboot;
-#   [3] a systemd override running the agent AS that user (shares socket owner);
+#   [3] a systemd override running the agent AS that user (shares socket owner),
+#       with RuntimeDirectory/LogsDirectory so /run/zabbix and /var/log/zabbix
+#       are re-owned by that user at every service start (reboot-proof —
+#       /run is tmpfs, so a one-time chown would decay on the first boot);
 #   [4] ownership/group repair so the re-usered agent can start and read its
-#       0640 root:zabbix configs.
+#       0640 root:zabbix configs;
+#   [5] the packaged logrotate rule repointed at that user — it recreates the
+#       log as zabbix:zabbix 0640 (not group-writable), which would kill the
+#       agent at its next start after a rotation.
 # Then reload + restart + verify docker.info. Honors DRY_RUN. Idempotent.
 # (Folds in the former fix-zabbix-rootless-docker.sh.)
 setup_zabbix_rootless_docker() {
-  local du="$1" uid runtime sock dropin_dir dropin ovr_dir ovr d
+  local du="$1" uid runtime sock dropin_dir dropin ovr_dir ovr d lr
   if ! uid="$(id -u "$du" 2>/dev/null)"; then
     warn "User '$du' does not exist — skipping rootless Docker monitoring."
     record "Zabbix rootless Docker" "skipped (no such user: $du)"
@@ -267,6 +273,7 @@ setup_zabbix_rootless_docker() {
   dropin="${dropin_dir}/docker.conf"
   ovr_dir="/etc/systemd/system/zabbix-agent2.service.d"
   ovr="${ovr_dir}/override.conf"
+  lr="/etc/logrotate.d/zabbix-agent2"
 
   info "Configuring zabbix-agent2 to monitor rootless Docker for ${BOLD}${du}${RESET} (UID ${uid}, socket ${sock})."
   [[ -S "$sock" ]] || warn "${sock} not present yet — lingering (below) plus a running rootless daemon will create it."
@@ -274,8 +281,9 @@ setup_zabbix_rootless_docker() {
   if [[ "$DRY_RUN" == "1" ]]; then
     dry "write ${dropin} -> Plugins.Docker.Endpoint=unix://${sock}"
     dry "loginctl enable-linger ${du}"
-    dry "write ${ovr} -> run zabbix-agent2 as User=${du} Group=${du}, XDG_RUNTIME_DIR=${runtime}"
+    dry "write ${ovr} -> run zabbix-agent2 as User=${du} Group=${du}, XDG_RUNTIME_DIR=${runtime}, RuntimeDirectory/LogsDirectory=zabbix"
     dry "chown -R ${du}:${du} /var/log/zabbix /run/zabbix (if present); usermod -aG zabbix ${du}"
+    dry "point the 'create' line in ${lr} at ${du} ${du} (if present; backup kept)"
     dry "systemctl daemon-reload + restart zabbix-agent2, then verify docker.info"
     record "Zabbix rootless Docker" "[dry-run] would monitor ${du}'s rootless Docker"
     return 0
@@ -297,12 +305,17 @@ EOF
   loginctl enable-linger "$du"
 
   # [3] Run the agent as the rootless user so it shares ownership of the socket.
+  #     RuntimeDirectory/LogsDirectory make systemd (re-)own /run/zabbix and
+  #     /var/log/zabbix as User=/Group= at every start — /run is tmpfs, so
+  #     without this the PID file/sockets break on the first reboot.
   install -d -m 755 "$ovr_dir"
   cat > "$ovr" <<EOF
 [Service]
 User=${du}
 Group=${du}
 Environment=XDG_RUNTIME_DIR=${runtime}
+RuntimeDirectory=zabbix
+LogsDirectory=zabbix
 EOF
 
   # [4] Repair ownership/group so the re-usered agent can start and read configs.
@@ -310,6 +323,15 @@ EOF
     [[ -d "$d" ]] && chown -R "${du}:${du}" "$d"
   done
   getent group zabbix >/dev/null 2>&1 && usermod -aG zabbix "$du"
+
+  # [5] Keep rotated logs writable: the packaged rule recreates the log as
+  #     'create 0640 zabbix zabbix', which the re-usered agent can't open.
+  if [[ -f "$lr" ]] && grep -qE '^[[:space:]]*create[[:space:]]' "$lr" \
+     && ! grep -qE "^[[:space:]]*create[[:space:]]+[0-7]+[[:space:]]+${du}[[:space:]]+${du}([[:space:]]|$)" "$lr"; then
+    cp -a "$lr" "${lr}.bak.$(date +%F-%H%M%S)"
+    sed -i -E "s/^([[:space:]]*create[[:space:]]+[0-7]+)[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+/\1 ${du} ${du}/" "$lr"
+    log "Repointed the logrotate 'create' rule in ${lr} at ${du} (backup kept)."
+  fi
 
   # Apply the override and verify the Docker plugin can reach the socket.
   systemctl daemon-reload
