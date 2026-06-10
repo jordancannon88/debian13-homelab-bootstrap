@@ -543,6 +543,34 @@ if [[ "$SETUP_ROOTLESS" == "1" ]]; then
     fi
   fi
 
+  # Hold the daemon at boot until the host can resolve DNS. Lingering starts
+  # the user's docker.service seconds into boot, and user units cannot order
+  # on the system's network-online.target — so containers brought up by
+  # restart policies snapshot a not-yet-ready resolv.conf and keep broken DNS
+  # until manually restarted (services like NPM also bake those resolvers into
+  # their own configs at entrypoint time). The pre-start poll is fail-open
+  # ('-' prefix, ~2 min cap): broken DNS delays dockerd, never blocks it.
+  WAIT_CONF="${USER_HOME}/.config/systemd/user/docker.service.d/wait-online.conf"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    dry "write ${WAIT_CONF} -> ExecStartPre DNS poll (fail-open, ~2 min cap), TimeoutStartSec=300"
+    dry "su - ${DOCKER_USER} -c 'systemctl --user daemon-reload'"
+    record "DNS wait" "[dry-run] would delay dockerd at boot until DNS resolves"
+  elif [[ -f "$WAIT_CONF" ]] && grep -q 'getent hosts' "$WAIT_CONF"; then
+    log "DNS wait-online drop-in already present at ${WAIT_CONF}."
+    record "DNS wait" "already present (${WAIT_CONF})"
+  else
+    runuser -u "$DOCKER_USER" -- mkdir -p "${WAIT_CONF%/*}"
+    cat > "$WAIT_CONF" <<'EOF'
+[Service]
+ExecStartPre=-/bin/sh -c 'i=0; until getent hosts debian.org >/dev/null 2>&1 || [ $i -ge 60 ]; do i=$((i+1)); sleep 2; done'
+TimeoutStartSec=300
+EOF
+    chown "${DOCKER_USER}:${DOCKER_USER}" "$WAIT_CONF"
+    run_as_user "systemctl --user daemon-reload" || true
+    log "dockerd now waits for working DNS at boot (containers no longer snapshot an empty resolv.conf)."
+    record "DNS wait" "docker.service delays until DNS resolves at boot (${WAIT_CONF})"
+  fi
+
   # Configure the user's shell environment (PATH + DOCKER_HOST).
   BASHRC="${USER_HOME}/.bashrc"
   ENV_BLOCK=$'\n# >>> rootless docker >>>\nexport PATH=/usr/bin:$PATH\nexport DOCKER_HOST=unix:///run/user/'"${USER_UID}"$'/docker.sock\n# <<< rootless docker <<<\n'
