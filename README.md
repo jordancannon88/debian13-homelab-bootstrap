@@ -349,6 +349,13 @@ docker compose up -d
   `sudo nft insert rule inet filter input tcp dport 8080 ct state new accept`).
 - Rootless containers run **without** the `docker-default` AppArmor profile
   (loading a profile needs root); isolation relies on user namespaces + seccomp.
+- **The daemon waits for DNS at boot.** Lingering starts the user's
+  `docker.service` seconds into boot — before the network is up — and user units
+  can't order on the system's `network-online.target`. Containers brought up by
+  restart policies would snapshot a not-yet-ready `resolv.conf` and keep broken
+  DNS until manually recreated. A drop-in
+  (`~/.config/systemd/user/docker.service.d/wait-online.conf`) makes `dockerd`
+  poll until the host resolves names (fail-open after ~2 min) before starting.
 - On Debian 13, `harden.sh` keeps AppArmor on; `docker.sh` grants **only**
   `rootlesskit` the `userns` permission so rootless still works (`USERNS_METHOD`).
 
