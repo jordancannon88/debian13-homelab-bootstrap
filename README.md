@@ -34,8 +34,9 @@ ran, plus a single next-steps list).
 | Script | Icon | What it does |
 | --- | :---: | --- |
 | **`init.sh`** | 🚀 | Orchestrator — root check, then runs the scripts below (local copy or download), one at a time, with a single consolidated review + next-steps report at the end. |
-| **`harden.sh`** | 🔒 | System hardening — admin users + SSH keys, SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl & kernel hardening, AppArmor, AIDE, auditd, plus extra fixes to clear common Lynis findings, then a Lynis audit. **Detects VM vs LXC** and skips host-managed steps (e.g. AppArmor, auditd) inside containers. |
-| **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `btop`, `fish`, `rsync`, `qemu-guest-agent` — plus the **fish** shell set as the default shell for users `harden.sh` created (or current users you pick). |
+| **`bootstrap.sh`** | 👤 | **Runs first** — creates the admin user (or updates an existing one), adds it to `sudo`, and installs its SSH public key into `~/.ssh/authorized_keys`. Optional password for newly-created accounts (blank = SSH-key only). `harden.sh` relies on this account + key existing, since hardening disables password login. |
+| **`harden.sh`** | 🔒 | System hardening — verifies the admin user(s) from `bootstrap.sh` (key + sudo), then SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl & kernel hardening, AppArmor, AIDE, auditd, plus extra fixes to clear common Lynis findings, then a Lynis audit. **Detects VM vs LXC** and skips host-managed steps (e.g. AppArmor, auditd) inside containers. |
+| **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `btop`, `fish`, `rsync`, `qemu-guest-agent` — plus the **fish** shell set as the default shell for users `bootstrap.sh` created (or current users you pick). |
 | **`monitoring.sh`** | 📈 | **Pick-and-install** monitoring agents from their vendor repos. **`zabbix-agent2`** adds Zabbix's official repo, installs the agent, and writes a custom config with this host's name and the Zabbix server address you provide — and when a **rootless Docker** daemon is detected, offers to set the agent up to monitor it (socket path + lingering + running the agent as that user). **`alloy`** adds Grafana's official repo and installs Grafana Alloy, a journal-first log shipper pointed at the Loki URL you provide — with an **optional prompt to also capture Docker container logs** (via Docker's `journald` log-driver, so it works for both rootful and rootless Docker). |
 | **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus the `/opt/docker` layout (always created) with an optional example app. Optionally sets Docker's **`journald` log-driver** so container logs flow to the journal (and on to Loki via Alloy) — works for rootful and rootless, and tags lines with the **Compose project/service** so you can group by stack in Loki. |
 | **`motd.sh`** | 🖥️ | A cool **dynamic login banner** (MOTD) showing live host, IP, uptime, OS/kernel, load, memory, disk &amp; sessions — plus a link to your homelab documentation. |
@@ -210,7 +211,7 @@ bash init.sh
 
 For each script, `init.sh` will:
 
-1. ❓ &nbsp; ask **whether to run it** (`Harden the system?`, `Install extra packages?`, `Install monitoring agents?`, `Install Docker…?` …) — and, for the **Extra packages** and **Monitoring** groups, let you **pick which ones** to install;
+1. ❓ &nbsp; ask **whether to run it** (`Set up the admin user + SSH key (bootstrap)?`, `Harden the system?`, `Install extra packages?`, `Install monitoring agents?`, `Install Docker…?` …) — and, for the **Extra packages** and **Monitoring** groups, let you **pick which ones** to install;
 2. 🧭 &nbsp; gather **every answer up front**, then use the **local file** if present, otherwise download it from GitHub;
 3. ▶️ &nbsp; run each chosen script **unattended** (no mid-run prompts), waiting for it to finish before the next;
 4. 📋 &nbsp; finish with **one consolidated report** — a review of what ran and a single, merged next-steps list.
@@ -239,12 +240,13 @@ sudo ./init.sh
 🛠️ Or run the steps yourself, in order:
 
 ```bash
-sudo ./harden.sh      # 1️⃣  harden the system
-sudo ./ancillary.sh   # 2️⃣  extra packages (btop, fish, rsync, qemu-guest-agent) + fish shell
-sudo ./monitoring.sh  # 3️⃣  monitoring agents (zabbix-agent2, alloy)
-sudo ./docker.sh      # 4️⃣  install Docker + Compose (rootless)
-sudo ./motd.sh        # 5️⃣  install the dynamic login banner (MOTD)
-./documentation.sh    # 6️⃣  generate docs/connect.html (no sudo needed)
+sudo ./bootstrap.sh   # 1️⃣  create/update the admin user + install the SSH key
+sudo ./harden.sh      # 2️⃣  harden the system (relies on the user/key from 1️⃣)
+sudo ./ancillary.sh   # 3️⃣  extra packages (btop, fish, rsync, qemu-guest-agent) + fish shell
+sudo ./monitoring.sh  # 4️⃣  monitoring agents (zabbix-agent2, alloy)
+sudo ./docker.sh      # 5️⃣  install Docker + Compose (rootless)
+sudo ./motd.sh        # 6️⃣  install the dynamic login banner (MOTD)
+./documentation.sh    # 7️⃣  generate docs/connect.html (no sudo needed)
 ```
 
 <br>
@@ -263,6 +265,7 @@ run** that previews every action without changing anything. To force it:
 <br>
 
 ```bash
+sudo DRY_RUN=1 ./bootstrap.sh
 sudo DRY_RUN=1 ./harden.sh
 sudo DRY_RUN=1 ./ancillary.sh
 sudo DRY_RUN=1 ./docker.sh
@@ -389,14 +392,29 @@ docker compose up -d
 <br>
 
 <details open>
+<summary>👤 &nbsp;<strong><code>bootstrap.sh</code></strong></summary>
+
+<br>
+
+| Variable | Effect |
+| --- | --- |
+| `ADMIN_USERS="jordan"` | Admin users to create/update (sudo + SSH key); skips the prompt |
+| `PUBKEY=` / `PUBKEY_<user>=` | SSH public key(s) — `PUBKEY` is the primary (first) user |
+| `ADMIN_PASSWORD=` / `PASSWORD_<user>=` | Password for a **newly-created** account (existing accounts are never changed; blank = SSH-key only) |
+| `CREATE_<user>=1\|0` | Auto-answer the "create missing user?" prompt |
+
+</details>
+
+<br>
+
+<details open>
 <summary>🔒 &nbsp;<strong><code>harden.sh</code></strong></summary>
 
 <br>
 
 | Variable | Effect |
 | --- | --- |
-| `ADMIN_USERS="jordan"` | Admin users to create/harden (sudo + SSH key); skips the prompt |
-| `PUBKEY=` / `PUBKEY_<user>=` | SSH public key(s) — `PUBKEY` is the primary user |
+| `ADMIN_USERS="jordan"` | **Existing** admin users the hardening relies on (lockout checks, root locking); skips the prompt. Create them with `bootstrap.sh` first |
 | `SSH_PORT=22` | SSH port |
 | `ALLOW_SSH_CIDRS="1.2.3.4/32"` | Restrict SSH to source ranges |
 | `ALLOW_HTTP=1` · `ALLOW_HTTPS=1` | Open 80 / 443 |

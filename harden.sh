@@ -9,20 +9,18 @@
 #   - Interactive pre-flight that surfaces every gotcha and asks to proceed
 #   - Idempotent: safe to re-run; guards prevent destructive re-work
 #
+#  NOTE: user creation + SSH key install moved to bootstrap.sh — run it FIRST.
+#  This script VERIFIES the admin user(s) exist and have keys (password auth is
+#  disabled here), but no longer creates accounts or installs keys itself.
+#
 #  Environment overrides:
 #   ADMIN_USER, SSH_PORT, ALLOW_HTTP, ALLOW_HTTPS, ALLOW_SSH_CIDRS,
-#   ALLOW_SSH_PORT_22, PUBKEY, ENABLE_SSH_2FA
+#   ALLOW_SSH_PORT_22, ENABLE_SSH_2FA
 #   ALLOW_TCP_PORTS="8080 8096" -> open extra TCP ports (e.g. published container
 #                                  ports — rootless Docker ports need this!)
 #   ALLOW_UDP_PORTS="51820"     -> open extra UDP ports
-#   ADMIN_USERS="u1 u2 ..."  -> admin users to create/harden (default: asks for one)
-#   PUBKEY_<user>="ssh-..."  -> SSH key for a specific user (PUBKEY = primary user)
-#   PASSWORD_<user>="..."    -> password to set on a NEWLY-created user
-#                               (ADMIN_PASSWORD = primary user). Existing users
-#                               are never changed; blank = passwordless (key-only).
-#   CREATE_<user>=1|0        -> auto-answer the "create missing user?" prompt
-#                               (existing users are always hardened; the primary
-#                                admin is always created if missing)
+#   ADMIN_USERS="u1 u2 ..."  -> EXISTING admin users to harden around (default:
+#                               asks; create them with bootstrap.sh first)
 #   DISABLE_ROOT_LOGIN=1|0   -> lock the root account password (root SSH is off
 #                               regardless; sudo still works). Only applied if an
 #                               admin user is keyed; never expires root. Else asks.
@@ -51,11 +49,10 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH
 # =======================
 # Config (env overridable)
 # =======================
-# Admin users to create/harden identically (disabled-password + sudo + SSH key).
+# EXISTING admin users to harden around (created beforehand by bootstrap.sh).
 # There is NO default user — if ADMIN_USERS is not set, the script interactively
-# asks which admin username(s) to set up. ADMIN_USER is just the first one (used
-# for messaging). Per-user keys: PUBKEY (primary) or PUBKEY_<user>.
-# Set ADMIN_USERS="u1 u2 ..." to skip the prompt entirely.
+# asks which admin username(s) to use. ADMIN_USER is just the first one (used
+# for messaging). Set ADMIN_USERS="u1 u2 ..." to skip the prompt entirely.
 if [[ -n "${ADMIN_USERS+x}" ]]; then ADMIN_USERS_EXPLICIT=1; else ADMIN_USERS_EXPLICIT=0; fi
 ADMIN_USERS="${ADMIN_USERS:-}"
 read -ra ADMIN_USER_LIST <<< "$ADMIN_USERS"
@@ -67,7 +64,7 @@ for _u in "${ADMIN_USER_LIST[@]}"; do
 done
 ADMIN_USER_LIST=("${_dedup[@]}")
 ADMIN_USER="${ADMIN_USER_LIST[0]:-}"
-declare -A USER_EXISTS USER_HASKEY USER_PUBKEY USER_PASSWORD WANT_CREATE
+declare -A USER_EXISTS USER_HASKEY
 
 # Was SSH_PORT explicitly provided? (decide before applying the default)
 if [[ -n "${SSH_PORT+x}" ]]; then SSH_PORT_EXPLICIT=1; else SSH_PORT_EXPLICIT=0; fi
@@ -80,7 +77,6 @@ ALLOW_TCP_PORTS="${ALLOW_TCP_PORTS:-}"
 ALLOW_UDP_PORTS="${ALLOW_UDP_PORTS:-}"
 ALLOW_SSH_CIDRS="${ALLOW_SSH_CIDRS:-}"      # e.g. "1.2.3.4/32,5.6.7.0/24" ; empty = any
 ALLOW_SSH_PORT_22="${ALLOW_SSH_PORT_22:-0}" # keep TCP/22 allowed too (safety)
-PUBKEY="${PUBKEY:-}"                        # paste your pubkey string
 ENABLE_SSH_2FA="${ENABLE_SSH_2FA:-0}"       # 1 to enable TOTP for SSH
 # Lock the root account password for tighter security (root SSH is disabled
 # regardless; sudo still works). Empty = ask. Only applied if an admin user has
@@ -105,10 +101,6 @@ DRY_RUN="${DRY_RUN:-}"   # resolved later in choose_run_mode
 
 START_TS="$(date +%s)"
 BACKUP_DIR="/tmp/hardening-backups/$(date +%F-%H%M%S)"
-
-# State shared with ancillary.sh: usernames this run NEWLY created.
-STATE_DIR="/var/lib/homelab-bootstrap"
-CREATED_USERS_FILE="$STATE_DIR/created-users"
 
 # ==============================================================================
 #  Output helpers — colors, banners, steps, and a running recap log
@@ -244,90 +236,6 @@ detect_container() {
   return 1
 }
 
-# valid_pubkey "<key line>" -> 0 if it looks like a valid SSH public key
-valid_pubkey() {
-  local key="$1" tmp
-  # Structural sanity: "<type> <base64>[ comment]"
-  [[ "$key" =~ ^(ssh-rsa|ssh-ed25519|ssh-dss|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com)[[:space:]]+[A-Za-z0-9+/=]+ ]] || return 1
-  # Authoritative check via ssh-keygen when available
-  if command -v ssh-keygen >/dev/null 2>&1; then
-    tmp="$(mktemp)"
-    printf '%s\n' "$key" > "$tmp"
-    if ssh-keygen -l -f "$tmp" >/dev/null 2>&1; then rm -f "$tmp"; return 0; fi
-    rm -f "$tmp"; return 1
-  fi
-  return 0
-}
-
-# prompt_for_pubkey <user> -> interactively read & validate a key, store it in
-# USER_PUBKEY[<user>] on success.
-prompt_for_pubkey() {
-  local user="$1"
-  [[ "$INTERACTIVE" -eq 1 ]] || return 0   # cannot prompt without a TTY
-  local key fp tmp haskey="${USER_HASKEY[$user]:-0}"
-  while true; do
-    printf '\n%s%sSSH key setup — paste the PUBLIC key to authorize for %s%s%s\n' \
-      "$BOLD" "$WHT" "$BOLD" "$user" "$RESET" > /dev/tty
-    note "No key yet? On YOUR machine (not this server) run:" > /dev/tty
-    printf '        %sssh-keygen -t ed25519 -C "user@example.com"%s\n' "$CYN" "$RESET" > /dev/tty
-    note "then paste the contents of ~/.ssh/id_ed25519.pub (the line below), e.g.:" > /dev/tty
-    note "  ssh-ed25519 AAAAC3Nza... user@host" > /dev/tty
-    if [[ "$haskey" -eq 1 ]]; then
-      printf '   %s(press Enter to keep %s'\''s existing authorized_keys)%s\n' "$DIM" "$user" "$RESET" > /dev/tty
-    else
-      printf '   %s(press Enter to skip — %s will have NO key)%s\n' "$DIM" "$user" "$RESET" > /dev/tty
-    fi
-    printf '%s%s %s key> %s' "$YEL" "$S_INFO" "$user" "$RESET" > /dev/tty
-    IFS= read -r key < /dev/tty || key=""
-    # Trim surrounding whitespace
-    key="${key#"${key%%[![:space:]]*}"}"
-    key="${key%"${key##*[![:space:]]}"}"
-
-    if [[ -z "$key" ]]; then
-      return 0   # user chose to skip / keep existing
-    fi
-    if valid_pubkey "$key"; then
-      USER_PUBKEY[$user]="$key"
-      if command -v ssh-keygen >/dev/null 2>&1; then
-        tmp="$(mktemp)"; printf '%s\n' "$key" > "$tmp"
-        fp="$(ssh-keygen -l -f "$tmp" 2>/dev/null)"; rm -f "$tmp"
-        printf '%s%s%s Accepted key for %s — %s%s%s\n' "$GRN" "$S_OK" "$RESET" "$user" "$DIM" "$fp" "$RESET" > /dev/tty
-      else
-        printf '%s%s%s Accepted key for %s.\n' "$GRN" "$S_OK" "$RESET" "$user" > /dev/tty
-      fi
-      return 0
-    fi
-    printf '%s%s That does not look like a valid SSH public key — try again.%s\n' \
-      "$RED" "$S_ERR" "$RESET" > /dev/tty
-  done
-}
-
-# prompt_for_password <user> -> interactively read a password (entered twice to
-# confirm) for a NEW account and store it in USER_PASSWORD[<user>]. Pressing
-# Enter skips, leaving the account passwordless (SSH-key only) as before.
-prompt_for_password() {
-  local user="$1"
-  [[ "$INTERACTIVE" -eq 1 ]] || return 0   # cannot prompt without a TTY
-  local p1 p2
-  while true; do
-    printf '\n%s%sSet a login password for the new user %s%s%s\n' \
-      "$BOLD" "$WHT" "$BOLD" "$user" "$RESET" > /dev/tty
-    printf '   %s(press Enter to skip — the account stays passwordless / SSH-key only)%s\n' "$DIM" "$RESET" > /dev/tty
-    printf '%s%s %s password> %s' "$YEL" "$S_INFO" "$user" "$RESET" > /dev/tty
-    IFS= read -rs p1 < /dev/tty || p1=""; printf '\n' > /dev/tty
-    [[ -z "$p1" ]] && return 0
-    printf '%s%s %s confirm > %s' "$YEL" "$S_INFO" "$user" "$RESET" > /dev/tty
-    IFS= read -rs p2 < /dev/tty || p2=""; printf '\n' > /dev/tty
-    if [[ "$p1" != "$p2" ]]; then
-      printf '%s%s Passwords do not match — try again.%s\n' "$RED" "$S_ERR" "$RESET" > /dev/tty
-      continue
-    fi
-    USER_PASSWORD[$user]="$p1"
-    printf '%s%s%s Password set for %s.\n' "$GRN" "$S_OK" "$RESET" "$user" > /dev/tty
-    return 0
-  done
-}
-
 # choose_run_mode — resolves DRY_RUN. Asks the user on first run.
 choose_run_mode() {
   if [[ "$DRY_RUN_EXPLICIT" == "1" ]]; then
@@ -415,21 +323,23 @@ prompt_for_docker() {
   fi
 }
 
-# prompt_for_admin_users — ask which admin username(s) to create/harden. There is
-# no default user, so this requires at least one (unless ADMIN_USERS was set via
-# env, or there is no TTY). Press Enter on an empty prompt once at least one user
-# has been added to finish. Brand-new names are flagged in WANT_CREATE so they
-# are created without a second "create it?" confirm.
+# prompt_for_admin_users — ask which EXISTING admin username(s) this hardening
+# should rely on (lockout checks, root locking, 2FA notes). Users are created by
+# bootstrap.sh, not here — a name that doesn't exist is rejected. Requires at
+# least one (unless ADMIN_USERS was set via env, or there is no TTY). Press
+# Enter on an empty prompt once at least one user has been added to finish.
 prompt_for_admin_users() {
   [[ "$ADMIN_USERS_EXPLICIT" == "1" ]] && return 0
   [[ "$INTERACTIVE" -eq 1 ]] || return 0
   local name uid shell
+  mapfile -t _humans < <(awk -F: '$3>=1000 && $3<65534 && $7 !~ /(nologin|false)$/ {print $1}' /etc/passwd | sort)
   while true; do
-    printf '\n%s%sAdmin username to create/harden (sudo + SSH key)?%s\n' "$BOLD" "$WHT" "$RESET" > /dev/tty
+    printf '\n%s%sAdmin username this hardening should rely on (existing, with an SSH key)?%s\n' "$BOLD" "$WHT" "$RESET" > /dev/tty
     if (( ${#ADMIN_USER_LIST[@]} > 0 )); then
       note "Added so far: ${ADMIN_USER_LIST[*]} — enter another, or press Enter to finish." > /dev/tty
     else
-      note "Enter a username (e.g. your own name). At least one is required." > /dev/tty
+      (( ${#_humans[@]} > 0 )) && note "Existing users: ${_humans[*]}" > /dev/tty
+      note "At least one is required. To CREATE a user, run bootstrap.sh first." > /dev/tty
     fi
     printf '%s%s username> %s' "$YEL" "$S_INFO" "$RESET" > /dev/tty
     IFS= read -r name < /dev/tty || name=""
@@ -454,30 +364,24 @@ prompt_for_admin_users() {
       note "'$name' is already in the admin list." > /dev/tty
       continue
     fi
-    # Safeguard: if the account ALREADY EXISTS, confirm before adopting it — and
-    # warn hard for system/service accounts (UID < 1000 or a nologin/false
-    # shell), since granting those sudo + SSH keys is almost certainly a typo.
-    if id "$name" >/dev/null 2>&1; then
-      uid="$(id -u "$name" 2>/dev/null || echo 0)"
-      shell="$(getent passwd "$name" | cut -d: -f7)"
-      if (( uid < 1000 )) || [[ "$shell" == */nologin || "$shell" == */false ]]; then
-        printf '%s%s '\''%s'\'' already exists and looks like a SYSTEM account (uid %s, shell %s).%s\n' \
-          "$RED" "$S_ERR" "$name" "$uid" "${shell:-?}" "$RESET" > /dev/tty
-        printf '   %sAdding it to sudo + SSH key login is almost certainly NOT what you want.%s\n' "$DIM" "$RESET" > /dev/tty
-        if ! confirm "Use the system account '$name' anyway?" N; then
-          note "Not using '$name' — enter a different username." > /dev/tty
-          continue
-        fi
-      else
-        printf '%s%s User '\''%s'\'' already exists (uid %s) — it will be PROMOTED to sudo and given an SSH key.%s\n' \
-          "$YEL" "$S_WARN" "$name" "$uid" "$RESET" > /dev/tty
-        if ! confirm "Promote existing user '$name' to admin (sudo + SSH key)?" Y; then
-          note "Skipping '$name' — enter a different username." > /dev/tty
-          continue
-        fi
+    # Users must already exist — creation is bootstrap.sh's job.
+    if ! id "$name" >/dev/null 2>&1; then
+      printf '%s%s User '\''%s'\'' does not exist — run bootstrap.sh first to create it.%s\n' \
+        "$RED" "$S_ERR" "$name" "$RESET" > /dev/tty
+      continue
+    fi
+    # Warn hard for system/service accounts (UID < 1000 or a nologin/false
+    # shell) — relying on those for SSH/sudo access is almost certainly a typo.
+    uid="$(id -u "$name" 2>/dev/null || echo 0)"
+    shell="$(getent passwd "$name" | cut -d: -f7)"
+    if (( uid < 1000 )) || [[ "$shell" == */nologin || "$shell" == */false ]]; then
+      printf '%s%s '\''%s'\'' looks like a SYSTEM account (uid %s, shell %s).%s\n' \
+        "$RED" "$S_ERR" "$name" "$uid" "${shell:-?}" "$RESET" > /dev/tty
+      printf '   %sRelying on it for SSH/sudo access is almost certainly NOT what you want.%s\n' "$DIM" "$RESET" > /dev/tty
+      if ! confirm "Use the system account '$name' anyway?" N; then
+        note "Not using '$name' — enter a different username." > /dev/tty
+        continue
       fi
-    else
-      WANT_CREATE[$name]=1   # brand-new: create without re-asking in pre-flight
     fi
     ADMIN_USER_LIST+=("$name")
     ADMIN_USER="${ADMIN_USER_LIST[0]}"
@@ -564,107 +468,73 @@ run mkdir -p "$BACKUP_DIR"
 # ==============================================================================
 header "Pre-flight checks & gotchas"
 
-# --- Resolve which admin users to set up ------------------------------------
-# Existing users are always hardened. A MISSING user is created automatically if
-# it was typed at the prompt (WANT_CREATE) or forced via CREATE_<user>=1; for a
-# missing user that came from ADMIN_USERS env we ask.
+# --- Resolve which admin users to use ----------------------------------------
+# Users must already EXIST — creation moved to bootstrap.sh. Missing names are
+# skipped here with a pointer at bootstrap.sh.
 EFFECTIVE_USERS=()
 for u in "${ADMIN_USER_LIST[@]}"; do
   if id "$u" >/dev/null 2>&1; then
-    EFFECTIVE_USERS+=("$u"); continue            # exists → always harden
-  fi
-  cvar="CREATE_${u}"
-  if [[ "${WANT_CREATE[$u]:-0}" == "1" ]]; then
-    _do=1                                        # chosen at the prompt → create
-  elif [[ -n "${!cvar:-}" ]]; then
-    [[ "${!cvar}" == "1" ]] && _do=1 || _do=0
-  elif confirm "User '$u' does not exist — create it?" Y; then
-    _do=1
-  else
-    _do=0
-  fi
-  if [[ "$_do" -eq 1 ]]; then
     EFFECTIVE_USERS+=("$u")
   else
-    note "Skipping '$u' — it does not exist and you chose not to create it."
-    record "User:$u" "skipped (absent; not created)"
+    warn "User '$u' does not exist — skipping (run bootstrap.sh first to create it)."
+    record "User:$u" "skipped (absent — create with bootstrap.sh)"
   fi
 done
 ADMIN_USER_LIST=("${EFFECTIVE_USERS[@]}")
 ADMIN_USER="${ADMIN_USER_LIST[0]:-}"
 
-# After resolution there must still be at least one admin user to set up.
+# After resolution there must still be at least one admin user.
 if (( ${#ADMIN_USER_LIST[@]} == 0 )); then
-  err "No admin users left to set up (all were skipped). Aborting — at least one is required."
+  err "No admin users left (none of the names exist). Run bootstrap.sh first — at least one existing admin user is required."
   exit 1
 fi
 
-# --- Per-user: detect existence + existing key, resolve/prompt for a key -----
-# At least one admin user must end up with a key (password auth is disabled).
+# --- Per-user: VERIFY key + sudo membership (set up by bootstrap.sh) ---------
+# At least one admin user must have a key (password auth is disabled below).
 key_login_ok=0
 NO_KEY_USERS=()
+NO_SUDO_USERS=()
 for u in "${ADMIN_USER_LIST[@]}"; do
-  USER_EXISTS[$u]=0; USER_HASKEY[$u]=0
-  if id "$u" >/dev/null 2>&1; then
-    USER_EXISTS[$u]=1
-    uh="$(getent passwd "$u" | cut -d: -f6)"
-    [[ -n "$uh" && -s "${uh}/.ssh/authorized_keys" ]] && USER_HASKEY[$u]=1
-  fi
-  # Key from env: PUBKEY_<user>, or PUBKEY for the primary user.
-  envvar="PUBKEY_${u}"
-  if [[ -n "${!envvar:-}" ]]; then
-    USER_PUBKEY[$u]="${!envvar}"
-  elif [[ "$u" == "$ADMIN_USER" && -n "${PUBKEY:-}" ]]; then
-    USER_PUBKEY[$u]="$PUBKEY"
-  fi
-  # Otherwise offer to paste one now (before the lockout check).
-  [[ -z "${USER_PUBKEY[$u]:-}" ]] && prompt_for_pubkey "$u"
-  # Password — only for users we'll CREATE (existing accounts are never changed):
-  # PASSWORD_<user>, else ADMIN_PASSWORD for the primary user, else prompt.
-  if [[ "${USER_EXISTS[$u]}" == "0" ]]; then
-    pwvar="PASSWORD_${u}"
-    if [[ -n "${!pwvar:-}" ]]; then
-      USER_PASSWORD[$u]="${!pwvar}"
-    elif [[ "$u" == "$ADMIN_USER" && -n "${ADMIN_PASSWORD:-}" ]]; then
-      USER_PASSWORD[$u]="$ADMIN_PASSWORD"
-    else
-      prompt_for_password "$u"
-    fi
-  fi
-  # Track login viability + users that will have no key.
-  if [[ -n "${USER_PUBKEY[$u]:-}" || "${USER_HASKEY[$u]}" == "1" ]]; then
+  USER_EXISTS[$u]=1; USER_HASKEY[$u]=0
+  uh="$(getent passwd "$u" | cut -d: -f6)"
+  [[ -n "$uh" && -s "${uh}/.ssh/authorized_keys" ]] && USER_HASKEY[$u]=1
+  if [[ "${USER_HASKEY[$u]}" == "1" ]]; then
     key_login_ok=1
   else
     NO_KEY_USERS+=("$u")
   fi
+  id -nG "$u" 2>/dev/null | tr ' ' '\n' | grep -qx sudo || NO_SUDO_USERS+=("$u")
 done
 
 # --- Optional: lock the ROOT account (tighter security) ----------------------
 # Root SSH is already disabled (PermitRootLogin no). This also LOCKS root's
 # password so console/su password login as root is refused; sudo still works.
-# Only offered/allowed when at least one admin user has a usable SSH key (they
-# all get sudo), so you keep a path to root. We LOCK the password only — never
+# Only offered/allowed when at least one admin user has a usable SSH key AND is
+# in sudo, so you keep a path to root. We LOCK the password only — never
 # expire root, as an expired account can make sudo itself fail.
 LOCK_ROOT_NOW=0
 ROOT_ALREADY_LOCKED=0
 if [[ "$(passwd -S root 2>/dev/null | awk '{print $2}')" == "L" ]]; then
   ROOT_ALREADY_LOCKED=1
 fi
-# Pick a keyed admin user to name in the messaging.
+# Pick a keyed admin user WITH sudo to name in the messaging (and to gate on —
+# bootstrap.sh ensures sudo, but a hand-made account might lack it).
 KEYED_ADMIN=""
 for u in "${ADMIN_USER_LIST[@]}"; do
-  if [[ -n "${USER_PUBKEY[$u]:-}" || "${USER_HASKEY[$u]:-0}" == "1" ]]; then KEYED_ADMIN="$u"; break; fi
+  if [[ "${USER_HASKEY[$u]:-0}" == "1" ]] && id -nG "$u" 2>/dev/null | tr ' ' '\n' | grep -qx sudo; then
+    KEYED_ADMIN="$u"; break
+  fi
 done
 if [[ "$ROOT_ALREADY_LOCKED" -eq 1 ]]; then
   : # nothing to do; reported in the step
-elif [[ "$key_login_ok" -eq 1 ]]; then
+elif [[ -n "$KEYED_ADMIN" ]]; then
   if [[ -n "$DISABLE_ROOT_LOGIN" ]]; then
     [[ "$DISABLE_ROOT_LOGIN" == "1" ]] && LOCK_ROOT_NOW=1
   elif confirm "Lock the root account password (root SSH already off; sudo via '$KEYED_ADMIN' still works)?" N; then
     LOCK_ROOT_NOW=1
   fi
 elif [[ "$DISABLE_ROOT_LOGIN" == "1" ]]; then
-  warn "Ignoring DISABLE_ROOT_LOGIN — no admin user has a key, so locking root could leave no path to root."
+  warn "Ignoring DISABLE_ROOT_LOGIN — no admin user has both a key and sudo, so locking root could leave no path to root."
 fi
 
 # --- Detect a likely re-run (idempotency awareness) -------------------------
@@ -713,6 +583,10 @@ if [[ "$key_login_ok" -eq 0 ]]; then
 elif (( ${#NO_KEY_USERS[@]} > 0 )); then
   printf '   %s%s%s These admin users will have NO SSH key (cannot log in): %s%s%s\n' \
     "$YEL" "$S_WARN" "$RESET" "$BOLD" "${NO_KEY_USERS[*]}" "$RESET"
+fi
+if (( ${#NO_SUDO_USERS[@]} > 0 )); then
+  printf '   %s%s%s NOT in the sudo group (no path to root for them): %s%s%s — fix via bootstrap.sh or usermod -aG sudo.\n' \
+    "$YEL" "$S_WARN" "$RESET" "$BOLD" "${NO_SUDO_USERS[*]}" "$RESET"
 fi
 if [[ "$LOCK_ROOT_NOW" -eq 1 ]]; then
   printf '   %s%s%s The %sroot%s account password will be %sLOCKED%s (sudo via %s%s%s still works; root SSH already off).\n' \
@@ -778,7 +652,7 @@ else
   if [[ "$key_login_ok" -eq 0 ]]; then
     warn "No usable SSH key for any admin user (${ADMIN_USER_LIST[*]})."
     if ! confirm "Continue anyway with password auth DISABLED (high lockout risk)?" N; then
-      err "Aborting. Re-run with PUBKEY=\"ssh-ed25519 AAAA...\" to install a key first."
+      err "Aborting. Run bootstrap.sh to install an SSH key first, then re-run."
       exit 1
     fi
     warn "Proceeding without a key — you accepted the lockout risk."
@@ -851,82 +725,30 @@ if [[ "${PURGE_CONFLICTS:-0}" == "1" ]]; then
 fi
 
 # ==============================================================================
-banner "Creating admin users + sudo + SSH keys"
+banner "Verifying admin users (created by bootstrap.sh)"
 # ==============================================================================
-# setup_admin_user <user> — create (disabled-password) or update, ensure sudo,
-# and install the resolved SSH key. Identical hardening for every admin user.
-setup_admin_user() {
-  local user="$1" key="${USER_PUBKEY[$1]:-}" home auth
-  # 1) Create or ensure the account + sudo membership.
-  if ! id "$user" >/dev/null 2>&1; then
-    info "Creating admin user: ${BOLD}${user}${RESET}"
-    run adduser --disabled-password --gecos "" "$user"
-    run usermod -aG sudo "$user"
-    # Set the password collected for this new account (if any); otherwise the
-    # account stays passwordless (SSH-key only), as before.
-    if [[ -n "${USER_PASSWORD[$user]:-}" ]]; then
-      if [[ "$DRY_RUN" == "1" ]]; then
-        dry "set password for '$user' (chpasswd)"
-      else
-        printf '%s:%s\n' "$user" "${USER_PASSWORD[$user]}" | chpasswd
-      fi
-      log "Created '$user' (password set) and added to the sudo group."
-      record "User:$user" "created (password set) + sudo"
-    else
-      log "Created '$user' and added to the sudo group."
-      record "User:$user" "created (disabled-password) + sudo"
-    fi
-    # Record newly-created users so ancillary.sh can target them (e.g. fish shell).
-    if [[ "$DRY_RUN" == "1" ]]; then
-      dry "record newly-created user '$user' -> $CREATED_USERS_FILE (for ancillary.sh)"
-    else
-      mkdir -p "$STATE_DIR"
-      grep -qxF "$user" "$CREATED_USERS_FILE" 2>/dev/null || printf '%s\n' "$user" >> "$CREATED_USERS_FILE"
-    fi
-  else
-    if id -nG "$user" | tr ' ' '\n' | grep -qx sudo; then
-      log "User '$user' already exists and is in sudo."
-    else
-      run usermod -aG sudo "$user"
-      log "User '$user' existed; added to the sudo group."
-    fi
-    record "User:$user" "existed (sudo ensured)"
-  fi
-
-  # 2) Install the SSH key (idempotent), or report the existing/none state.
-  if [[ -n "$key" ]]; then
-    info "Installing SSH public key for $user"
-    if [[ "$DRY_RUN" == "1" ]]; then
-      dry "ensure ~${user}/.ssh (700) and authorized_keys (600) contain the provided key"
-      record "Key:$user" "[dry-run] would install/verify"
-    else
-      home="$(getent passwd "$user" | cut -d: -f6)"
-      install -d -m 700 -o "$user" -g "$user" "$home/.ssh"
-      auth="$home/.ssh/authorized_keys"
-      touch "$auth"; chown "$user:$user" "$auth"; chmod 600 "$auth"
-      if ! grep -qF "$key" "$auth"; then
-        printf '%s\n' "$key" >> "$auth"
-        log "Public key installed to $auth"
-      else
-        log "Public key already present for $user (no change)."
-      fi
-      record "Key:$user" "installed/verified"
-    fi
-  elif [[ "${USER_HASKEY[$user]}" == "1" ]]; then
-    log "Existing authorized_keys found for $user (no new key needed)."
-    record "Key:$user" "existing key reused"
-  else
-    warn "No key for '$user' — it cannot log in via SSH."
-    record "Key:$user" "NONE (no SSH login)"
-  fi
-}
-
+# User creation + SSH key install moved to bootstrap.sh — here we only VERIFY
+# and report, so the recap shows exactly what this hardening will rely on.
 for u in "${ADMIN_USER_LIST[@]}"; do
-  setup_admin_user "$u"
+  _sudo_ok=0; _key_ok="${USER_HASKEY[$u]:-0}"
+  id -nG "$u" 2>/dev/null | tr ' ' '\n' | grep -qx sudo && _sudo_ok=1
+  if [[ "$_sudo_ok" == "1" && "$_key_ok" == "1" ]]; then
+    log "User '$u': in sudo, authorized_keys present."
+    record "User:$u" "verified (sudo + SSH key)"
+  elif [[ "$_key_ok" == "1" ]]; then
+    warn "User '$u' has a key but is NOT in sudo — run bootstrap.sh (or: usermod -aG sudo $u)."
+    record "User:$u" "key present; NOT in sudo"
+  elif [[ "$_sudo_ok" == "1" ]]; then
+    warn "User '$u' is in sudo but has NO SSH key — it cannot log in via SSH (run bootstrap.sh to add one)."
+    record "User:$u" "in sudo; NO SSH key"
+  else
+    warn "User '$u' has NO SSH key and is NOT in sudo — run bootstrap.sh to set it up."
+    record "User:$u" "NO key, NOT in sudo"
+  fi
 done
 
-# Optionally lock the ROOT account now that an admin user with sudo + key exists.
-# (Gated earlier on key_login_ok — locking root can never remove the sudo path.)
+# Optionally lock the ROOT account — an admin user with sudo + key exists.
+# (Gated earlier on KEYED_ADMIN — locking root can never remove the sudo path.)
 if [[ "$ROOT_ALREADY_LOCKED" -eq 1 ]]; then
   log "root account password is already locked (no change)."
   record "Root lockdown" "already locked (no change)"
@@ -1828,7 +1650,7 @@ if [[ "$DRY_RUN" != "1" ]]; then
   _root_state="unchanged"
   { [[ "${LOCK_ROOT_NOW:-0}" -eq 1 ]] || [[ "${ROOT_ALREADY_LOCKED:-0}" -eq 1 ]]; } && _root_state="locked"
   mkdir -p /var/lib/homelab-bootstrap/summaries
-  printf 'admins: %s (sudo+key); SSH :%s key-only; nftables deny-by-default; fail2ban+AppArmor+AIDE; root %s; Lynis %s\n' \
+  printf 'admins: %s (verified); SSH :%s key-only; nftables deny-by-default; fail2ban+AppArmor+AIDE; root %s; Lynis %s\n' \
     "${ADMIN_USER_LIST[*]}" "$SSH_PORT" "$_root_state" "${LYNIS_SCORE:-n/a}" \
     > /var/lib/homelab-bootstrap/summaries/harden.sh
 fi

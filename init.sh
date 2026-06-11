@@ -2,9 +2,9 @@
 # ==============================================================================
 #  Debian 13 Homelab Bootstrap — init
 #  Entry point. Must run as root. It:
-#    1. asks WHICH steps to run (harden, extra services, MOTD, connect doc) —
-#       "extra services" is one prompt covering the optional packages and
-#       rootless Docker
+#    1. asks WHICH steps to run (bootstrap, harden, extra services, MOTD,
+#       connect doc) — "extra services" is one prompt covering the optional
+#       packages and rootless Docker
 #    2. asks EVERY question up front (a single wizard)
 #    3. runs each chosen script NON-INTERACTIVELY (answers passed via env), so
 #       nothing stops mid-run to ask you anything
@@ -57,9 +57,10 @@ LOG_DIR="/var/log/homelab-bootstrap"
 ERROR_LOG="${LOG_DIR}/install-errors-$(date +%Y%m%d-%H%M%S).log"
 ERROR_COUNT=0
 
-# Scripts offered, in order. documentation.sh is last: it documents the host you
-# just set up (it generates a doc, it doesn't change the system).
-SCRIPTS=(harden.sh ancillary.sh monitoring.sh docker.sh motd.sh documentation.sh)
+# Scripts offered, in order. bootstrap.sh runs FIRST (it creates the admin user
+# + SSH key that harden.sh relies on); documentation.sh is last: it documents
+# the host you just set up (it generates a doc, it doesn't change the system).
+SCRIPTS=(bootstrap.sh harden.sh ancillary.sh monitoring.sh docker.sh motd.sh documentation.sh)
 
 # ==============================================================================
 #  Output helpers
@@ -155,7 +156,8 @@ valid_pubkey() {
 
 describe() {
   case "$1" in
-    harden.sh)    printf 'system hardening (users, SSH, firewall, fail2ban, sysctl, AppArmor, AIDE, Lynis)';;
+    bootstrap.sh) printf 'create/update the admin user (sudo) + install the SSH key — runs before hardening';;
+    harden.sh)    printf 'system hardening (SSH, firewall, fail2ban, sysctl, AppArmor, AIDE, Lynis)';;
     ancillary.sh) printf 'pick-and-install extra packages (+ fish as your default shell)';;
     monitoring.sh) printf 'install Zabbix agent + Grafana Alloy (monitoring & log shipping)';;
     docker.sh)    printf 'Docker Engine + Compose + rootless setup + /opt/docker layout';;
@@ -214,6 +216,10 @@ MONITORING_PICK=()   # monitoring agents (zabbix-agent2, alloy) chosen below
 
 skip_script() { STATUS[$1]="skipped"; DETAIL[$1]="you chose not to run it"; }
 
+# --- bootstrap.sh (runs first — creates the user + key harden.sh relies on)
+printf '\n%s%s %s%s%s — %s%s%s\n' "$BOLD" "$S_STEP" "$CYN" "bootstrap.sh" "$RESET" "$DIM" "$(describe bootstrap.sh)" "$RESET"
+if confirm "Set up the admin user + SSH key (bootstrap)?" Y; then SELECTED+=(bootstrap.sh); else skip_script bootstrap.sh; fi
+
 # --- harden.sh
 printf '\n%s%s %s%s%s — %s%s%s\n' "$BOLD" "$S_STEP" "$CYN" "harden.sh" "$RESET" "$DIM" "$(describe harden.sh)" "$RESET"
 if confirm "Harden the system?" Y; then SELECTED+=(harden.sh); else skip_script harden.sh; fi
@@ -264,25 +270,27 @@ step "Step 2 — Configuration (all questions answered now)"
 # ==============================================================================
 PRIMARY_USER=""
 
-# --- A primary user is needed by harden (create), docker (owner), ancillary (fish)
-if in_selected harden.sh || in_selected docker.sh || in_selected ancillary.sh; then
+# --- A primary user is needed by bootstrap (create), harden (verify),
+#     docker (owner), ancillary (fish)
+if in_selected bootstrap.sh || in_selected harden.sh || in_selected docker.sh || in_selected ancillary.sh; then
   mapfile -t HUMANS < <(awk -F: '$3>=1000 && $3<65534 && $7 !~ /(nologin|false)$/ {print $1}' /etc/passwd | sort)
   default_user="${SUDO_USER:-}"; [[ -n "$default_user" ]] || { (( ${#HUMANS[@]} == 1 )) && default_user="${HUMANS[0]}"; }
 
-  if in_selected harden.sh; then
-    # harden can create the user, so ask which admin user to create/harden.
+  if in_selected bootstrap.sh; then
+    # bootstrap can create the user, so ask which admin user to create/update.
     while true; do
       (( ${#HUMANS[@]} > 0 )) && note "Existing users: ${HUMANS[*]}"
-      PRIMARY_USER="$(ask "Admin username (sudo + SSH key) — enter an existing user to harden, or a new name to create one" "$default_user")"
+      PRIMARY_USER="$(ask "Admin username (sudo + SSH key) — enter an existing user to update, or a new name to create one" "$default_user")"
       PRIMARY_USER="${PRIMARY_USER//[[:space:]]/}"
       if [[ -z "$PRIMARY_USER" ]]; then warn "A username is required."; [[ -r /dev/tty && "$ASSUME_YES" != 1 ]] || { err "No user available."; exit 1; }; continue; fi
       if ! valid_user "$PRIMARY_USER"; then warn "Invalid username (lowercase letters, digits, - and _)."; continue; fi
       break
     done
   else
-    # harden NOT selected — docker/ancillary just need an EXISTING user to own
-    # things. Auto-detect it (SUDO_USER or the sole human account) and only ask
-    # if it can't be resolved unambiguously, so we don't prompt unnecessarily.
+    # bootstrap NOT selected — the other scripts need an EXISTING user to own
+    # things (harden.sh no longer creates users either). Auto-detect it
+    # (SUDO_USER or the sole human account) and only ask if it can't be
+    # resolved unambiguously, so we don't prompt unnecessarily.
     if [[ -n "$default_user" ]] && id "$default_user" >/dev/null 2>&1; then
       PRIMARY_USER="$default_user"
     else
@@ -293,7 +301,7 @@ if in_selected harden.sh || in_selected docker.sh || in_selected ancillary.sh; t
         if [[ -z "$PRIMARY_USER" ]]; then warn "A username is required."; [[ -r /dev/tty && "$ASSUME_YES" != 1 ]] || { err "No user available."; exit 1; }; continue; fi
         if ! valid_user "$PRIMARY_USER"; then warn "Invalid username (lowercase letters, digits, - and _)."; continue; fi
         if ! id "$PRIMARY_USER" >/dev/null 2>&1; then
-          warn "User '$PRIMARY_USER' does not exist — pick an existing one (or include harden.sh to create it)."
+          warn "User '$PRIMARY_USER' does not exist — pick an existing one (or include bootstrap.sh to create it)."
           [[ -r /dev/tty && "$ASSUME_YES" != 1 ]] || { err "User '$PRIMARY_USER' does not exist."; exit 1; }
           continue
         fi
@@ -304,11 +312,12 @@ if in_selected harden.sh || in_selected docker.sh || in_selected ancillary.sh; t
   log "Primary user: ${BOLD}${PRIMARY_USER}${RESET}"
 fi
 
-# --- harden.sh questions
-if in_selected harden.sh; then
+# --- bootstrap.sh questions (user creation + SSH key)
+if in_selected bootstrap.sh; then
   export ADMIN_USERS="$PRIMARY_USER"
 
-  # SSH key (REQUIRED — harden disables password auth; no key = lockout).
+  # SSH key. REQUIRED when harden.sh will also run (it disables password auth;
+  # no key = lockout). For a bootstrap-only run it can be skipped.
   PUBKEY=""
   while true; do
     note "Paste ${PRIMARY_USER}'s PUBLIC SSH key. No key yet? On your machine run:"
@@ -319,7 +328,11 @@ if in_selected harden.sh; then
       if id "$PRIMARY_USER" >/dev/null 2>&1 && [[ -s "$(getent passwd "$PRIMARY_USER" | cut -d: -f6)/.ssh/authorized_keys" ]]; then
         note "No key entered, but ${PRIMARY_USER} already has authorized_keys — continuing."; break
       fi
-      warn "A key is required (password login is disabled). Without one you'd be locked out."
+      if ! in_selected harden.sh; then
+        warn "No key entered — ${PRIMARY_USER} will have no authorized_keys (add one before hardening)."
+        break
+      fi
+      warn "A key is required (hardening disables password login). Without one you'd be locked out."
       [[ -r /dev/tty && "$ASSUME_YES" != 1 ]] || { err "No SSH key provided for ${PRIMARY_USER}."; exit 1; }
       continue
     fi
@@ -327,7 +340,7 @@ if in_selected harden.sh; then
     warn "That does not look like a valid SSH public key — try again."
   done
 
-  # If the admin user doesn't exist yet, harden.sh will create it — collect a
+  # If the admin user doesn't exist yet, bootstrap.sh will create it — collect a
   # password to set on the new account (optional; blank = SSH-key only).
   if ! id "$PRIMARY_USER" >/dev/null 2>&1; then
     note "User '${PRIMARY_USER}' will be created."
@@ -336,6 +349,28 @@ if in_selected harden.sh; then
       export ADMIN_PASSWORD; log "Password will be set for ${PRIMARY_USER}."
     else
       note "No password entered — ${PRIMARY_USER} will be SSH-key only."
+    fi
+  fi
+fi
+
+# --- harden.sh questions
+if in_selected harden.sh; then
+  export ADMIN_USERS="$PRIMARY_USER"
+
+  # Without bootstrap.sh in this run, harden.sh can neither create the user nor
+  # install a key — so the user must already exist with authorized_keys, or the
+  # operator must explicitly accept the lockout risk.
+  if ! in_selected bootstrap.sh; then
+    if ! id "$PRIMARY_USER" >/dev/null 2>&1; then
+      err "User '${PRIMARY_USER}' does not exist and bootstrap.sh was not selected — re-run and include bootstrap.sh to create it."
+      exit 1
+    fi
+    if [[ ! -s "$(getent passwd "$PRIMARY_USER" | cut -d: -f6)/.ssh/authorized_keys" ]]; then
+      warn "${PRIMARY_USER} has NO authorized_keys and bootstrap.sh was not selected — hardening disables password login."
+      if ! confirm "Continue anyway (HIGH lockout risk)?" N; then
+        err "Aborting. Re-run and include bootstrap.sh to install an SSH key first."
+        exit 1
+      fi
     fi
   fi
 
