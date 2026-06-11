@@ -9,7 +9,7 @@
 #    (Monitoring agents — Zabbix, Grafana Alloy — moved to monitoring.sh.)
 #  - qemu-guest-agent (if selected) is started only when run inside a QEMU/KVM
 #    guest with the guest-agent channel; otherwise it's left inactive.
-#  - fish shell (if selected): if harden.sh NEWLY created user(s) this run, fish
+#  - fish shell (if selected): if bootstrap.sh NEWLY created user(s) this run, fish
 #    is made their default shell automatically. Otherwise it asks which current
 #    users should get fish as their default shell. Affected users get it as their
 #    DEFAULT login shell.
@@ -60,7 +60,7 @@ else
 fi
 pkg_selected() { local p; for p in "${SELECTED_PKGS[@]}"; do [[ "$p" == "$1" ]] && return 0; done; return 1; }
 
-# State written by harden.sh: users it NEWLY created this round.
+# State written by bootstrap.sh: users it NEWLY created this round.
 CREATED_USERS_FILE="/var/lib/homelab-bootstrap/created-users"
 
 # ==============================================================================
@@ -184,13 +184,13 @@ elif [[ -n "$FISH_USERS" ]]; then
   read -ra FISH_TARGETS <<< "$FISH_USERS"
   info "fish users from FISH_USERS: ${BOLD}${FISH_TARGETS[*]}${RESET}"
 elif [[ -s "$CREATED_USERS_FILE" ]]; then
-  # harden.sh created user(s) this round → fish for them automatically.
+  # bootstrap.sh created user(s) this round → fish for them automatically.
   mapfile -t FISH_TARGETS < <(awk 'NF' "$CREATED_USERS_FILE" | sort -u)
-  info "harden.sh newly created: ${BOLD}${FISH_TARGETS[*]:-<none>}${RESET}"
+  info "bootstrap.sh newly created: ${BOLD}${FISH_TARGETS[*]:-<none>}${RESET}"
   note "fish will be installed and set as the default shell for the above user(s)."
 else
   # No newly-created users recorded → ask which current users want fish.
-  info "No newly-created users were recorded by harden.sh (${CREATED_USERS_FILE})."
+  info "No newly-created users were recorded by bootstrap.sh (${CREATED_USERS_FILE})."
   mapfile -t HUMAN_USERS < <(awk -F: '$3>=1000 && $3<65534 && $7 !~ /(nologin|false)$/ {print $1}' /etc/passwd | sort)
   if (( ${#HUMAN_USERS[@]} == 0 )); then
     warn "No regular (human) user accounts found to offer fish to."

@@ -258,7 +258,7 @@ prompt_for_user() {
     if [[ -n "$DOCKER_USER" ]]; then
       # Provided but missing.
       if [[ "$INTERACTIVE" -ne 1 ]]; then
-        err "User '$DOCKER_USER' does not exist. Set DOCKER_USER=<existing user> (run harden.sh first to create one)."
+        err "User '$DOCKER_USER' does not exist. Set DOCKER_USER=<existing user> (run bootstrap.sh first to create one)."
         exit 1
       fi
       warn "User '$DOCKER_USER' does not exist — pick an existing user."
@@ -270,7 +270,7 @@ prompt_for_user() {
     if (( ${#candidates[@]} > 0 )); then
       printf '   %sExisting users:%s %s\n' "$DIM" "$RESET" "${candidates[*]}" > /dev/tty
     else
-      printf '   %sNo regular users found — run harden.sh first to create one.%s\n' "$DIM" "$RESET" > /dev/tty
+      printf '   %sNo regular users found — run bootstrap.sh first to create one.%s\n' "$DIM" "$RESET" > /dev/tty
     fi
     printf '%s%s Which user should own rootless Docker?%s%s ' \
       "$YEL" "$S_INFO" "${default:+ [default: $default]}" "$RESET" > /dev/tty
