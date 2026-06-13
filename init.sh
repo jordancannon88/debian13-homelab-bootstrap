@@ -170,7 +170,11 @@ compute_defaults() {
   A_FISH_DEFAULT="$(yn_def Y Y)"
   A_UPGRADE="$(yn_def Y Y)"; A_LOCKROOT="$(yn_def Y Y)"; A_USBBLACK="$(yn_def Y Y)"
   A_ZBX_DOCKER="$(yn_def N N)"; A_ALLOY_DOCKERLOGS="$(yn_def N N)"
-  A_DOCKER="$(yn_def Y Y)"; A_PODMAN="$(yn_def N N)"; A_DISABLE_ROOTFUL="$(yn_def Y Y)"
+  # Neither runtime is pre-selected: enabling the container step then opens the
+  # runtime picker where you explicitly choose Docker and/or Podman. (Pre-ticking
+  # Docker meant it — and its rootless setup — installed even when you only wanted
+  # Podman.) DISABLE_ROOTFUL only applies if Docker is later chosen.
+  A_DOCKER="N"; A_PODMAN="N"; A_DISABLE_ROOTFUL="$(yn_def Y Y)"
   A_EXAMPLE_APP="$(yn_def Y Y)"; A_JOURNALD="$(yn_def N N)"
   # Default SSH port: a random high port (away from 22 and the ephemeral range).
   SSH_PORT="${SSH_PORT:-$(( RANDOM % 22000 + 10000 ))}"
