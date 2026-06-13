@@ -22,7 +22,6 @@
 #    CONN_OS=<string>     -> OS description     (default: PRETTY_NAME)
 #    CONN_ROOT=<string>   -> root access note   (default: detected from sshd_config + root pw lock)
 #    OUT_FILE=<path>      -> output file        (default: <script dir>/docs/connect.html)
-#    DRY_RUN=1|0          -> force preview / actual (else asks)
 #    ASSUME_YES=1         -> accept all defaults, no prompts (automation)
 # ==============================================================================
 
@@ -33,8 +32,6 @@ START_TS="$(date +%s)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 ASSUME_YES="${ASSUME_YES:-0}"
-if [[ -n "${DRY_RUN+x}" ]]; then DRY_RUN_EXPLICIT=1; else DRY_RUN_EXPLICIT=0; fi
-DRY_RUN="${DRY_RUN:-}"
 
 OUT_FILE="${OUT_FILE:-${SCRIPT_DIR}/docs/connect.html}"
 
@@ -60,7 +57,6 @@ info() { printf '%s%s%s %s\n' "$BLU" "$S_INFO" "$RESET" "$*"; }
 warn() { printf '%s%s %s%s\n' "$YEL" "$S_WARN" "$*" "$RESET"; }
 err()  { printf '%s%s %s%s\n' "$RED" "$S_ERR" "$*" "$RESET" >&2; }
 note() { printf '   %s%s%s\n' "$DIM" "$*" "$RESET"; }
-dry()  { printf '   %s[dry-run]%s %s\n' "$MAG" "$RESET" "$*"; }
 
 INTERACTIVE=0
 if [[ "$ASSUME_YES" != "1" && -r /dev/tty ]]; then INTERACTIVE=1; fi
@@ -76,18 +72,6 @@ ask() {
   printf '%s' "$reply"
 }
 
-choose_run_mode() {
-  if [[ "$DRY_RUN_EXPLICIT" == "1" ]]; then [[ "$DRY_RUN" == "1" ]] && DRY_RUN=1 || DRY_RUN=0; return; fi
-  if [[ "$INTERACTIVE" -eq 0 ]]; then [[ "$ASSUME_YES" == "1" ]] && DRY_RUN=0 || DRY_RUN=1; return; fi
-  local choice=""
-  printf '\n%s%sHow do you want to run the doc generator?%s\n' "$BOLD" "$WHT" "$RESET" > /dev/tty
-  printf '   %s[1]%s %sDry run%s — preview the HTML, write NOTHING (recommended first)\n' "$BOLD" "$RESET" "$GRN" "$RESET" > /dev/tty
-  printf '   %s[2]%s %sActual run%s — write the file\n' "$BOLD" "$RESET" "$RED" "$RESET" > /dev/tty
-  printf '%s%s Choose 1 or 2 [default: 1]: %s' "$YEL" "$S_WARN" "$RESET" > /dev/tty
-  read -r choice < /dev/tty || choice=""
-  case "${choice:-1}" in 2) DRY_RUN=0 ;; *) DRY_RUN=1 ;; esac
-}
-
 # HTML-escape a value destined for element text / table cells.
 esc() {
   local s="$1"
@@ -101,8 +85,6 @@ esc() {
 [[ "${BOOTSTRAP_NESTED:-0}" == "1" ]] || clear 2>/dev/null || true
 printf '%s%s  Debian 13 Homelab Bootstrap — connection documentation%s\n' "$BOLD" "$CYN" "$RESET"
 hr '─'
-choose_run_mode
-[[ "$DRY_RUN" == "1" ]] && info "Mode: ${MAG}DRY RUN${RESET}" || info "Mode: ${RED}ACTUAL RUN${RESET}"
 
 # ==============================================================================
 #  Gather server details (auto-detect, then let the user confirm/override)
@@ -264,16 +246,10 @@ ssh-keygen -R "[${e_ip}]:${e_port}"</code></pre>
 EOF
 )"
 
-if [[ "$DRY_RUN" == "1" ]]; then
-  dry "write ${BOLD}${OUT_FILE}${RESET} ($(printf '%s\n' "$HTML" | wc -l) lines):"
-  printf '%s\n' "$HTML" | sed 's/^/        │ /'
-  record "Output (preview)" "$OUT_FILE"
-else
-  mkdir -p "$(dirname "$OUT_FILE")"
-  printf '%s\n' "$HTML" > "$OUT_FILE"
-  log "Wrote ${BOLD}${OUT_FILE}${RESET} ($(wc -l < "$OUT_FILE") lines)."
-  record "Output" "$OUT_FILE"
-fi
+mkdir -p "$(dirname "$OUT_FILE")"
+printf '%s\n' "$HTML" > "$OUT_FILE"
+log "Wrote ${BOLD}${OUT_FILE}${RESET} ($(wc -l < "$OUT_FILE") lines)."
+record "Output" "$OUT_FILE"
 record "Host" "${FQDN} (${IP})"
 record "SSH" "port ${PORT}, user ${USER_NAME}, alias ${ALIAS}"
 
@@ -282,35 +258,24 @@ record "SSH" "port ${PORT}, user ${USER_NAME}, alias ${ALIAS}"
 # ==============================================================================
 ELAPSED=$(( $(date +%s) - START_TS )); MM=$(( ELAPSED / 60 )); SS=$(( ELAPSED % 60 ))
 printf '\n'; hr '═'
-if [[ "$DRY_RUN" == "1" ]]; then
-  printf '%s%s  🧪  DRY RUN COMPLETE — NO FILE WRITTEN — RECAP%s\n' "$BOLD" "$MAG" "$RESET"
-else
-  printf '%s%s  ✅  CONNECTION DOC GENERATED — RECAP%s\n' "$BOLD" "$GRN" "$RESET"
-fi
+printf '%s%s  ✅  CONNECTION DOC GENERATED — RECAP%s\n' "$BOLD" "$GRN" "$RESET"
 hr '═'
 printf '%s  Host: %s   |   Elapsed: %dm %ds%s\n' "$DIM" "$(hostname)" "$MM" "$SS" "$RESET"
 hr '─'
-printf '%s%s  WHAT %s%s\n' "$BOLD" "$CYN" "$( [[ $DRY_RUN == 1 ]] && echo 'WOULD BE DONE' || echo 'WAS DONE' )" "$RESET"
+printf '%s%s  WHAT %s%s\n' "$BOLD" "$CYN" "WAS DONE" "$RESET"
 for entry in "${SUMMARY[@]}"; do
   key="${entry%%$'\t'*}"; val="${entry#*$'\t'}"
   printf '   %s%s%-18s%s %s\n' "$GRN" "$S_OK " "$key" "$RESET" "$val"
 done
 hr '─'
 printf '%s%s  ⏭ NEXT STEPS%s\n' "$BOLD" "$MAG" "$RESET"
-if [[ "$DRY_RUN" == "1" ]]; then
-  printf '   %s•%s  Re-run and choose %sActual%s (or %sDRY_RUN=0 ./%s%s) to write the file.\n' \
-    "$BOLD" "$RESET" "$BOLD" "$RESET" "$DIM" "$(basename "$0")" "$RESET"
-else
-  printf '   %s•%s  Preview it in a browser, or publish %s%s%s to your docs wiki.\n' \
-    "$BOLD" "$RESET" "$DIM" "$OUT_FILE" "$RESET"
-  printf '   %s•%s  Regenerate for another host with the %sCONN_*%s env overrides (see header).\n' \
-    "$BOLD" "$RESET" "$DIM" "$RESET"
-fi
+printf '   %s•%s  Preview it in a browser, or publish %s%s%s to your docs wiki.\n' \
+  "$BOLD" "$RESET" "$DIM" "$OUT_FILE" "$RESET"
+printf '   %s•%s  Regenerate for another host with the %sCONN_*%s env overrides (see header).\n' \
+  "$BOLD" "$RESET" "$DIM" "$RESET"
 printf '%s%s  Done. 🖥️%s\n\n' "$BOLD" "$GRN" "$RESET"
 
-# One-line summary for init.sh's bootstrap report (actual runs only).
-if [[ "$DRY_RUN" != "1" ]]; then
-  mkdir -p /var/lib/homelab-bootstrap/summaries 2>/dev/null \
-    && printf 'connection doc generated (%s) for %s on port %s\n' "$OUT_FILE" "$FQDN" "$PORT" \
-       > /var/lib/homelab-bootstrap/summaries/documentation.sh 2>/dev/null || true
-fi
+# One-line summary for init.sh's bootstrap report.
+mkdir -p /var/lib/homelab-bootstrap/summaries 2>/dev/null \
+  && printf 'connection doc generated (%s) for %s on port %s\n' "$OUT_FILE" "$FQDN" "$PORT" \
+     > /var/lib/homelab-bootstrap/summaries/documentation.sh 2>/dev/null || true

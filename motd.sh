@@ -18,7 +18,6 @@
 #    DOC_URL=<url>          -> documentation link shown in the banner (no default;
 #                              prompted if unset, leave blank to omit the section)
 #    BLANK_STATIC_MOTD=1|0  -> blank the stock /etc/motd (default 1)
-#    DRY_RUN=1|0            -> force preview / actual (else asks)
 #    ASSUME_YES=1           -> answer "yes" to every prompt (automation)
 # ==============================================================================
 
@@ -34,9 +33,6 @@ ASSUME_YES="${ASSUME_YES:-0}"
 if [[ -n "${DOC_URL+x}" ]]; then DOC_URL_EXPLICIT=1; else DOC_URL_EXPLICIT=0; fi
 DOC_URL="${DOC_URL:-}"
 BLANK_STATIC_MOTD="${BLANK_STATIC_MOTD:-1}"
-
-if [[ -n "${DRY_RUN+x}" ]]; then DRY_RUN_EXPLICIT=1; else DRY_RUN_EXPLICIT=0; fi
-DRY_RUN="${DRY_RUN:-}"
 
 START_TS="$(date +%s)"
 
@@ -73,13 +69,11 @@ info() { printf '%s%s%s %s\n' "$BLU" "$S_INFO" "$RESET" "$*"; }
 warn() { printf '%s%s %s%s\n' "$YEL" "$S_WARN" "$*" "$RESET"; }
 err()  { printf '%s%s %s%s\n' "$RED" "$S_ERR" "$*" "$RESET" >&2; }
 note() { printf '   %s%s%s\n' "$DIM" "$*" "$RESET"; }
-dry()  { printf '   %s[dry-run]%s %s\n' "$MAG" "$RESET" "$*"; }
 
-run() { if [[ "$DRY_RUN" == "1" ]]; then dry "$*"; return 0; fi; "$@"; }
+run() { "$@"; }
 
 write_file() {
   local path="$1"
-  if [[ "$DRY_RUN" == "1" ]]; then dry "write ${BOLD}${path}${RESET}:"; sed 's/^/        │ /'; return 0; fi
   cat > "$path"
 }
 
@@ -100,18 +94,6 @@ ask() {
   printf '%s' "$reply"
 }
 
-choose_run_mode() {
-  if [[ "$DRY_RUN_EXPLICIT" == "1" ]]; then [[ "$DRY_RUN" == "1" ]] && DRY_RUN=1 || DRY_RUN=0; return; fi
-  if [[ "$INTERACTIVE" -eq 0 ]]; then [[ "$ASSUME_YES" == "1" ]] && DRY_RUN=0 || DRY_RUN=1; return; fi
-  local choice=""
-  printf '\n%s%sHow do you want to run the MOTD installer?%s\n' "$BOLD" "$WHT" "$RESET" > /dev/tty
-  printf '   %s[1]%s %sDry run%s — preview, change NOTHING (recommended first)\n' "$BOLD" "$RESET" "$GRN" "$RESET" > /dev/tty
-  printf '   %s[2]%s %sActual run%s — install the banner\n' "$BOLD" "$RESET" "$RED" "$RESET" > /dev/tty
-  printf '%s%s Choose 1 or 2 [default: 1]: %s' "$YEL" "$S_WARN" "$RESET" > /dev/tty
-  read -r choice < /dev/tty || choice=""
-  case "${choice:-1}" in 2) DRY_RUN=0 ;; *) DRY_RUN=1 ;; esac
-}
-
 # ==============================================================================
 #  Splash
 # ==============================================================================
@@ -122,8 +104,6 @@ printf '%s%s  Debian 13 Homelab Bootstrap — MOTD login banner%s\n' "$BOLD" "$C
 hr '─'
 
 require_root
-choose_run_mode
-[[ "$DRY_RUN" == "1" ]] && info "Mode: ${MAG}DRY RUN${RESET}" || info "Mode: ${RED}ACTUAL RUN${RESET}"
 
 # Ask for the documentation URL unless it was supplied via env / automation
 # (e.g. init.sh's wizard exports DOC_URL, and ASSUME_YES runs unattended).
@@ -215,16 +195,11 @@ fi
 printf '\n'
 MOTD_SCRIPT
 
-if [[ "$DRY_RUN" != "1" ]]; then
-  # Escape sed-special chars in the URL (\, &, and the | delimiter) before injecting.
-  doc_esc="$(printf '%s' "$DOC_URL" | sed -e 's/[\\&|]/\\&/g')"
-  sed -i "s|@@DOC_URL@@|${doc_esc}|g" "$MOTD_FILE"
-  chmod 0755 "$MOTD_FILE"
-  log "Installed ${MOTD_FILE} (executable)."
-else
-  dry "inject DOC_URL='${DOC_URL:-<blank — docs section omitted>}' into ${MOTD_FILE}"
-  dry "chmod 0755 ${MOTD_FILE}"
-fi
+# Escape sed-special chars in the URL (\, &, and the | delimiter) before injecting.
+doc_esc="$(printf '%s' "$DOC_URL" | sed -e 's/[\\&|]/\\&/g')"
+sed -i "s|@@DOC_URL@@|${doc_esc}|g" "$MOTD_FILE"
+chmod 0755 "$MOTD_FILE"
+log "Installed ${MOTD_FILE} (executable)."
 record "MOTD banner" "${MOTD_FILE} ($([[ -n "$DOC_URL" ]] && echo "docs: ${DOC_URL}" || echo "no docs link"))"
 
 # ==============================================================================
@@ -234,12 +209,12 @@ if [[ "$BLANK_STATIC_MOTD" == "1" ]]; then
   if [[ -s "$STATIC_MOTD" ]]; then
     if [[ ! -e "$STATIC_BAK" ]]; then
       run cp -a "$STATIC_MOTD" "$STATIC_BAK"
-      [[ "$DRY_RUN" == "1" ]] || log "Backed up ${STATIC_MOTD} -> ${STATIC_BAK}."
+      log "Backed up ${STATIC_MOTD} -> ${STATIC_BAK}."
     else
       note "Backup ${STATIC_BAK} already exists — not overwriting it."
     fi
     run truncate -s 0 "$STATIC_MOTD"
-    [[ "$DRY_RUN" == "1" ]] || log "Blanked ${STATIC_MOTD} (so only the dynamic banner shows)."
+    log "Blanked ${STATIC_MOTD} (so only the dynamic banner shows)."
     record "static /etc/motd" "blanked (backup: ${STATIC_BAK})"
   else
     log "${STATIC_MOTD} is already empty — nothing to do."
@@ -253,50 +228,37 @@ fi
 # ==============================================================================
 #  Preview
 # ==============================================================================
-if [[ "$DRY_RUN" != "1" ]]; then
-  header "Preview (this is what users will see at login)"
-  bash "$MOTD_FILE" 2>/dev/null || warn "Could not render preview — check ${MOTD_FILE}."
-fi
+header "Preview (this is what users will see at login)"
+bash "$MOTD_FILE" 2>/dev/null || warn "Could not render preview — check ${MOTD_FILE}."
 
 # ==============================================================================
 #  Recap
 # ==============================================================================
 ELAPSED=$(( $(date +%s) - START_TS )); MM=$(( ELAPSED / 60 )); SS=$(( ELAPSED % 60 ))
 printf '\n'; hr '═'
-if [[ "$DRY_RUN" == "1" ]]; then
-  printf '%s%s  🧪  DRY RUN COMPLETE — NO CHANGES MADE — RECAP%s\n' "$BOLD" "$MAG" "$RESET"
-else
-  printf '%s%s  ✅  MOTD BANNER INSTALLED — RECAP%s\n' "$BOLD" "$GRN" "$RESET"
-fi
+printf '%s%s  ✅  MOTD BANNER INSTALLED — RECAP%s\n' "$BOLD" "$GRN" "$RESET"
 hr '═'
 printf '%s  Host: %s   |   Elapsed: %dm %ds%s\n' "$DIM" "$(hostname)" "$MM" "$SS" "$RESET"
 hr '─'
-printf '%s%s  WHAT %s%s\n' "$BOLD" "$CYN" "$( [[ $DRY_RUN == 1 ]] && echo 'WOULD BE DONE' || echo 'WAS DONE' )" "$RESET"
+printf '%s%s  WHAT %s%s\n' "$BOLD" "$CYN" "WAS DONE" "$RESET"
 for entry in "${SUMMARY[@]}"; do
   key="${entry%%$'\t'*}"; val="${entry#*$'\t'}"
   printf '   %s%s%-18s%s %s\n' "$GRN" "$S_OK " "$key" "$RESET" "$val"
 done
 hr '─'
 printf '%s%s  ⏭ NEXT STEPS%s\n' "$BOLD" "$MAG" "$RESET"
-if [[ "$DRY_RUN" == "1" ]]; then
-  printf '   %s•%s  Re-run and choose %sActual%s (or %sDRY_RUN=0 sudo ./%s%s) to install.\n' \
-    "$BOLD" "$RESET" "$BOLD" "$RESET" "$DIM" "$(basename "$0")" "$RESET"
+printf '   %s•%s  Open a new SSH session to see the banner, or render it now with:\n' "$BOLD" "$RESET"
+printf '       %ssudo run-parts %s%s\n' "$DIM" "$MOTD_DIR" "$RESET"
+printf '   %s•%s  Change the link later by re-running with %sDOC_URL=<url>%s (blank to omit it).\n' "$BOLD" "$RESET" "$DIM" "$RESET"
+if [[ -n "$DOC_URL" ]]; then
+  printf '   %s•%s  Documentation: %s%s%s\n' "$BOLD" "$RESET" "$BLU" "$DOC_URL" "$RESET"
 else
-  printf '   %s•%s  Open a new SSH session to see the banner, or render it now with:\n' "$BOLD" "$RESET"
-  printf '       %ssudo run-parts %s%s\n' "$DIM" "$MOTD_DIR" "$RESET"
-  printf '   %s•%s  Change the link later by re-running with %sDOC_URL=<url>%s (blank to omit it).\n' "$BOLD" "$RESET" "$DIM" "$RESET"
-  if [[ -n "$DOC_URL" ]]; then
-    printf '   %s•%s  Documentation: %s%s%s\n' "$BOLD" "$RESET" "$BLU" "$DOC_URL" "$RESET"
-  else
-    printf '   %s•%s  No documentation link set — the docs section is omitted from the banner.\n' "$BOLD" "$RESET"
-  fi
+  printf '   %s•%s  No documentation link set — the docs section is omitted from the banner.\n' "$BOLD" "$RESET"
 fi
 printf '%s%s  Done. 🖥️%s\n\n' "$BOLD" "$GRN" "$RESET"
 
-# One-line summary for init.sh's bootstrap report (actual runs only).
-if [[ "$DRY_RUN" != "1" ]]; then
-  mkdir -p /var/lib/homelab-bootstrap/summaries
-  if [[ -n "$DOC_URL" ]]; then _docs="docs: ${DOC_URL}"; else _docs="no docs link"; fi
-  printf 'dynamic MOTD banner installed (%s); %s\n' "$MOTD_FILE" "$_docs" \
-    > /var/lib/homelab-bootstrap/summaries/motd.sh
-fi
+# One-line summary for init.sh's bootstrap report.
+mkdir -p /var/lib/homelab-bootstrap/summaries
+if [[ -n "$DOC_URL" ]]; then _docs="docs: ${DOC_URL}"; else _docs="no docs link"; fi
+printf 'dynamic MOTD banner installed (%s); %s\n' "$MOTD_FILE" "$_docs" \
+  > /var/lib/homelab-bootstrap/summaries/motd.sh

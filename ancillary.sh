@@ -3,7 +3,8 @@
 #  Debian 13 Homelab Bootstrap — ancillary
 #  Installs extra/quality-of-life packages and sets up the fish shell.
 #
-#  - Installs a selectable set of packages: btop, fish, rsync, qemu-guest-agent.
+#  - Installs a selectable set of packages: vim, btop, duf, fish, rsync,
+#    qemu-guest-agent.
 #    By default (standalone run) it installs them all; init.sh's wizard lets you
 #    pick a subset and passes it via ANCILLARY_PKGS.
 #    (Monitoring agents — Zabbix, Grafana Alloy — moved to monitoring.sh.)
@@ -20,7 +21,6 @@
 #    ANCILLARY_PKGS="btop rsync ..." -> install exactly these (or "none" for
 #                                       nothing); unset = the full default set
 #    FISH_USERS="u1 u2 ..." -> set fish for exactly these users (skips prompts)
-#    DRY_RUN=1|0            -> force preview / actual (else asks)
 #    ASSUME_YES=1           -> answer "yes" to every prompt (automation)
 # ==============================================================================
 
@@ -32,19 +32,18 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH
 ASSUME_YES="${ASSUME_YES:-0}"
 FISH_USERS="${FISH_USERS:-}"
 
-if [[ -n "${DRY_RUN+x}" ]]; then DRY_RUN_EXPLICIT=1; else DRY_RUN_EXPLICIT=0; fi
-DRY_RUN="${DRY_RUN:-}"
-
 START_TS="$(date +%s)"
 
 # All packages this installer knows how to install (slug -> short description).
 declare -A PKG_DESC=(
+  [vim]="Vim text editor"
   [btop]="resource monitor (htop-like)"
+  [duf]="disk usage/free utility (df-like, friendlier)"
   [fish]="friendly interactive shell"
   [rsync]="fast file copy / sync"
   [qemu-guest-agent]="QEMU/KVM guest integration (VMs only)"
 )
-ALL_PKGS=(btop fish rsync qemu-guest-agent)
+ALL_PKGS=(vim btop duf fish rsync qemu-guest-agent)
 
 # Which packages to install. ANCILLARY_PKGS (space-separated list, or "none")
 # overrides the selection — init.sh sets it from the wizard's package picker.
@@ -94,9 +93,8 @@ info() { printf '%s%s%s %s\n' "$BLU" "$S_INFO" "$RESET" "$*"; }
 warn() { printf '%s%s %s%s\n' "$YEL" "$S_WARN" "$*" "$RESET"; }
 err()  { printf '%s%s %s%s\n' "$RED" "$S_ERR" "$*" "$RESET" >&2; }
 note() { printf '   %s%s%s\n' "$DIM" "$*" "$RESET"; }
-dry()  { printf '   %s[dry-run]%s %s\n' "$MAG" "$RESET" "$*"; }
 
-run() { if [[ "$DRY_RUN" == "1" ]]; then dry "$*"; return 0; fi; "$@"; }
+run() { "$@"; }
 
 INTERACTIVE=0
 if [[ "$ASSUME_YES" != "1" && -r /dev/tty ]]; then INTERACTIVE=1; fi
@@ -114,27 +112,10 @@ confirm() {
 
 require_root() { if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then err "Run as root (e.g. sudo $0)."; exit 1; fi; }
 
-choose_run_mode() {
-  if [[ "$DRY_RUN_EXPLICIT" == "1" ]]; then [[ "$DRY_RUN" == "1" ]] && DRY_RUN=1 || DRY_RUN=0; return; fi
-  if [[ "$INTERACTIVE" -eq 0 ]]; then [[ "$ASSUME_YES" == "1" ]] && DRY_RUN=0 || DRY_RUN=1; return; fi
-  local choice=""
-  printf '\n%s%sHow do you want to run the ancillary installer?%s\n' "$BOLD" "$WHT" "$RESET" > /dev/tty
-  printf '   %s[1]%s %sDry run%s — preview, change NOTHING (recommended first)\n' "$BOLD" "$RESET" "$GRN" "$RESET" > /dev/tty
-  printf '   %s[2]%s %sActual run%s — install & configure\n' "$BOLD" "$RESET" "$RED" "$RESET" > /dev/tty
-  printf '%s%s Choose 1 or 2 [default: 1]: %s' "$YEL" "$S_WARN" "$RESET" > /dev/tty
-  read -r choice < /dev/tty || choice=""
-  case "${choice:-1}" in 2) DRY_RUN=0 ;; *) DRY_RUN=1 ;; esac
-}
-
 # set_fish_default <user> — ensure fish is in /etc/shells, then chsh the user.
 set_fish_default() {
   local user="$1" fish_path
   fish_path="$(command -v fish 2>/dev/null || echo /usr/bin/fish)"
-  if [[ "$DRY_RUN" == "1" ]]; then
-    dry "ensure ${fish_path} in /etc/shells; chsh -s ${fish_path} ${user}"
-    record "fish:${user}" "[dry-run] would set fish as default shell"
-    return 0
-  fi
   if ! grep -qxF "$fish_path" /etc/shells 2>/dev/null; then
     printf '%s\n' "$fish_path" >> /etc/shells
     log "Added ${fish_path} to /etc/shells."
@@ -161,10 +142,6 @@ hr '─'
 
 require_root
 if ! command -v apt-get >/dev/null 2>&1; then err "apt-get not found — this targets Debian/apt systems."; exit 1; fi
-choose_run_mode
-
-if [[ "$DRY_RUN" == "1" ]]; then info "Mode: ${MAG}DRY RUN (no changes)${RESET}"; else info "Mode: ${RED}ACTUAL RUN${RESET}"; fi
-hr '─'
 
 info "Packages to install: ${BOLD}${SELECTED_PKGS[*]:-<none>}${RESET}"
 hr '─'
@@ -242,31 +219,26 @@ run apt-get install -y qemu-guest-agent
 # channel. So we do NOT 'enable' it (that just errors) — we only 'start' it when
 # we're actually a QEMU/KVM guest. On bare metal it simply stays inactive.
 QEMU_ACTIVE=0   # tracks whether the guest agent ended up running
-if [[ "$DRY_RUN" == "1" ]]; then
-  dry "start qemu-guest-agent only if the guest-agent channel is present"
-  record "Guest agent" "[dry-run] would install qemu-guest-agent"
-else
-  VIRT="$(systemd-detect-virt 2>/dev/null || true)"; [[ -n "$VIRT" ]] || VIRT="none"
+VIRT="$(systemd-detect-virt 2>/dev/null || true)"; [[ -n "$VIRT" ]] || VIRT="none"
+if systemctl is-active --quiet qemu-guest-agent 2>/dev/null; then
+  log "qemu-guest-agent already active (virt: ${VIRT})."
+  record "Guest agent" "active (${VIRT})"; QEMU_ACTIVE=1
+elif [[ -e /dev/virtio-ports/org.qemu.guest_agent.0 ]]; then
+  # Only start when the channel device exists, so the .device dependency is
+  # satisfiable (otherwise systemctl start fails with a dependency error).
+  systemctl start qemu-guest-agent >/dev/null 2>&1 || true
   if systemctl is-active --quiet qemu-guest-agent 2>/dev/null; then
-    log "qemu-guest-agent already active (virt: ${VIRT})."
+    log "qemu-guest-agent started (virt: ${VIRT})."
     record "Guest agent" "active (${VIRT})"; QEMU_ACTIVE=1
-  elif [[ -e /dev/virtio-ports/org.qemu.guest_agent.0 ]]; then
-    # Only start when the channel device exists, so the .device dependency is
-    # satisfiable (otherwise systemctl start fails with a dependency error).
-    systemctl start qemu-guest-agent >/dev/null 2>&1 || true
-    if systemctl is-active --quiet qemu-guest-agent 2>/dev/null; then
-      log "qemu-guest-agent started (virt: ${VIRT})."
-      record "Guest agent" "active (${VIRT})"; QEMU_ACTIVE=1
-    else
-      note "qemu-guest-agent installed; the guest-agent channel is present but it did not start."
-      record "Guest agent" "installed (start failed)"
-    fi
   else
-    # No virtio guest-agent channel: nothing to start. udev auto-activates the
-    # (static) service if/when the host ever attaches the channel.
-    note "qemu-guest-agent installed; no guest-agent channel attached (virt: ${VIRT}) — left inactive."
-    record "Guest agent" "installed (inactive; no agent channel)"
+    note "qemu-guest-agent installed; the guest-agent channel is present but it did not start."
+    record "Guest agent" "installed (start failed)"
   fi
+else
+  # No virtio guest-agent channel: nothing to start. udev auto-activates the
+  # (static) service if/when the host ever attaches the channel.
+  note "qemu-guest-agent installed; no guest-agent channel attached (virt: ${VIRT}) — left inactive."
+  record "Guest agent" "installed (inactive; no agent channel)"
 fi
 fi   # end: pkg_selected qemu-guest-agent
 
@@ -293,15 +265,11 @@ fi   # end: pkg_selected fish
 # ==============================================================================
 ELAPSED=$(( $(date +%s) - START_TS )); MM=$(( ELAPSED / 60 )); SS=$(( ELAPSED % 60 ))
 printf '\n'; hr '═'
-if [[ "$DRY_RUN" == "1" ]]; then
-  printf '%s%s  🧪  DRY RUN COMPLETE — NO CHANGES MADE — RECAP%s\n' "$BOLD" "$MAG" "$RESET"
-else
-  printf '%s%s  ✅  ANCILLARY SETUP COMPLETE — RECAP%s\n' "$BOLD" "$GRN" "$RESET"
-fi
+printf '%s%s  ✅  ANCILLARY SETUP COMPLETE — RECAP%s\n' "$BOLD" "$GRN" "$RESET"
 hr '═'
 printf '%s  Host: %s   |   Elapsed: %dm %ds%s\n' "$DIM" "$(hostname)" "$MM" "$SS" "$RESET"
 hr '─'
-printf '%s%s  WHAT %s%s\n' "$BOLD" "$CYN" "$( [[ $DRY_RUN == 1 ]] && echo 'WOULD BE DONE' || echo 'WAS DONE' )" "$RESET"
+printf '%s%s  WHAT %s%s\n' "$BOLD" "$CYN" "WAS DONE" "$RESET"
 for entry in "${SUMMARY[@]}"; do
   key="${entry%%$'\t'*}"; val="${entry#*$'\t'}"
   printf '   %s%s%-16s%s %s\n' "$GRN" "$S_OK " "$key" "$RESET" "$val"
@@ -316,9 +284,8 @@ if pkg_selected btop; then
   printf '   %s•%s  Launch the resource monitor with: %sbtop%s\n' "$BOLD" "$RESET" "$DIM" "$RESET"; _had_step=1
 fi
 if pkg_selected qemu-guest-agent; then
-  if [[ "$DRY_RUN" == "1" || "${QEMU_ACTIVE:-0}" -ne 1 ]]; then
-    _verb="$( [[ $DRY_RUN == 1 ]] && echo 'would be installed' || echo 'is installed' )"
-    printf '   %s%s%s qemu-guest-agent %s but inactive. If this is a VM, enable the guest\n' "$YEL" "$S_WARN" "$RESET" "$_verb"
+  if [[ "${QEMU_ACTIVE:-0}" -ne 1 ]]; then
+    printf '   %s%s%s qemu-guest-agent is installed but inactive. If this is a VM, enable the guest\n' "$YEL" "$S_WARN" "$RESET"
     printf '       agent on the hypervisor, then %sfully shut down and start the VM%s (a cold power-cycle —\n' "$BOLD" "$RESET"
     printf '       not just a reboot) so the agent channel is attached and the service activates.\n'; _had_step=1
   fi
@@ -326,13 +293,11 @@ fi
 (( _had_step == 0 )) && printf '   %s•%s  Nothing further to do.\n' "$BOLD" "$RESET"
 printf '%s%s  Done. 🐟%s\n\n' "$BOLD" "$GRN" "$RESET"
 
-# One-line summary for init.sh's bootstrap report (actual runs only).
-if [[ "$DRY_RUN" != "1" ]]; then
-  if (( ${#FISH_TARGETS[@]} > 0 )); then _fish="fish default for: ${FISH_TARGETS[*]}"
-  elif pkg_selected fish; then _fish="fish: no users changed"
-  else _fish="fish: not selected"; fi
-  if (( ${#SELECTED_PKGS[@]} > 0 )); then _pkgs="installed ${SELECTED_PKGS[*]}"; else _pkgs="no packages selected"; fi
-  mkdir -p /var/lib/homelab-bootstrap/summaries
-  printf '%s; %s\n' "$_pkgs" "$_fish" \
-    > /var/lib/homelab-bootstrap/summaries/ancillary.sh
-fi
+# One-line summary for init.sh's bootstrap report.
+if (( ${#FISH_TARGETS[@]} > 0 )); then _fish="fish default for: ${FISH_TARGETS[*]}"
+elif pkg_selected fish; then _fish="fish: no users changed"
+else _fish="fish: not selected"; fi
+if (( ${#SELECTED_PKGS[@]} > 0 )); then _pkgs="installed ${SELECTED_PKGS[*]}"; else _pkgs="no packages selected"; fi
+mkdir -p /var/lib/homelab-bootstrap/summaries
+printf '%s; %s\n' "$_pkgs" "$_fish" \
+  > /var/lib/homelab-bootstrap/summaries/ancillary.sh

@@ -5,7 +5,6 @@
 #
 #  Features:
 #   - Rich, colorful, easy-to-read progress output + full end-of-run recap
-#   - DRY-RUN mode: preview every action and change nothing
 #   - Interactive pre-flight that surfaces every gotcha and asks to proceed
 #   - Idempotent: safe to re-run; guards prevent destructive re-work
 #
@@ -31,7 +30,6 @@
 #   GRUB_PASSWORD="..."      -> set a GRUB password (opt-in; normal boot stays free)
 #   HARDEN_COMPILERS=0       -> do NOT restrict compilers (gcc/cc/...) to root
 #                               (default: restricted to root only — HRDN-7222)
-#   DRY_RUN=1|0      -> force dry-run / actual (skips the mode prompt)
 #   ASSUME_YES=1     -> answer "yes" to every prompt (for automation)
 #   SKIP_UPGRADE=1   -> skip the full apt upgrade
 #   REBUILD_AIDE=1   -> force-rebuild the AIDE baseline even if present
@@ -95,10 +93,6 @@ ASSUME_YES="${ASSUME_YES:-0}"
 SKIP_UPGRADE="${SKIP_UPGRADE:-0}"
 REBUILD_AIDE="${REBUILD_AIDE:-0}"
 
-# Was DRY_RUN explicitly provided? (decide before applying a default)
-if [[ -n "${DRY_RUN+x}" ]]; then DRY_RUN_EXPLICIT=1; else DRY_RUN_EXPLICIT=0; fi
-DRY_RUN="${DRY_RUN:-}"   # resolved later in choose_run_mode
-
 START_TS="$(date +%s)"
 BACKUP_DIR="/tmp/hardening-backups/$(date +%F-%H%M%S)"
 
@@ -149,38 +143,22 @@ info() { printf '%s%s%s %s\n'  "$BLU"  "$S_INFO" "$RESET" "$*"; }
 warn() { printf '%s%s %s%s\n'  "$YEL"  "$S_WARN" "$*" "$RESET"; remember_warn "$*"; }
 err()  { printf '%s%s %s%s\n'  "$RED"  "$S_ERR" "$*" "$RESET" >&2; }
 note() { printf '   %s%s%s\n'  "$DIM"  "$*" "$RESET"; }
-dry()  { printf '   %s[dry-run]%s %s\n' "$MAG" "$RESET" "$*"; }
 
 # ------------------------------------------------------------------------------
-#  Action wrappers — the heart of dry-run. In dry-run they PRINT; otherwise RUN.
+#  Action wrappers
 # ------------------------------------------------------------------------------
-# run CMD [ARGS...]   — execute a command, or preview it
-run() {
-  if [[ "$DRY_RUN" == "1" ]]; then
-    dry "$*"
-    return 0
-  fi
-  "$@"
-}
+# run CMD [ARGS...]   — execute a command
+run() { "$@"; }
 
-# write_file PATH  (content on stdin)  — write a file, or preview it
+# write_file PATH  (content on stdin)  — write a file
 write_file() {
   local path="$1"
-  if [[ "$DRY_RUN" == "1" ]]; then
-    dry "write ${BOLD}${path}${RESET}:"
-    sed 's/^/        │ /'
-    return 0
-  fi
   cat > "$path"
 }
 
-# append_line FILE LINE  — append a line if not already present, or preview it
+# append_line FILE LINE  — append a line if not already present
 append_line() {
   local f="$1" line="$2"
-  if [[ "$DRY_RUN" == "1" ]]; then
-    dry "append to ${f}: ${line}"
-    return 0
-  fi
   # Idempotent: skip if the exact line is already in the file.
   [[ -f "$f" ]] && grep -qxF "$line" "$f" && return 0
   printf '%s\n' "$line" >> "$f"
@@ -234,35 +212,6 @@ detect_container() {
   if [[ -r /run/systemd/container ]]; then printf '%s' "$(cat /run/systemd/container)"; return 0; fi
   if grep -qa 'container=lxc' /proc/1/environ 2>/dev/null; then printf 'lxc'; return 0; fi
   return 1
-}
-
-# choose_run_mode — resolves DRY_RUN. Asks the user on first run.
-choose_run_mode() {
-  if [[ "$DRY_RUN_EXPLICIT" == "1" ]]; then
-    [[ "$DRY_RUN" == "1" ]] && DRY_RUN=1 || DRY_RUN=0
-    return
-  fi
-  if [[ "$INTERACTIVE" -eq 0 ]]; then
-    if [[ "$ASSUME_YES" == "1" ]]; then
-      DRY_RUN=0
-    else
-      DRY_RUN=1
-    fi
-    return
-  fi
-
-  local choice=""
-  printf '\n%s%sHow do you want to run the hardening script?%s\n' "$BOLD" "$WHT" "$RESET" > /dev/tty
-  printf '   %s[1]%s %sDry run%s — preview every action, change %sNOTHING%s (recommended first)\n' \
-    "$BOLD" "$RESET" "$GRN" "$RESET" "$BOLD" "$RESET" > /dev/tty
-  printf '   %s[2]%s %sActual run%s — apply all changes to this system\n' \
-    "$BOLD" "$RESET" "$RED" "$RESET" > /dev/tty
-  printf '%s%s Choose 1 or 2 [default: 1]: %s' "$YEL" "$S_WARN" "$RESET" > /dev/tty
-  read -r choice < /dev/tty || choice=""
-  case "${choice:-1}" in
-    2) DRY_RUN=0 ;;
-    *) DRY_RUN=1 ;;
-  esac
 }
 
 # prompt_for_ssh_port — ask which port sshd should listen on (default 22)
@@ -419,9 +368,6 @@ fi
 CONTAINER_TYPE="$(detect_container || true)"
 [[ -n "$CONTAINER_TYPE" ]] && IS_CONTAINER=1 || IS_CONTAINER=0
 
-# Decide dry-run vs actual BEFORE anything else happens.
-choose_run_mode
-
 # Ask which SSH port to use (defaults to 22).
 prompt_for_ssh_port
 
@@ -442,13 +388,6 @@ if [[ "$SSH_PORT" == "22" ]]; then
   ALLOW_SSH_PORT_22=0
 fi
 
-if [[ "$DRY_RUN" == "1" ]]; then
-  MODE_LABEL="${MAG}DRY RUN (no changes will be made)${RESET}"
-else
-  MODE_LABEL="${RED}ACTUAL RUN (changes WILL be applied)${RESET}"
-fi
-
-info "Mode         : ${BOLD}${MODE_LABEL}"
 info "Run date     : $(date '+%Y-%m-%d %H:%M:%S %Z')"
 info "Hostname     : $(hostname -f 2>/dev/null || hostname)"
 [[ "$IS_CONTAINER" == "1" ]] && info "Environment  : ${BOLD}${CONTAINER_TYPE} container${RESET} (host-managed steps will be skipped)"
@@ -460,7 +399,7 @@ info "HTTP / HTTPS : 80=${ALLOW_HTTP}  443=${ALLOW_HTTPS}"
 info "SSH 2FA      : ${ENABLE_SSH_2FA}"
 hr '─'
 
-# Create the backup directory (only for an actual run)
+# Create the backup directory
 run mkdir -p "$BACKUP_DIR"
 
 # ==============================================================================
@@ -628,61 +567,52 @@ fi
 echo
 
 # --- Targeted prompts driven by the gotchas above ---------------------------
-# In dry-run we skip the destructive guards (nothing changes) but still apply
-# sensible defaults so the preview reflects a realistic actual run.
 
 PURGE_CONFLICTS=0
-if [[ "$DRY_RUN" == "1" ]]; then
-  info "Dry run: skipping destructive confirmations; previewing actions only."
-  [[ "$ALLOW_SSH_PORT_22" != "1" && "$SSH_PORT" != "22" ]] && { ALLOW_SSH_PORT_22=1; note "Preview assumes port 22 kept open (fallback default)."; }
-  DO_UPGRADE=1; [[ "$SKIP_UPGRADE" == "1" ]] && DO_UPGRADE=0
-  (( ${#FOUND_CONFLICTS[@]} > 0 )) && note "Would offer to remove conflicting packages: ${FOUND_CONFLICTS[*]}"
-else
-  # 1) Offer to keep port 22 open as a safety net (only if we moved off 22).
-  if [[ "$ALLOW_SSH_PORT_22" != "1" && "$SSH_PORT" != "22" ]]; then
-    if confirm "Keep port 22 open as a fallback during this change (recommended)?" Y; then
-      ALLOW_SSH_PORT_22=1
-      log "Port 22 will be kept open as a fallback."
-    else
-      note "Port 22 will be closed. Make sure ${SSH_PORT} works before disconnecting."
-    fi
+# 1) Offer to keep port 22 open as a safety net (only if we moved off 22).
+if [[ "$ALLOW_SSH_PORT_22" != "1" && "$SSH_PORT" != "22" ]]; then
+  if confirm "Keep port 22 open as a fallback during this change (recommended)?" Y; then
+    ALLOW_SSH_PORT_22=1
+    log "Port 22 will be kept open as a fallback."
+  else
+    note "Port 22 will be closed. Make sure ${SSH_PORT} works before disconnecting."
   fi
+fi
 
-  # 2) Lockout guard — require explicit acknowledgement, or abort.
-  if [[ "$key_login_ok" -eq 0 ]]; then
-    warn "No usable SSH key for any admin user (${ADMIN_USER_LIST[*]})."
-    if ! confirm "Continue anyway with password auth DISABLED (high lockout risk)?" N; then
-      err "Aborting. Run bootstrap.sh to install an SSH key first, then re-run."
-      exit 1
-    fi
-    warn "Proceeding without a key — you accepted the lockout risk."
-  fi
-
-  # 3) Upgrade choice.
-  DO_UPGRADE=1
-  [[ "$SKIP_UPGRADE" == "1" ]] && DO_UPGRADE=0
-  if [[ "$DO_UPGRADE" -eq 1 ]]; then
-    confirm "Run a full system upgrade now (can be slow; reboot may be needed)?" Y || DO_UPGRADE=0
-  fi
-  [[ "$DO_UPGRADE" -eq 0 ]] && note "Full upgrade will be skipped."
-
-  # 3b) Offer to remove Docker-conflicting packages (Docker prereq).
-  if [[ "$DOCKER_COMPAT" == "1" ]] && (( ${#FOUND_CONFLICTS[@]} > 0 )); then
-    if confirm "Remove conflicting packages now (${FOUND_CONFLICTS[*]})?" N; then
-      PURGE_CONFLICTS=1
-    else
-      note "Leaving them in place — remove manually before installing Docker Engine."
-    fi
-  fi
-
-  # 4) Master confirmation.
-  echo
-  if ! confirm "Proceed with hardening using the settings above?" N; then
-    err "Aborted by user. No changes made."
+# 2) Lockout guard — require explicit acknowledgement, or abort.
+if [[ "$key_login_ok" -eq 0 ]]; then
+  warn "No usable SSH key for any admin user (${ADMIN_USER_LIST[*]})."
+  if ! confirm "Continue anyway with password auth DISABLED (high lockout risk)?" N; then
+    err "Aborting. Run bootstrap.sh to install an SSH key first, then re-run."
     exit 1
   fi
-  log "Confirmed — beginning hardening."
+  warn "Proceeding without a key — you accepted the lockout risk."
 fi
+
+# 3) Upgrade choice.
+DO_UPGRADE=1
+[[ "$SKIP_UPGRADE" == "1" ]] && DO_UPGRADE=0
+if [[ "$DO_UPGRADE" -eq 1 ]]; then
+  confirm "Run a full system upgrade now (can be slow; reboot may be needed)?" Y || DO_UPGRADE=0
+fi
+[[ "$DO_UPGRADE" -eq 0 ]] && note "Full upgrade will be skipped."
+
+# 3b) Offer to remove Docker-conflicting packages (Docker prereq).
+if [[ "$DOCKER_COMPAT" == "1" ]] && (( ${#FOUND_CONFLICTS[@]} > 0 )); then
+  if confirm "Remove conflicting packages now (${FOUND_CONFLICTS[*]})?" N; then
+    PURGE_CONFLICTS=1
+  else
+    note "Leaving them in place — remove manually before installing Docker Engine."
+  fi
+fi
+
+# 4) Master confirmation.
+echo
+if ! confirm "Proceed with hardening using the settings above?" N; then
+  err "Aborted by user. No changes made."
+  exit 1
+fi
+log "Confirmed — beginning hardening."
 
 # ==============================================================================
 banner "Updating packages"
@@ -704,7 +634,7 @@ fi
 banner "Installing core security tools"
 # ==============================================================================
 CORE_PKGS=(
-  openssh-server sudo vim gnupg lsb-release ca-certificates
+  openssh-server sudo gnupg lsb-release ca-certificates
   nftables fail2ban aide apparmor apparmor-utils
   unattended-upgrades apt-listchanges
   rsyslog rsyslog-gnutls logwatch
@@ -798,13 +728,9 @@ SSHD_CFG="/etc/ssh/sshd_config"
 run cp -a "$SSHD_CFG" "$BACKUP_DIR/sshd_config.bak"
 note "Backed up sshd_config -> $BACKUP_DIR/sshd_config.bak"
 
-# ensure config lines (append or replace) — idempotent, dry-run aware
+# ensure config lines (append or replace) — idempotent
 ensure_sshd_opt () {
   local key="$1" val="$2"
-  if [[ "$DRY_RUN" == "1" ]]; then
-    note "${key} ${DIM}->${RESET} ${BOLD}${val}${RESET} ${MAG}[dry-run]${RESET}"
-    return 0
-  fi
   if grep -qiE "^\s*#?\s*${key}\b" "$SSHD_CFG"; then
     sed -i -E "s@^\s*#?\s*(${key})\b.*@\1 ${val}@i" "$SSHD_CFG"
   else
@@ -839,7 +765,7 @@ if [[ "$ENABLE_SSH_2FA" == "1" ]]; then
   run apt -y install libpam-google-authenticator
   PAM_SSHD="/etc/pam.d/sshd"
   run cp -a "$PAM_SSHD" "$BACKUP_DIR/sshd.pam.bak"
-  if [[ "$DRY_RUN" == "1" ]] || ! grep -q 'pam_google_authenticator.so' "$PAM_SSHD" 2>/dev/null; then
+  if ! grep -q 'pam_google_authenticator.so' "$PAM_SSHD" 2>/dev/null; then
     append_line "$PAM_SSHD" "auth required pam_google_authenticator.so nullok"
   fi
   ensure_sshd_opt AuthenticationMethods "publickey,keyboard-interactive"
@@ -848,51 +774,45 @@ if [[ "$ENABLE_SSH_2FA" == "1" ]]; then
 fi
 
 # Validate sshd config before reload
-if [[ "$DRY_RUN" == "1" ]]; then
-  dry "sshd -t  (validate config)  &&  apply Port ${SSH_PORT}"
-  dry "if ssh.socket is in use: mask it so sshd_config's Port governs and persists across reboot (Debian 13)"
-  dry "systemctl enable ssh && restart ssh && verify sshd is listening on ${SSH_PORT}"
-else
-  info "Validating sshd configuration (sshd -t)..."
-  if ! sshd -t; then
-    err "sshd config test FAILED — restoring backup and aborting."
-    cp -a "$BACKUP_DIR/sshd_config.bak" "$SSHD_CFG"
-    exit 1
-  fi
-  log "sshd config valid."
+info "Validating sshd configuration (sshd -t)..."
+if ! sshd -t; then
+  err "sshd config test FAILED — restoring backup and aborting."
+  cp -a "$BACKUP_DIR/sshd_config.bak" "$SSHD_CFG"
+  exit 1
+fi
+log "sshd config valid."
 
-  # Debian 13 may socket-activate SSH via ssh.socket. When it's active, the
-  # LISTENING port comes from the socket unit (ListenStream, default 22), NOT
-  # from sshd_config's Port — so our port change would be silently ignored and
-  # connections to ${SSH_PORT} get refused. Worse, even after a runtime restart
-  # binds the right port, on the NEXT BOOT only ssh.socket starts (ssh.service
-  # isn't enabled in socket mode), so SSH reverts to :22 and ${SSH_PORT} refuses.
-  # MASK the socket (not just disable) so neither boot nor a package preset can
-  # re-activate it, and run the standalone ssh.service on the configured Port.
-  if systemctl is-active --quiet ssh.socket 2>/dev/null || systemctl is-enabled ssh.socket >/dev/null 2>&1; then
-    warn "ssh.socket is in use — masking socket activation so Port ${SSH_PORT} persists across reboots."
-    systemctl disable --now ssh.socket >/dev/null 2>&1 || true
-    systemctl mask ssh.socket >/dev/null 2>&1 || true
-    record "SSH socket" "ssh.socket masked (port now governed by sshd_config, survives reboot)"
-  fi
+# Debian 13 may socket-activate SSH via ssh.socket. When it's active, the
+# LISTENING port comes from the socket unit (ListenStream, default 22), NOT
+# from sshd_config's Port — so our port change would be silently ignored and
+# connections to ${SSH_PORT} get refused. Worse, even after a runtime restart
+# binds the right port, on the NEXT BOOT only ssh.socket starts (ssh.service
+# isn't enabled in socket mode), so SSH reverts to :22 and ${SSH_PORT} refuses.
+# MASK the socket (not just disable) so neither boot nor a package preset can
+# re-activate it, and run the standalone ssh.service on the configured Port.
+if systemctl is-active --quiet ssh.socket 2>/dev/null || systemctl is-enabled ssh.socket >/dev/null 2>&1; then
+  warn "ssh.socket is in use — masking socket activation so Port ${SSH_PORT} persists across reboots."
+  systemctl disable --now ssh.socket >/dev/null 2>&1 || true
+  systemctl mask ssh.socket >/dev/null 2>&1 || true
+  record "SSH socket" "ssh.socket masked (port now governed by sshd_config, survives reboot)"
+fi
 
-  # Enable ssh.service for boot and (re)start it so the new Port is bound now.
-  systemctl enable ssh >/dev/null 2>&1 || true
-  systemctl restart ssh || systemctl reload ssh
+# Enable ssh.service for boot and (re)start it so the new Port is bound now.
+systemctl enable ssh >/dev/null 2>&1 || true
+systemctl restart ssh || systemctl reload ssh
 
-  # Confirm the boot-time setup is correct: ssh.service enabled, and sshd is
-  # actually listening on the new port. Warn loudly otherwise so a lockout is
-  # caught now (while port 22 may still be open as a firewall fallback).
-  systemctl is-enabled ssh >/dev/null 2>&1 \
-    && log "ssh.service is enabled at boot (will bind Port ${SSH_PORT} on reboot)." \
-    || warn "ssh.service is NOT enabled at boot — run: systemctl enable ssh"
-  if command -v ss >/dev/null 2>&1; then
-    if ss -ltnH 2>/dev/null | grep -qE "[:.]${SSH_PORT}([[:space:]]|$)"; then
-      log "Confirmed: sshd is listening on port ${SSH_PORT}."
-    else
-      warn "sshd does NOT appear to be listening on ${SSH_PORT} — do not disconnect yet!"
-      note "Check: systemctl status ssh   |   ss -ltnp   |   journalctl -u ssh -n 50"
-    fi
+# Confirm the boot-time setup is correct: ssh.service enabled, and sshd is
+# actually listening on the new port. Warn loudly otherwise so a lockout is
+# caught now (while port 22 may still be open as a firewall fallback).
+systemctl is-enabled ssh >/dev/null 2>&1 \
+  && log "ssh.service is enabled at boot (will bind Port ${SSH_PORT} on reboot)." \
+  || warn "ssh.service is NOT enabled at boot — run: systemctl enable ssh"
+if command -v ss >/dev/null 2>&1; then
+  if ss -ltnH 2>/dev/null | grep -qE "[:.]${SSH_PORT}([[:space:]]|$)"; then
+    log "Confirmed: sshd is listening on port ${SSH_PORT}."
+  else
+    warn "sshd does NOT appear to be listening on ${SSH_PORT} — do not disconnect yet!"
+    note "Check: systemctl status ssh   |   ss -ltnp   |   journalctl -u ssh -n 50"
   fi
 fi
 log "SSH hardened on port ${BOLD}${SSH_PORT}${RESET}."
@@ -1054,9 +974,10 @@ banner "Ensuring AppArmor is enabled"
 # ==============================================================================
 # Note: keeping AppArmor enabled also enforces Debian's unprivileged-userns
 # restriction (kernel.apparmor_restrict_unprivileged_userns) where the kernel
-# has it. That's fine — docker.sh grants ONLY rootlesskit the
-# 'userns' permission via a dedicated AppArmor profile, so rootless Docker works
-# without weakening this. See https://docs.docker.com/engine/security/apparmor/
+# has it. That's fine — container.sh grants ONLY the rootless binaries
+# (rootlesskit and/or podman) the 'userns' permission via dedicated AppArmor
+# profiles, so rootless Docker/Podman work without weakening this.
+# See https://docs.docker.com/engine/security/apparmor/
 if [[ "$IS_CONTAINER" == "1" ]]; then
   # Inside an LXC/container the kernel's AppArmor is owned by the Proxmox HOST;
   # apparmor.service can't load profiles here and would fail to start. Skip it.
@@ -1068,7 +989,7 @@ elif ! run systemctl enable --now apparmor; then
   warn "Could not enable apparmor.service — continuing without it."
   note "Check 'systemctl status apparmor' and the kernel's AppArmor support."
   record "AppArmor" "Enable failed (continued; see systemctl status apparmor)"
-elif [[ "$DRY_RUN" != "1" ]] && aa-status >/dev/null 2>&1; then
+elif aa-status >/dev/null 2>&1; then
   AA_PROFILES="$(aa-status --profiled 2>/dev/null || echo '?')"
   log "AppArmor active — ${AA_PROFILES} profiles loaded."
   record "AppArmor" "Enabled (${AA_PROFILES} profiles loaded)"
@@ -1081,11 +1002,6 @@ fi
 banner "Initializing AIDE baseline"
 # ==============================================================================
 run_aideinit() {
-  if [[ "$DRY_RUN" == "1" ]]; then
-    dry "aideinit  &&  install /var/lib/aide/aide.db.new -> /var/lib/aide/aide.db"
-    record "AIDE" "[dry-run] would initialize baseline DB"
-    return 0
-  fi
   info "Building file-integrity database (this can take a minute)..."
   aideinit || true
   if [[ -f /var/lib/aide/aide.db.new ]]; then
@@ -1100,21 +1016,14 @@ run_aideinit() {
 
 # FINT-4402: make sure the AIDE config references SHA-512 checksums.
 if [[ -f /etc/aide/aide.conf ]] && ! grep -q 'sha512' /etc/aide/aide.conf 2>/dev/null; then
-  if [[ "$DRY_RUN" == "1" ]]; then
-    dry "add a sha256+sha512 checksum group to /etc/aide/aide.conf (FINT-4402)"
-  else
-    cp -a /etc/aide/aide.conf "$BACKUP_DIR/aide.conf.bak" 2>/dev/null || true
-    printf '\n# Lynis FINT-4402: reference strong checksums in the AIDE config\nHardening_Checksums = sha256+sha512\n' >> /etc/aide/aide.conf
-    log "AIDE config now references SHA-512 checksums."
-  fi
+  cp -a /etc/aide/aide.conf "$BACKUP_DIR/aide.conf.bak" 2>/dev/null || true
+  printf '\n# Lynis FINT-4402: reference strong checksums in the AIDE config\nHardening_Checksums = sha256+sha512\n' >> /etc/aide/aide.conf
+  log "AIDE config now references SHA-512 checksums."
 fi
 
 if [[ -f /var/lib/aide/aide.db && "$REBUILD_AIDE" != "1" ]]; then
   info "AIDE baseline already exists."
-  if [[ "$DRY_RUN" == "1" ]]; then
-    dry "would prompt to rebuild AIDE baseline (kept by default)"
-    record "AIDE" "[dry-run] existing baseline would be kept"
-  elif confirm "Rebuild the AIDE baseline database now?" N; then
+  if confirm "Rebuild the AIDE baseline database now?" N; then
     run_aideinit
   else
     log "Keeping existing AIDE baseline (idempotent skip)."
@@ -1180,7 +1089,6 @@ banner "Applying extra hardening (Lynis suggestions)"
 # set_logindef KEY VALUE — set a directive in /etc/login.defs (idempotent).
 set_logindef() {
   local key="$1" val="$2" f=/etc/login.defs
-  if [[ "$DRY_RUN" == "1" ]]; then note "${key} ${DIM}->${RESET} ${val} ${MAG}[dry-run]${RESET}"; return 0; fi
   if grep -qiE "^\s*#?\s*${key}\b" "$f" 2>/dev/null; then
     sed -i -E "s@^\s*#?\s*(${key})\b.*@\1 ${val}@i" "$f"
   else
@@ -1207,11 +1115,7 @@ run apt -y install "${EXTRA_PKGS[@]}"
 record "Extra pkgs" "${#EXTRA_PKGS[@]} installed (pwquality, debsums, auditd, sysstat, acct, rkhunter, ...)"
 
 # 2) Enable accounting/audit collectors (ACCT-9622/9626/9628).
-if [[ "$DRY_RUN" == "1" ]]; then
-  dry "enable sysstat collection in /etc/default/sysstat"
-else
-  [[ -f /etc/default/sysstat ]] && sed -i 's/^ENABLED=.*/ENABLED="true"/' /etc/default/sysstat
-fi
+[[ -f /etc/default/sysstat ]] && sed -i 's/^ENABLED=.*/ENABLED="true"/' /etc/default/sysstat
 run systemctl enable --now sysstat 2>/dev/null || true
 [[ "$IS_CONTAINER" != "1" ]] && run systemctl enable --now auditd 2>/dev/null || true
 run systemctl enable --now acct 2>/dev/null || run systemctl enable --now acct.service 2>/dev/null || true
@@ -1243,7 +1147,7 @@ fi
 #    is often unwanted on a homelab. Set BLACKLIST_USB_STORAGE=1 (or answer the
 #    prompt) to include it.
 if [[ -z "${BLACKLIST_USB_STORAGE:-}" ]]; then
-  if [[ "$DRY_RUN" != "1" ]] && confirm "Also blacklist usb-storage (disables USB drives) for tighter security?" N; then
+  if confirm "Also blacklist usb-storage (disables USB drives) for tighter security?" N; then
     BLACKLIST_USB_STORAGE=1
   else
     BLACKLIST_USB_STORAGE=0
@@ -1297,11 +1201,7 @@ _perm_changed=0
 for _t in "${_perm_targets[@]}"; do
   _path="${_t%%:*}"; _mode="${_t##*:}"
   [[ -e "$_path" ]] || continue
-  if [[ "$DRY_RUN" == "1" ]]; then
-    dry "chmod ${_mode} ${_path}"
-  else
-    chmod "$_mode" "$_path" 2>/dev/null || true
-  fi
+  chmod "$_mode" "$_path" 2>/dev/null || true
   _perm_changed=$((_perm_changed + 1))
 done
 log "Restricted permissions on ${_perm_changed} sensitive files/dirs (cron, sshd_config, grub.cfg)."
@@ -1312,16 +1212,12 @@ record "File perms" "tightened ${_perm_changed} paths (FILE-7524)"
 # it defaults to "never". Valid values: never|daily|weekly|monthly. We ensure
 # the file exists (it isn't always shipped) and set it to weekly.
 DEBSUMS_DEFAULT="/etc/default/debsums"
-if [[ "$DRY_RUN" == "1" ]]; then
-  dry "set CRON_CHECK=weekly in ${DEBSUMS_DEFAULT} (create if missing)"
+if [[ -f "$DEBSUMS_DEFAULT" ]] && grep -qE '^#?\s*CRON_CHECK=' "$DEBSUMS_DEFAULT"; then
+  sed -i -E 's@^#?\s*CRON_CHECK=.*@CRON_CHECK="weekly"@' "$DEBSUMS_DEFAULT"
 else
-  if [[ -f "$DEBSUMS_DEFAULT" ]] && grep -qE '^#?\s*CRON_CHECK=' "$DEBSUMS_DEFAULT"; then
-    sed -i -E 's@^#?\s*CRON_CHECK=.*@CRON_CHECK="weekly"@' "$DEBSUMS_DEFAULT"
-  else
-    printf '# debsums config — verify installed packages against known-good MD5s.\nCRON_CHECK="weekly"\n' >> "$DEBSUMS_DEFAULT"
-  fi
-  log "debsums scheduled to verify packages weekly (${DEBSUMS_DEFAULT})."
+  printf '# debsums config — verify installed packages against known-good MD5s.\nCRON_CHECK="weekly"\n' >> "$DEBSUMS_DEFAULT"
 fi
+log "debsums scheduled to verify packages weekly (${DEBSUMS_DEFAULT})."
 record "debsums" "CRON_CHECK=weekly in ${DEBSUMS_DEFAULT}"
 
 # 8) auditd: install a basic ruleset so it is not "enabled with empty ruleset" (ACCT-9630).
@@ -1347,9 +1243,7 @@ write_file /etc/audit/rules.d/99-hardening.rules <<'EOF'
 # Enable auditing (use 2 to lock rules until reboot if you prefer)
 -e 1
 EOF
-if [[ "$DRY_RUN" != "1" ]]; then
-  augenrules --load 2>/dev/null || true
-fi
+augenrules --load 2>/dev/null || true
 log "auditd given a basic ruleset (identity, sudoers, sshd, pam)."
 record "auditd rules" "basic ruleset installed (ACCT-9630)"
 fi
@@ -1358,29 +1252,21 @@ fi
 BACKUP_DNS="${BACKUP_DNS:-1.1.1.1 9.9.9.9}"
 if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
   RC=/etc/systemd/resolved.conf
-  if [[ "$DRY_RUN" == "1" ]]; then
-    dry "set FallbackDNS=${BACKUP_DNS} in ${RC}; restart systemd-resolved"
+  run cp -a "$RC" "$BACKUP_DIR/resolved.conf.bak" 2>/dev/null || true
+  if grep -qE '^#?FallbackDNS=' "$RC" 2>/dev/null; then
+    sed -i -E "s@^#?FallbackDNS=.*@FallbackDNS=${BACKUP_DNS}@" "$RC"
   else
-    run cp -a "$RC" "$BACKUP_DIR/resolved.conf.bak" 2>/dev/null || true
-    if grep -qE '^#?FallbackDNS=' "$RC" 2>/dev/null; then
-      sed -i -E "s@^#?FallbackDNS=.*@FallbackDNS=${BACKUP_DNS}@" "$RC"
-    else
-      printf 'FallbackDNS=%s\n' "$BACKUP_DNS" >> "$RC"
-    fi
-    systemctl restart systemd-resolved 2>/dev/null || true
-    log "systemd-resolved FallbackDNS set to: ${BACKUP_DNS}."
+    printf 'FallbackDNS=%s\n' "$BACKUP_DNS" >> "$RC"
   fi
+  systemctl restart systemd-resolved 2>/dev/null || true
+  log "systemd-resolved FallbackDNS set to: ${BACKUP_DNS}."
   record "Backup DNS" "systemd-resolved FallbackDNS=${BACKUP_DNS}"
 elif [[ -f /etc/resolv.conf && ! -L /etc/resolv.conf ]]; then
   if (( $(grep -c '^nameserver' /etc/resolv.conf 2>/dev/null || echo 0) < 2 )); then
-    if [[ "$DRY_RUN" == "1" ]]; then
-      dry "append backup nameserver(s) (${BACKUP_DNS}) to /etc/resolv.conf"
-    else
-      for _ns in $BACKUP_DNS; do
-        grep -qE "^nameserver[[:space:]]+${_ns}\b" /etc/resolv.conf || printf 'nameserver %s\n' "$_ns" >> /etc/resolv.conf
-      done
-      log "Added backup nameserver(s) to /etc/resolv.conf: ${BACKUP_DNS}."
-    fi
+    for _ns in $BACKUP_DNS; do
+      grep -qE "^nameserver[[:space:]]+${_ns}\b" /etc/resolv.conf || printf 'nameserver %s\n' "$_ns" >> /etc/resolv.conf
+    done
+    log "Added backup nameserver(s) to /etc/resolv.conf: ${BACKUP_DNS}."
     record "Backup DNS" "added to /etc/resolv.conf (${BACKUP_DNS})"
   fi
 else
@@ -1403,36 +1289,31 @@ fi
 # Uses --unrestricted so normal boot is NOT blocked; only editing entries /
 # single-user mode requires the password.
 if [[ -n "${GRUB_PASSWORD:-}" ]] && command -v grub-mkpasswd-pbkdf2 >/dev/null 2>&1; then
-  if [[ "$DRY_RUN" == "1" ]]; then
-    dry "generate PBKDF2 hash and write /etc/grub.d/40_custom (superuser=root, --unrestricted); update-grub"
-    record "GRUB password" "[dry-run] would set a GRUB password"
-  else
-    _grub_hash="$(printf '%s\n%s\n' "$GRUB_PASSWORD" "$GRUB_PASSWORD" | grub-mkpasswd-pbkdf2 2>/dev/null | awk '/grub\.pbkdf2/{print $NF}')"
-    if [[ -n "$_grub_hash" ]]; then
-      cp -a /etc/grub.d/40_custom "$BACKUP_DIR/40_custom.bak" 2>/dev/null || true
-      # Idempotent: update the hash in place if already configured, else append.
-      if grep -q '^password_pbkdf2 root ' /etc/grub.d/40_custom 2>/dev/null; then
-        sed -i -E "s@^password_pbkdf2 root .*@password_pbkdf2 root ${_grub_hash}@" /etc/grub.d/40_custom
-        grep -q '^set superusers=' /etc/grub.d/40_custom || printf 'set superusers="root"\n' >> /etc/grub.d/40_custom
-        log "GRUB password updated (existing entry)."
-      else
-        cat >> /etc/grub.d/40_custom <<EOF
+  _grub_hash="$(printf '%s\n%s\n' "$GRUB_PASSWORD" "$GRUB_PASSWORD" | grub-mkpasswd-pbkdf2 2>/dev/null | awk '/grub\.pbkdf2/{print $NF}')"
+  if [[ -n "$_grub_hash" ]]; then
+    cp -a /etc/grub.d/40_custom "$BACKUP_DIR/40_custom.bak" 2>/dev/null || true
+    # Idempotent: update the hash in place if already configured, else append.
+    if grep -q '^password_pbkdf2 root ' /etc/grub.d/40_custom 2>/dev/null; then
+      sed -i -E "s@^password_pbkdf2 root .*@password_pbkdf2 root ${_grub_hash}@" /etc/grub.d/40_custom
+      grep -q '^set superusers=' /etc/grub.d/40_custom || printf 'set superusers="root"\n' >> /etc/grub.d/40_custom
+      log "GRUB password updated (existing entry)."
+    else
+      cat >> /etc/grub.d/40_custom <<EOF
 
 # Lynis BOOT-5122: protect GRUB editing / single-user mode with a password.
 set superusers="root"
 password_pbkdf2 root ${_grub_hash}
 EOF
-        log "GRUB password set (normal boot stays password-free)."
-      fi
-      # Keep normal boot password-free by marking menu entries unrestricted.
-      if [[ -f /etc/grub.d/10_linux ]] && ! grep -q -- '--unrestricted' /etc/grub.d/10_linux; then
-        sed -i -E 's@^(CLASS=".*)"@\1 --unrestricted"@' /etc/grub.d/10_linux || true
-      fi
-      update-grub 2>/dev/null || update-grub2 2>/dev/null || true
-      record "GRUB password" "set (superuser=root, --unrestricted)"
-    else
-      warn "Could not generate a GRUB password hash — skipped."
+      log "GRUB password set (normal boot stays password-free)."
     fi
+    # Keep normal boot password-free by marking menu entries unrestricted.
+    if [[ -f /etc/grub.d/10_linux ]] && ! grep -q -- '--unrestricted' /etc/grub.d/10_linux; then
+      sed -i -E 's@^(CLASS=".*)"@\1 --unrestricted"@' /etc/grub.d/10_linux || true
+    fi
+    update-grub 2>/dev/null || update-grub2 2>/dev/null || true
+    record "GRUB password" "set (superuser=root, --unrestricted)"
+  else
+    warn "Could not generate a GRUB password hash — skipped."
   fi
 fi
 
@@ -1444,12 +1325,8 @@ if [[ "${HARDEN_COMPILERS:-1}" != "0" ]]; then
     _p="$(command -v "$_c" 2>/dev/null || true)"
     [[ -n "$_p" ]] || continue
     _rp="$(readlink -f "$_p" 2>/dev/null || echo "$_p")"
-    if [[ "$DRY_RUN" == "1" ]]; then
-      dry "chown root:root + chmod 0750 ${_rp}"
-    else
-      chown root:root "$_rp" 2>/dev/null || true
-      chmod 0750 "$_rp" 2>/dev/null || true
-    fi
+    chown root:root "$_rp" 2>/dev/null || true
+    chmod 0750 "$_rp" 2>/dev/null || true
     _comp_done+=("$_c")
   done
   if (( ${#_comp_done[@]} > 0 )); then
@@ -1463,38 +1340,30 @@ banner "Running Lynis quick audit (non-blocking)"
 # ==============================================================================
 LYNIS_SCORE="n/a"; LYNIS_WARN=0; LYNIS_SUGG=0
 LYNIS_REPORT="/var/log/lynis-report.dat"; LYNIS_LOG="/var/log/lynis.log"
-if [[ "$DRY_RUN" == "1" ]]; then
-  dry "lynis audit system --quick"
-else
-  info "Auditing the system with Lynis..."
-  lynis audit system --quick || true
-  if [[ -r "$LYNIS_REPORT" ]]; then
-    LYNIS_SCORE="$(awk -F= '/^hardening_index=/{print $2}' "$LYNIS_REPORT" | tail -n1)"; [[ -n "$LYNIS_SCORE" ]] || LYNIS_SCORE="n/a"
-    LYNIS_WARN="$(grep -c '^warning\[\]=' "$LYNIS_REPORT" 2>/dev/null || echo 0)"
-    LYNIS_SUGG="$(grep -c '^suggestion\[\]=' "$LYNIS_REPORT" 2>/dev/null || echo 0)"
-  fi
-  log "Lynis audit complete. Hardening index: ${BOLD}${LYNIS_SCORE}${RESET} (${LYNIS_WARN} warnings, ${LYNIS_SUGG} suggestions)."
+info "Auditing the system with Lynis..."
+lynis audit system --quick || true
+if [[ -r "$LYNIS_REPORT" ]]; then
+  LYNIS_SCORE="$(awk -F= '/^hardening_index=/{print $2}' "$LYNIS_REPORT" | tail -n1)"; [[ -n "$LYNIS_SCORE" ]] || LYNIS_SCORE="n/a"
+  LYNIS_WARN="$(grep -c '^warning\[\]=' "$LYNIS_REPORT" 2>/dev/null || echo 0)"
+  LYNIS_SUGG="$(grep -c '^suggestion\[\]=' "$LYNIS_REPORT" 2>/dev/null || echo 0)"
 fi
+log "Lynis audit complete. Hardening index: ${BOLD}${LYNIS_SCORE}${RESET} (${LYNIS_WARN} warnings, ${LYNIS_SUGG} suggestions)."
 
 # ==============================================================================
 #  Live status block
 # ==============================================================================
 header "Live status"
-if [[ "$DRY_RUN" == "1" ]]; then
-  note "Dry run: the system was not modified; live status would be shown here after an actual run."
-else
-  printf '\n%s%sListening services:%s\n' "$BOLD" "$WHT" "$RESET"
-  ss -tulpen 2>/dev/null || true
+printf '\n%s%sListening services:%s\n' "$BOLD" "$WHT" "$RESET"
+ss -tulpen 2>/dev/null || true
 
-  printf '\n%s%sfail2ban (first 12 lines):%s\n' "$BOLD" "$WHT" "$RESET"
-  systemctl --no-pager status fail2ban 2>/dev/null | sed -n '1,12p' || true
+printf '\n%s%sfail2ban (first 12 lines):%s\n' "$BOLD" "$WHT" "$RESET"
+systemctl --no-pager status fail2ban 2>/dev/null | sed -n '1,12p' || true
 
-  printf '\n%s%sActive nftables ruleset:%s\n' "$BOLD" "$WHT" "$RESET"
-  nft list ruleset 2>/dev/null || true
-fi
+printf '\n%s%sActive nftables ruleset:%s\n' "$BOLD" "$WHT" "$RESET"
+nft list ruleset 2>/dev/null || true
 
 # ==============================================================================
-#  Reboot-required detection (read-only; safe in dry-run)
+#  Reboot-required detection (read-only)
 # ==============================================================================
 # Sets REBOOT_REQUIRED (0/1) and REBOOT_REASON by checking the standard flag
 # file (created by needrestart / unattended-upgrades / kernel postinst) and by
@@ -1543,21 +1412,13 @@ MM=$(( ELAPSED / 60 )); SS=$(( ELAPSED % 60 ))
 
 printf '\n'
 hr '═'
-if [[ "$DRY_RUN" == "1" ]]; then
-  printf '%s%s  🧪  DRY RUN COMPLETE  —  NO CHANGES WERE MADE  —  RECAP%s\n' "$BOLD" "$MAG" "$RESET"
-else
-  printf '%s%s  ✅  HARDENING COMPLETE  —  RECAP%s\n' "$BOLD" "$GRN" "$RESET"
-fi
+printf '%s%s  ✅  HARDENING COMPLETE  —  RECAP%s\n' "$BOLD" "$GRN" "$RESET"
 hr '═'
 printf '%s  Host: %s   |   Elapsed: %dm %ds   |   Backups: %s%s\n' \
   "$DIM" "$(hostname)" "$MM" "$SS" "$BACKUP_DIR" "$RESET"
 hr '─'
 
-if [[ "$DRY_RUN" == "1" ]]; then
-  printf '%s%s  WHAT WOULD BE DONE (preview)%s\n' "$BOLD" "$CYN" "$RESET"
-else
-  printf '%s%s  WHAT WAS DONE%s\n' "$BOLD" "$CYN" "$RESET"
-fi
+printf '%s%s  WHAT WAS DONE%s\n' "$BOLD" "$CYN" "$RESET"
 for entry in "${SUMMARY[@]}"; do
   key="${entry%%$'\t'*}"
   val="${entry#*$'\t'}"
@@ -1581,20 +1442,16 @@ fi
 # Lynis security scan — details
 hr '─'
 printf '%s%s  🔎 LYNIS SECURITY SCAN%s\n' "$BOLD" "$CYN" "$RESET"
-if [[ "$DRY_RUN" == "1" ]]; then
-  note "Skipped in dry run — an actual run audits the system and reports here."
-else
-  # Color the index: >=80 green, 60-79 yellow, <60 red.
-  _idx_color="$WHT"
-  if [[ "$LYNIS_SCORE" =~ ^[0-9]+$ ]]; then
-    if   (( LYNIS_SCORE >= 80 )); then _idx_color="$GRN"
-    elif (( LYNIS_SCORE >= 60 )); then _idx_color="$YEL"
-    else _idx_color="$RED"; fi
-  fi
-  printf '   %sHardening index%s : %s%s / 100%s   (%s warnings, %s suggestions)\n' \
-    "$WHT" "$RESET" "$_idx_color" "$LYNIS_SCORE" "$RESET" "$LYNIS_WARN" "$LYNIS_SUGG"
-  note "Details: ${LYNIS_REPORT}  |  review: sudo lynis show details"
+# Color the index: >=80 green, 60-79 yellow, <60 red.
+_idx_color="$WHT"
+if [[ "$LYNIS_SCORE" =~ ^[0-9]+$ ]]; then
+  if   (( LYNIS_SCORE >= 80 )); then _idx_color="$GRN"
+  elif (( LYNIS_SCORE >= 60 )); then _idx_color="$YEL"
+  else _idx_color="$RED"; fi
 fi
+printf '   %sHardening index%s : %s%s / 100%s   (%s warnings, %s suggestions)\n' \
+  "$WHT" "$RESET" "$_idx_color" "$LYNIS_SCORE" "$RESET" "$LYNIS_WARN" "$LYNIS_SUGG"
+note "Details: ${LYNIS_REPORT}  |  review: sudo lynis show details"
 
 # Reboot status — prominent, color-coded
 hr '─'
@@ -1603,11 +1460,9 @@ if [[ "$REBOOT_REQUIRED" -eq 1 ]]; then
   printf '   %s%s%s %s\n' "$YEL" "$S_WARN" "$RESET" "$REBOOT_REASON"
   printf '   %sReboot with%s %ssudo systemctl reboot%s %safter confirming your new SSH session works.%s\n' \
     "$DIM" "$RESET" "$BOLD" "$RESET" "$DIM" "$RESET"
-  [[ "$DRY_RUN" == "1" ]] && note "(reflects current system; the upgrade was previewed, not performed)"
 else
   printf '%s%s  ✔ NO REBOOT REQUIRED%s\n' "$BOLD" "$GRN" "$RESET"
   printf '   %sHardening was applied live and the running kernel is current.%s\n' "$DIM" "$RESET"
-  [[ "$DRY_RUN" == "1" ]] && note "(an actual run's full upgrade could still pull a new kernel → re-check after)"
 fi
 
 if (( ${#WARNINGS[@]} > 0 )); then
@@ -1619,38 +1474,29 @@ if (( ${#WARNINGS[@]} > 0 )); then
 fi
 
 hr '─'
-if [[ "$DRY_RUN" == "1" ]]; then
-  printf '%s%s  ⏭ NEXT STEPS%s\n' "$BOLD" "$MAG" "$RESET"
-  printf '   %s•%s  This was a preview. To apply for real, re-run and choose %sActual%s,\n' "$BOLD" "$RESET" "$BOLD" "$RESET"
-  printf '       or run: %sDRY_RUN=0 ./%s%s\n' "$DIM" "$(basename "$0")" "$RESET"
-  printf '   %s•%s  Review the LOCKOUT RISK / warnings above before the real run.\n' "$BOLD" "$RESET"
-else
-  printf '%s%s  ⏭ NEXT STEPS (do not skip)%s\n' "$BOLD" "$MAG" "$RESET"
-  printf '   %s1.%s KEEP THIS SESSION OPEN. From another terminal, test a NEW login as an admin user:\n' "$BOLD" "$RESET"
-  for u in "${ADMIN_USER_LIST[@]}"; do
-    printf '        %sssh -p %s %s@<host>%s\n' "$DIM" "$SSH_PORT" "$u" "$RESET"
-  done
-  printf '   %s2.%s Only close this session AFTER a new SSH connection succeeds.\n' "$BOLD" "$RESET"
-  if [[ "$LOCK_ROOT_NOW" -eq 1 || "$ROOT_ALREADY_LOCKED" -eq 1 ]]; then
-    printf '   %s%s%s root password is locked — use %s%s%s + %ssudo%s for root tasks (reverse: %ssudo passwd -u root%s).\n' \
-      "$YEL" "$S_WARN" "$RESET" "$BOLD" "${KEYED_ADMIN:-an admin user}" "$RESET" "$BOLD" "$RESET" "$DIM" "$RESET"
-  fi
-  if [[ "$ENABLE_SSH_2FA" == "1" ]]; then
-    printf '   %s3.%s Enroll TOTP for each user, e.g.: %ssudo -u %s -H google-authenticator%s\n' "$BOLD" "$RESET" "$DIM" "$ADMIN_USER" "$RESET"
-  fi
-  printf '   %s•%s  Restore any change from backups in: %s%s%s\n' "$BOLD" "$RESET" "$DIM" "$BACKUP_DIR" "$RESET"
-  printf '   %s•%s  To install Docker + Compose (rootless) next, run: %ssudo ./docker.sh%s\n' \
-    "$BOLD" "$RESET" "$DIM" "$RESET"
+printf '%s%s  ⏭ NEXT STEPS (do not skip)%s\n' "$BOLD" "$MAG" "$RESET"
+printf '   %s1.%s KEEP THIS SESSION OPEN. From another terminal, test a NEW login as an admin user:\n' "$BOLD" "$RESET"
+for u in "${ADMIN_USER_LIST[@]}"; do
+  printf '        %sssh -p %s %s@<host>%s\n' "$DIM" "$SSH_PORT" "$u" "$RESET"
+done
+printf '   %s2.%s Only close this session AFTER a new SSH connection succeeds.\n' "$BOLD" "$RESET"
+if [[ "$LOCK_ROOT_NOW" -eq 1 || "$ROOT_ALREADY_LOCKED" -eq 1 ]]; then
+  printf '   %s%s%s root password is locked — use %s%s%s + %ssudo%s for root tasks (reverse: %ssudo passwd -u root%s).\n' \
+    "$YEL" "$S_WARN" "$RESET" "$BOLD" "${KEYED_ADMIN:-an admin user}" "$RESET" "$BOLD" "$RESET" "$DIM" "$RESET"
 fi
+if [[ "$ENABLE_SSH_2FA" == "1" ]]; then
+  printf '   %s3.%s Enroll TOTP for each user, e.g.: %ssudo -u %s -H google-authenticator%s\n' "$BOLD" "$RESET" "$DIM" "$ADMIN_USER" "$RESET"
+fi
+printf '   %s•%s  Restore any change from backups in: %s%s%s\n' "$BOLD" "$RESET" "$DIM" "$BACKUP_DIR" "$RESET"
+printf '   %s•%s  To install a container runtime (Docker and/or Podman, rootless) next, run: %ssudo ./container.sh%s\n' \
+  "$BOLD" "$RESET" "$DIM" "$RESET"
 hr '═'
 printf '%s%s  Done. Stay safe. 🔐%s\n\n' "$BOLD" "$GRN" "$RESET"
 
-# One-line summary for init.sh's bootstrap report (actual runs only).
-if [[ "$DRY_RUN" != "1" ]]; then
-  _root_state="unchanged"
-  { [[ "${LOCK_ROOT_NOW:-0}" -eq 1 ]] || [[ "${ROOT_ALREADY_LOCKED:-0}" -eq 1 ]]; } && _root_state="locked"
-  mkdir -p /var/lib/homelab-bootstrap/summaries
-  printf 'admins: %s (verified); SSH :%s key-only; nftables deny-by-default; fail2ban+AppArmor+AIDE; root %s; Lynis %s\n' \
-    "${ADMIN_USER_LIST[*]}" "$SSH_PORT" "$_root_state" "${LYNIS_SCORE:-n/a}" \
-    > /var/lib/homelab-bootstrap/summaries/harden.sh
-fi
+# One-line summary for init.sh's bootstrap report.
+_root_state="unchanged"
+{ [[ "${LOCK_ROOT_NOW:-0}" -eq 1 ]] || [[ "${ROOT_ALREADY_LOCKED:-0}" -eq 1 ]]; } && _root_state="locked"
+mkdir -p /var/lib/homelab-bootstrap/summaries
+printf 'admins: %s (verified); SSH :%s key-only; nftables deny-by-default; fail2ban+AppArmor+AIDE; root %s; Lynis %s\n' \
+  "${ADMIN_USER_LIST[*]}" "$SSH_PORT" "$_root_state" "${LYNIS_SCORE:-n/a}" \
+  > /var/lib/homelab-bootstrap/summaries/harden.sh
