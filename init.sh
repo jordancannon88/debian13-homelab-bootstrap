@@ -7,22 +7,20 @@
 #       defaults on for a VM, off for an LXC)
 #    2. opens a whiptail MENU (TUI) to review & customise every step in one
 #       place — pick a step to change its options, then "Accept & install".
-#       Defaults are pre-set, so you can just Accept. (No terminal → a text
-#       wizard; ASSUME_YES → accept the defaults unattended. whiptail is
-#       auto-installed if missing.)
+#       Defaults are pre-set, so you can just Accept. This installer is
+#       TUI-ONLY: it requires an interactive terminal and whiptail (which it
+#       auto-installs if missing); there is no text-mode or unattended path.
 #    3. on Accept, runs each chosen script NON-INTERACTIVELY (answers passed via
 #       env), so nothing stops mid-run to ask you anything
 #    4. prints ONE consolidated report (review + next steps)
 #
-#  Run as root, e.g.:  sudo ./init.sh
-#  Or one-liner:       curl -fsSL <raw-url>/init.sh | sudo bash
+#  Run as root on a terminal, e.g.:  sudo ./init.sh
 #
-#  curl must already be present (the one-liner above uses it; download fallback
-#  needs it too). Debian ships it on all but the most minimal installs.
+#  curl must already be present (the download fallback for remote scripts uses
+#  it). Debian ships it on all but the most minimal installs.
 #
 #  Environment overrides:
 #    REPO_RAW_BASE=<url>  -> base raw URL to fetch scripts from
-#    ASSUME_YES=1         -> accept all wizard defaults (fully unattended)
 # ==============================================================================
 
 set -euo pipefail
@@ -30,7 +28,6 @@ set -euo pipefail
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
 
 REPO_RAW_BASE="${REPO_RAW_BASE:-https://raw.githubusercontent.com/jordancannon88/debian13-homelab-bootstrap/main}"
-ASSUME_YES="${ASSUME_YES:-0}"
 START_TS="$(date +%s)"
 
 # Short descriptions for the pickable extra packages / monitoring agents, shown
@@ -107,54 +104,7 @@ log_diagnostics() {
   } >> "$ERROR_LOG" 2>/dev/null || true
 }
 
-# confirm "Q?" [default Y|N] -> 0 yes / 1 no  (reads /dev/tty)
-confirm() {
-  local prompt="$1" default="${2:-N}" reply hint
-  if [[ "$default" =~ ^[Yy]$ ]]; then hint="[Y/n]"; else hint="[y/N]"; fi
-  if [[ "$ASSUME_YES" == "1" ]]; then info "auto: ${prompt} → ${default}"; [[ "$default" =~ ^[Yy] ]]; return; fi
-  if [[ ! -r /dev/tty ]]; then info "non-interactive: ${prompt} → ${default}"; [[ "$default" =~ ^[Yy] ]]; return; fi
-  printf '%s%s %s %s%s ' "$YEL" "$S_WARN" "$prompt" "$hint" "$RESET" > /dev/tty
-  read -r reply < /dev/tty || reply=""
-  reply="${reply:-$default}"
-  [[ "$reply" =~ ^[Yy] ]]
-}
-
-# ask "Question" "default" -> echoes the answer (reads /dev/tty)
-ask() {
-  local prompt="$1" default="${2:-}" reply
-  if [[ "$ASSUME_YES" == "1" || ! -r /dev/tty ]]; then printf '%s' "$default"; return; fi
-  printf '%s%s %s%s%s ' "$YEL" "$S_INFO" "$prompt" "${default:+ [default: $default]}" "$RESET" > /dev/tty
-  read -r reply < /dev/tty || reply=""
-  printf '%s' "${reply:-$default}"
-}
-
-# ask_secret "Prompt" -> echoes a password typed twice to confirm (input hidden),
-# or empty if skipped / non-interactive. Reads /dev/tty.
-ask_secret() {
-  local prompt="$1" p1 p2
-  [[ "$ASSUME_YES" == "1" || ! -r /dev/tty ]] && return 0
-  while true; do
-    printf '%s%s %s %s' "$YEL" "$S_INFO" "$prompt" "$RESET" > /dev/tty
-    IFS= read -rs p1 < /dev/tty || p1=""; printf '\n' > /dev/tty
-    [[ -z "$p1" ]] && return 0
-    printf '%s%s %s (confirm) %s' "$YEL" "$S_INFO" "$prompt" "$RESET" > /dev/tty
-    IFS= read -rs p2 < /dev/tty || p2=""; printf '\n' > /dev/tty
-    [[ "$p1" == "$p2" ]] && { printf '%s' "$p1"; return 0; }
-    printf '%s%s Passwords do not match — try again.%s\n' "$RED" "$S_ERR" "$RESET" > /dev/tty
-  done
-}
-
 valid_user()  { [[ "$1" =~ ^[a-z_][a-z0-9_-]*$ ]]; }
-valid_pubkey() {
-  local key="$1" tmp
-  [[ "$key" =~ ^(ssh-rsa|ssh-ed25519|ssh-dss|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com)[[:space:]]+[A-Za-z0-9+/=]+ ]] || return 1
-  if command -v ssh-keygen >/dev/null 2>&1; then
-    tmp="$(mktemp)"; printf '%s\n' "$key" > "$tmp"
-    ssh-keygen -l -f "$tmp" >/dev/null 2>&1; local rc=$?; rm -f "$tmp"; return $rc
-  fi
-  return 0
-}
-
 describe() {
   case "$1" in
     bootstrap.sh) printf 'create/update the admin user (sudo) + install the SSH key — runs before hardening';;
@@ -190,18 +140,13 @@ detect_env_default() {
 
 # env-aware Y/N default: yn_def <vm-default> <lxc-default>
 yn_def() { [[ "$ENV_TYPE" == "vm" ]] && printf '%s' "$1" || printf '%s' "$2"; }
-# ask_yn <var> "prompt" <Y|N default> — store Y/N; on edit the current value wins.
-ask_yn() { local v="$1" p="$2" d="$3" c="${!1:-}"; [[ -n "$c" ]] && d="$c"; if confirm "$p" "$d"; then printf -v "$v" 'Y'; else printf -v "$v" 'N'; fi; }
-# ask_val <var> "prompt" "fallback default" — store text; on edit current wins.
-ask_val() { local v="$1" p="$2" d="${3:-}" c="${!1:-}"; [[ -n "$c" ]] && d="$c"; printf -v "$v" '%s' "$(ask "$p" "$d")"; }
-yesno() { [[ "$1" == "Y" ]] && printf 'yes' || printf 'no'; }
 
 declare -A STATUS DETAIL SUMM LOGS
 SELECTED=(); ANCILLARY_PICK=(); MONITORING_PICK=()
 skip_script() { STATUS[$1]="skipped"; DETAIL[$1]="you chose not to run it"; }
 
-# Answer storage (empty = unanswered; collect_answers fills these and re-uses any
-# existing value as the default when the user chooses Edit).
+# Answer storage. compute_defaults seeds these from the VM/LXC defaults; the
+# whiptail menu (tui_*) reads and updates them as the user customises.
 ENV_TYPE="${ENV_TYPE:-}"
 A_BOOTSTRAP=""; A_HARDEN=""; A_ANCILLARY=""; A_MONITORING=""; A_CONTAINER=""; A_MOTD=""; A_DOC=""
 A_PKG_vim=""; A_PKG_btop=""; A_PKG_duf=""; A_PKG_fish=""; A_PKG_rsync=""; A_PKG_qemu=""
@@ -213,146 +158,9 @@ ZABBIX_SERVER_ACTIVE="${ZABBIX_SERVER_ACTIVE:-}"; A_ZBX_DOCKER=""; LOKI_URL="${L
 A_DOCKER=""; A_PODMAN=""; A_DISABLE_ROOTFUL=""; A_EXAMPLE_APP=""; A_JOURNALD=""
 DOC_URL="${DOC_URL:-}"
 
-# --- pick the primary/admin user (needed by bootstrap/harden/container/ancillary)
-_collect_user() {
-  mapfile -t HUMANS < <(awk -F: '$3>=1000 && $3<65534 && $7 !~ /(nologin|false)$/ {print $1}' /etc/passwd | sort)
-  local default_user="${PRIMARY_USER:-${SUDO_USER:-}}"
-  [[ -n "$default_user" ]] || { (( ${#HUMANS[@]} == 1 )) && default_user="${HUMANS[0]}"; }
-  if [[ "$A_BOOTSTRAP" == "Y" ]]; then
-    while true; do
-      (( ${#HUMANS[@]} > 0 )) && note "Existing users: ${HUMANS[*]}"
-      PRIMARY_USER="$(ask "Admin username (sudo + SSH key) — existing user to update, or a new name to create" "$default_user")"
-      PRIMARY_USER="${PRIMARY_USER//[[:space:]]/}"
-      if [[ -z "$PRIMARY_USER" ]]; then warn "A username is required."; [[ -r /dev/tty && "$ASSUME_YES" != 1 ]] || { err "No user available."; exit 1; }; continue; fi
-      valid_user "$PRIMARY_USER" || { warn "Invalid username (lowercase letters, digits, - and _)."; continue; }
-      break
-    done
-  else
-    if [[ -n "$default_user" ]] && id "$default_user" >/dev/null 2>&1; then
-      PRIMARY_USER="$default_user"
-    else
-      while true; do
-        (( ${#HUMANS[@]} > 0 )) && note "Existing users: ${HUMANS[*]}"
-        PRIMARY_USER="$(ask "Existing user to configure?" "$default_user")"
-        PRIMARY_USER="${PRIMARY_USER//[[:space:]]/}"
-        if [[ -z "$PRIMARY_USER" ]]; then warn "A username is required."; [[ -r /dev/tty && "$ASSUME_YES" != 1 ]] || { err "No user available."; exit 1; }; continue; fi
-        valid_user "$PRIMARY_USER" || { warn "Invalid username (lowercase letters, digits, - and _)."; continue; }
-        if ! id "$PRIMARY_USER" >/dev/null 2>&1; then
-          warn "User '$PRIMARY_USER' does not exist — pick an existing one (or include bootstrap to create it)."
-          [[ -r /dev/tty && "$ASSUME_YES" != 1 ]] || { err "User '$PRIMARY_USER' does not exist."; exit 1; }
-          continue
-        fi
-        break
-      done
-    fi
-  fi
-}
-
-# --- bootstrap details: SSH public key (+ optional password for a new account)
-_collect_bootstrap() {
-  while true; do
-    note "Paste ${PRIMARY_USER}'s PUBLIC SSH key. No key yet? On your machine run:"
-    printf '        %sssh-keygen -t ed25519 -C "user@example.com"%s\n' "$CYN" "$RESET" > /dev/tty 2>/dev/null || true
-    PUBKEY="$(ask "SSH public key for ${PRIMARY_USER}" "${PUBKEY:-}")"
-    PUBKEY="${PUBKEY#"${PUBKEY%%[![:space:]]*}"}"; PUBKEY="${PUBKEY%"${PUBKEY##*[![:space:]]}"}"
-    if [[ -z "$PUBKEY" ]]; then
-      if id "$PRIMARY_USER" >/dev/null 2>&1 && [[ -s "$(getent passwd "$PRIMARY_USER" | cut -d: -f6)/.ssh/authorized_keys" ]]; then
-        note "No key entered, but ${PRIMARY_USER} already has authorized_keys — continuing."; break
-      fi
-      if [[ "$A_HARDEN" != "Y" ]]; then
-        warn "No key entered — ${PRIMARY_USER} will have no authorized_keys (add one before hardening)."; break
-      fi
-      warn "A key is required (hardening disables password login). Without one you'd be locked out."
-      [[ -r /dev/tty && "$ASSUME_YES" != 1 ]] || { err "No SSH key provided for ${PRIMARY_USER}."; exit 1; }
-      continue
-    fi
-    if valid_pubkey "$PUBKEY"; then log "SSH key accepted."; break; fi
-    warn "That does not look like a valid SSH public key — try again."
-  done
-  if ! id "$PRIMARY_USER" >/dev/null 2>&1; then
-    note "User '${PRIMARY_USER}' will be created."
-    if [[ -z "$ADMIN_PASSWORD" ]]; then
-      ADMIN_PASSWORD="$(ask_secret "Password for new user ${PRIMARY_USER} (blank to skip = SSH-key only)")"
-    fi
-  fi
-}
-
-# --- harden details
-_collect_harden() {
-  if [[ "$A_BOOTSTRAP" != "Y" ]]; then
-    if ! id "$PRIMARY_USER" >/dev/null 2>&1; then
-      err "User '${PRIMARY_USER}' does not exist and bootstrap was not selected — include bootstrap to create it."; exit 1
-    fi
-    if [[ ! -s "$(getent passwd "$PRIMARY_USER" | cut -d: -f6)/.ssh/authorized_keys" ]]; then
-      warn "${PRIMARY_USER} has NO authorized_keys and bootstrap was not selected — hardening disables password login."
-      confirm "Continue anyway (HIGH lockout risk)?" N || { err "Aborting. Include bootstrap to install an SSH key first."; exit 1; }
-    fi
-  fi
-  ask_val SSH_PORT  "SSH port" "$(( RANDOM % 22000 + 10000 ))"
-  ask_yn  A_UPGRADE "Run a full system upgrade (apt full-upgrade)?" "$(yn_def Y Y)"
-  ask_yn  A_LOCKROOT "Lock the root account password (sudo still works)?" "$(yn_def Y Y)"
-  ask_yn  A_USBBLACK "Blacklist usb-storage module (disables USB drives)?" "$(yn_def Y Y)"
-  ask_val ALLOW_TCP_PORTS "Extra TCP ports to open, space-separated (e.g. published container ports: 8080 8096 32400)" ""
-}
-
-# --- monitoring details
-_collect_monitoring() {
-  if [[ "$A_AGENT_zabbix" == "Y" ]]; then
-    while true; do
-      ask_val ZABBIX_SERVER_ACTIVE "Zabbix server/proxy for active checks (host or host:port)" "zabbix:10051"
-      ZABBIX_SERVER_ACTIVE="${ZABBIX_SERVER_ACTIVE//[[:space:]]/}"
-      [[ -n "$ZABBIX_SERVER_ACTIVE" ]] && break
-      warn "A Zabbix server address is required for zabbix-agent2."
-      [[ -r /dev/tty && "$ASSUME_YES" != 1 ]] || { err "No Zabbix server address provided (set ZABBIX_SERVER_ACTIVE)."; exit 1; }
-    done
-    ask_yn A_ZBX_DOCKER "Set the Zabbix agent up to monitor rootless Docker?" "$(yn_def N N)"
-  fi
-  if [[ "$A_AGENT_alloy" == "Y" ]]; then
-    ask_val LOKI_URL "Loki base URL for Alloy to push to (host:port)" "loki:3100"
-    LOKI_URL="${LOKI_URL//[[:space:]]/}"
-    ask_yn A_ALLOY_DOCKERLOGS "Also capture Docker container logs? (Docker must use the journald log-driver)" "$(yn_def N N)"
-  fi
-}
-
-# --- container details
-_collect_container() {
-  ask_yn A_DOCKER "Install Docker (Engine + Compose, rootless)?" "$(yn_def Y Y)"
-  ask_yn A_PODMAN "Install Podman (daemonless, rootless) alongside?" "$(yn_def N N)"
-  if [[ "$A_DOCKER" != "Y" && "$A_PODMAN" != "Y" ]]; then
-    warn "Neither runtime chosen — defaulting to Docker so container.sh has something to install."; A_DOCKER="Y"
-  fi
-  [[ "$A_DOCKER" == "Y" ]] && ask_yn A_DISABLE_ROOTFUL "Disable the system-wide (root) Docker daemon — rootless only?" "$(yn_def Y Y)"
-  ask_yn A_EXAMPLE_APP "Also create an example app under /opt/docker?" "$(yn_def Y Y)"
-  if [[ "$A_ALLOY_DOCKERLOGS" == "Y" ]]; then
-    A_JOURNALD="Y"   # reuse the Alloy answer; no point asking twice
-  else
-    ask_yn A_JOURNALD "Send container logs to the journal (journald log-driver)?" "$(yn_def N N)"
-  fi
-}
-
-# select_env_type — ask whether this host is a VM or an LXC (autodetected).
-# Sets ENV_TYPE; this drives all the default answers.
-select_env_type() {
-  local _envd="${ENV_TYPE:-}"
-  [[ "$_envd" == "vm" || "$_envd" == "lxc" ]] || _envd="$(detect_env_default)"
-  if [[ "$ASSUME_YES" == "1" || ! -r /dev/tty ]]; then
-    ENV_TYPE="$_envd"
-  else
-    printf '\n%s%sIs this host a VM or an LXC container?%s  (autodetected: %s%s%s)\n' "$BOLD" "$WHT" "$RESET" "$BOLD" "$_envd" "$RESET" > /dev/tty
-    printf '   %s[1]%s VM  — full virtual machine (KVM/QEMU, etc.)\n' "$BOLD" "$RESET" > /dev/tty
-    printf '   %s[2]%s LXC — Proxmox/LXC system container\n' "$BOLD" "$RESET" > /dev/tty
-    local _dd=1; [[ "$_envd" == "lxc" ]] && _dd=2
-    printf '%s%s Choose 1 or 2 [default: %s]: %s' "$YEL" "$S_WARN" "$_dd" "$RESET" > /dev/tty
-    local _ee; read -r _ee < /dev/tty || _ee=""
-    case "${_ee:-$_dd}" in 2) ENV_TYPE=lxc;; *) ENV_TYPE=vm;; esac
-  fi
-  log "Environment: ${BOLD}$( [[ "$ENV_TYPE" == "vm" ]] && echo "Virtual Machine (VM)" || echo "LXC container" )${RESET}"
-}
-
-# compute_defaults — fill EVERY answer from the VM/LXC-aware defaults WITHOUT
-# prompting, so the review screen can be shown first. Free-text inputs that have
-# no safe default (SSH key, Zabbix server) are left as-is and flagged in the
-# summary; accepting while one is missing routes you into the questions.
+# compute_defaults — seed EVERY answer from the VM/LXC-aware defaults so the menu
+# opens pre-filled. Free-text inputs with no safe default (SSH key) stay empty
+# and are flagged by validate_tui before install.
 compute_defaults() {
   A_BOOTSTRAP="$(yn_def Y Y)"; A_HARDEN="$(yn_def Y Y)"; A_ANCILLARY="$(yn_def Y Y)"
   A_MONITORING="$(yn_def Y Y)"; A_CONTAINER="$(yn_def N N)"; A_MOTD="$(yn_def Y Y)"; A_DOC="$(yn_def Y Y)"
@@ -377,152 +185,6 @@ compute_defaults() {
     fi
     PRIMARY_USER="$du"
   fi
-}
-
-# validate_answers — on Accept, check that required inputs are present. Returns 0
-# if good to install, 1 if the user must still supply something (→ open the
-# questions). Interactive collect_answers loops enforce these, so this only
-# bites when accepting bare defaults that left a required field blank.
-validate_answers() {
-  local rc=0 akf=""
-  if [[ "$A_BOOTSTRAP" == "Y" || "$A_HARDEN" == "Y" || "$A_CONTAINER" == "Y" || "$A_ANCILLARY" == "Y" ]]; then
-    if [[ -z "$PRIMARY_USER" ]] || ! valid_user "$PRIMARY_USER"; then warn "Admin/primary user is not set."; rc=1; fi
-  fi
-  if [[ "$A_HARDEN" == "Y" && -n "$PRIMARY_USER" ]]; then
-    akf="$(getent passwd "$PRIMARY_USER" 2>/dev/null | cut -d: -f6)/.ssh/authorized_keys"
-    if [[ "$A_BOOTSTRAP" == "Y" ]]; then
-      if [[ -z "$PUBKEY" ]] && ! { id "$PRIMARY_USER" &>/dev/null && [[ -s "$akf" ]]; }; then
-        warn "Hardening needs an SSH key for '${PRIMARY_USER}' (none entered, none on file) — you'd be locked out."; rc=1
-      fi
-    else
-      if ! id "$PRIMARY_USER" &>/dev/null; then
-        warn "Hardening is selected without bootstrap, but user '${PRIMARY_USER}' does not exist."; rc=1
-      elif [[ ! -s "$akf" ]]; then
-        warn "Hardening is selected without bootstrap and '${PRIMARY_USER}' has no authorized_keys."; rc=1
-      fi
-    fi
-  fi
-  if [[ "$A_MONITORING" == "Y" && "$A_AGENT_zabbix" == "Y" && -z "${ZABBIX_SERVER_ACTIVE//[[:space:]]/}" ]]; then
-    warn "zabbix-agent2 needs a server/proxy address (none set)."; rc=1
-  fi
-  if [[ "$A_BOOTSTRAP$A_HARDEN$A_ANCILLARY$A_MONITORING$A_CONTAINER$A_MOTD$A_DOC" != *Y* ]]; then
-    warn "Nothing is selected to run."; rc=1
-  fi
-  return $rc
-}
-
-# collect_answers — ask EVERY question (env type, which scripts, and each
-# script's settings). Defaults depend on VM/LXC; current answers pre-fill so
-# Enter keeps them. Conditional/validation logic is preserved.
-collect_answers() {
-  select_env_type
-
-  # --- which scripts to run ---
-  printf '\n'; hr '─'; printf '%s%s Which steps to run%s\n' "$BOLD$CYN" "$S_STEP" "$RESET"; hr '─'
-  ask_yn A_BOOTSTRAP  "bootstrap.sh — admin user (sudo) + SSH key?" "$(yn_def Y Y)"
-  ask_yn A_HARDEN     "harden.sh — system hardening (SSH/firewall/fail2ban/…)?" "$(yn_def Y Y)"
-  ask_yn A_ANCILLARY  "ancillary.sh — install extra packages?" "$(yn_def Y Y)"
-  if [[ "$A_ANCILLARY" == "Y" ]]; then
-    ask_yn A_PKG_vim   "   • vim — ${EXTRA_DESC[vim]}?" "$(yn_def Y Y)"
-    ask_yn A_PKG_btop  "   • btop — ${EXTRA_DESC[btop]}?" "$(yn_def Y Y)"
-    ask_yn A_PKG_duf   "   • duf — ${EXTRA_DESC[duf]}?" "$(yn_def Y Y)"
-    ask_yn A_PKG_fish  "   • fish — ${EXTRA_DESC[fish]}?" "$(yn_def Y Y)"
-    ask_yn A_PKG_rsync "   • rsync — ${EXTRA_DESC[rsync]}?" "$(yn_def Y Y)"
-    ask_yn A_PKG_qemu  "   • qemu-guest-agent — ${EXTRA_DESC[qemu-guest-agent]}?" "$(yn_def Y N)"
-  fi
-  ask_yn A_MONITORING "monitoring.sh — install monitoring agents?" "$(yn_def Y Y)"
-  if [[ "$A_MONITORING" == "Y" ]]; then
-    ask_yn A_AGENT_zabbix "   • zabbix-agent2 — ${EXTRA_DESC[zabbix-agent2]}?" "$(yn_def Y Y)"
-    ask_yn A_AGENT_alloy  "   • alloy — ${EXTRA_DESC[alloy]}?" "$(yn_def Y Y)"
-  fi
-  ask_yn A_CONTAINER  "container.sh — Docker and/or Podman (rootless)?" "$(yn_def N N)"
-  ask_yn A_MOTD       "motd.sh — dynamic login banner?" "$(yn_def Y Y)"
-  ask_yn A_DOC        "documentation.sh — generate the connection doc?" "$(yn_def Y Y)"
-
-  # --- primary user (needed by several scripts) ---
-  if [[ "$A_BOOTSTRAP" == "Y" || "$A_HARDEN" == "Y" || "$A_CONTAINER" == "Y" || "$A_ANCILLARY" == "Y" ]]; then
-    printf '\n'; hr '─'; printf '%s%s Settings%s\n' "$BOLD$CYN" "$S_STEP" "$RESET"; hr '─'
-    _collect_user
-    log "Primary user: ${BOLD}${PRIMARY_USER}${RESET}"
-  fi
-
-  [[ "$A_BOOTSTRAP" == "Y" ]] && _collect_bootstrap
-  [[ "$A_HARDEN"    == "Y" ]] && _collect_harden
-  if [[ "$A_ANCILLARY" == "Y" && "$A_PKG_fish" == "Y" ]]; then
-    ask_yn A_FISH_DEFAULT "Set fish as ${PRIMARY_USER}'s default shell?" "$(yn_def Y Y)"
-  fi
-  [[ "$A_MONITORING" == "Y" ]] && _collect_monitoring
-  [[ "$A_CONTAINER"  == "Y" ]] && _collect_container
-  [[ "$A_MOTD"       == "Y" ]] && ask_val DOC_URL "Documentation URL to show in the login banner (blank to omit)" ""
-}
-
-# print_summary — show every question and the chosen answer, grouped by script.
-print_summary() {
-  local envlabel; envlabel="$( [[ "$ENV_TYPE" == "vm" ]] && echo "VM" || echo "LXC" )"
-  printf '\n'; hr '═'
-  printf '%s%s  📋 REVIEW — confirm or edit before anything runs%s   %s[environment: %s]%s\n' "$BOLD$CYN" "$S_STEP" "$RESET" "$DIM" "$envlabel" "$RESET"
-  hr '═'
-  local VALCOL=34 VALW=14   # label width to VALCOL; value field VALW; then the explain column
-  # cval <value> — colour a value: yes→green, no→yellow, anything else→white.
-  cval() { case "$1" in
-    yes) printf '%syes%s' "$GRN" "$RESET";;
-    no)  printf '%sno%s'  "$YEL" "$RESET";;
-    *)   printf '%s%s%s'  "$WHT" "$1" "$RESET";;
-  esac; }
-  # _hdr/_row <label> <value> <explain> — three aligned columns: label, the
-  # colour-coded value (at VALCOL), and a short dim explanation (at VALCOL+VALW).
-  _hdr() { local p=$(( VALW - ${#2} )); ((p<1)) && p=1; printf '   %s%s %s%-*s%s%s%*s%s%s%s\n' "$CYN" "$S_STEP" "$BOLD" "$((VALCOL-5))" "$1" "$RESET" "$(cval "$2")" "$p" "" "$DIM" "${3:-}" "$RESET"; }
-  _row() { local p=$(( VALW - ${#2} )); ((p<1)) && p=1; printf '       %s%-*s%s%s%*s%s%s%s\n' "$BOLD" "$((VALCOL-7))" "$1" "$RESET" "$(cval "$2")" "$p" "" "$DIM" "${3:-}" "$RESET"; }
-
-  _hdr "bootstrap.sh" "$(yesno "$A_BOOTSTRAP")" "admin user + SSH key"
-  if [[ "$A_BOOTSTRAP" == "Y" ]]; then
-    _row "Admin user" "$PRIMARY_USER" "sudo + login account"
-    _row "SSH public key" "$([[ -n "$PUBKEY" ]] && echo provided || echo none/existing)" "key for that account"
-    id "$PRIMARY_USER" >/dev/null 2>&1 || _row "New-user password" "$([[ -n "$ADMIN_PASSWORD" ]] && echo set || echo key-only)" "console login pass"
-  fi
-  _hdr "harden.sh" "$(yesno "$A_HARDEN")" "SSH/firewall/fail2ban lockdown"
-  if [[ "$A_HARDEN" == "Y" ]]; then
-    _row "SSH port" "${SSH_PORT:-22}" "sshd listen port (random)"
-    _row "Full system upgrade" "$(yesno "$A_UPGRADE")" "apt full-upgrade"
-    _row "Lock root password" "$(yesno "$A_LOCKROOT")" "no direct root login"
-    _row "Blacklist usb-storage" "$(yesno "$A_USBBLACK")" "block USB storage"
-    _row "Extra TCP ports" "${ALLOW_TCP_PORTS:-(none)}" "open in firewall"
-  fi
-  _hdr "ancillary.sh" "$(yesno "$A_ANCILLARY")" "extra CLI packages"
-  if [[ "$A_ANCILLARY" == "Y" ]]; then
-    _row "vim" "$(yesno "$A_PKG_vim")" "text editor"
-    _row "btop" "$(yesno "$A_PKG_btop")" "resource monitor"
-    _row "duf" "$(yesno "$A_PKG_duf")" "disk usage viewer"
-    _row "fish" "$(yesno "$A_PKG_fish")" "friendly shell"
-    [[ "$A_PKG_fish" == "Y" ]] && _row "  default shell" "$(yesno "$A_FISH_DEFAULT")" "chsh user to fish"
-    _row "rsync" "$(yesno "$A_PKG_rsync")" "file sync/copy"
-    _row "qemu-guest-agent" "$(yesno "$A_PKG_qemu")" "QEMU agent (VM only)"
-  fi
-  _hdr "monitoring.sh" "$(yesno "$A_MONITORING")" "Zabbix + Alloy agents"
-  if [[ "$A_MONITORING" == "Y" ]]; then
-    _row "zabbix-agent2" "$(yesno "$A_AGENT_zabbix")" "metrics agent"
-    if [[ "$A_AGENT_zabbix" == "Y" ]]; then
-      _row "  Zabbix server" "${ZABBIX_SERVER_ACTIVE:-(unset)}" "server address"
-      _row "  Monitor rootless Docker" "$(yesno "$A_ZBX_DOCKER")" "watch user Docker"
-    fi
-    _row "alloy" "$(yesno "$A_AGENT_alloy")" "log shipper"
-    if [[ "$A_AGENT_alloy" == "Y" ]]; then
-      _row "  Loki URL" "${LOKI_URL:-loki:3100}" "log server address"
-      _row "  Capture Docker logs" "$(yesno "$A_ALLOY_DOCKERLOGS")" "ship container logs"
-    fi
-  fi
-  _hdr "container.sh" "$(yesno "$A_CONTAINER")" "Docker/Podman runtime"
-  if [[ "$A_CONTAINER" == "Y" ]]; then
-    _row "Docker" "$(yesno "$A_DOCKER")" "Docker engine"
-    [[ "$A_DOCKER" == "Y" ]] && _row "  Disable rootful daemon" "$(yesno "$A_DISABLE_ROOTFUL")" "rootless only"
-    _row "Podman" "$(yesno "$A_PODMAN")" "Podman engine"
-    _row "Example app" "$(yesno "$A_EXAMPLE_APP")" "sample compose stack"
-    _row "Logs to journald" "$(yesno "$A_JOURNALD")" "journald log-driver"
-  fi
-  _hdr "motd.sh" "$(yesno "$A_MOTD")" "dynamic login banner"
-  [[ "$A_MOTD" == "Y" ]] && _row "Doc URL" "${DOC_URL:-(none)}" "shown in the banner"
-  _hdr "documentation.sh" "$(yesno "$A_DOC")" "SSH connect guide"
-  hr '─'
 }
 
 # materialize_selection — turn the answers into SELECTED[] + exported env vars
@@ -602,9 +264,8 @@ materialize_selection() {
 
 # ==============================================================================
 #  whiptail TUI — a menu hub to review/customise everything, then install.
-#  Reads/writes the same A_* answer vars; on Accept the same validate_answers /
-#  materialize_selection backend runs. Falls back to the text wizard when there
-#  is no terminal or whiptail can't be installed.
+#  Reads/writes the A_* answer vars; on Accept, validate_tui checks required
+#  inputs and materialize_selection turns the answers into the run list + env.
 # ==============================================================================
 BACKTITLE="Debian 13 Homelab Bootstrap"
 
@@ -615,8 +276,8 @@ anc_list() { local p=(); [[ "$A_PKG_vim" == Y ]] && p+=(vim); [[ "$A_PKG_btop" =
 mon_list() { local p=(); [[ "$A_AGENT_zabbix" == Y ]] && p+=(zabbix); [[ "$A_AGENT_alloy" == Y ]] && p+=(alloy); local IFS=,; printf '%s' "${p[*]:-none}"; }
 ct_list()  { [[ "$A_CONTAINER" != Y ]] && { printf 'off'; return; }; local p=(); [[ "$A_DOCKER" == Y ]] && p+=(docker); [[ "$A_PODMAN" == Y ]] && p+=(podman); local IFS=,; printf '%s' "${p[*]:-none}"; }
 
-# validate_tui — same checks as validate_answers, but collects messages and
-# shows them in a whiptail msgbox. Returns 0 if ready to install.
+# validate_tui — check required inputs are present; collect any problems and
+# show them in a whiptail msgbox. Returns 0 if ready to install.
 validate_tui() {
   local m=() akf=""
   if [[ "$A_BOOTSTRAP" == Y || "$A_HARDEN" == Y || "$A_CONTAINER" == Y || "$A_ANCILLARY" == Y ]]; then
@@ -644,7 +305,8 @@ validate_tui() {
 }
 
 tui_env() {
-  local def sel; def="$(detect_env_default)"
+  local def sel; def="${ENV_TYPE:-}"
+  [[ "$def" == "vm" || "$def" == "lxc" ]] || def="$(detect_env_default)"
   sel=$(whiptail --backtitle "$BACKTITLE" --title "Environment" --default-item "$def" \
     --menu "Is this host a VM or an LXC container?\n(sets sensible defaults — you can change anything next)" 13 66 2 \
     "vm"  "Virtual machine (KVM/QEMU, etc.)" \
@@ -664,9 +326,35 @@ tui_bootstrap() {
     PUBKEY="${v#"${v%%[![:space:]]*}"}"; PUBKEY="${PUBKEY%"${PUBKEY##*[![:space:]]}"}"
   fi
   if ! id "$PRIMARY_USER" >/dev/null 2>&1; then
-    if v=$(whiptail --backtitle "$BACKTITLE" --title "New user password" \
-        --passwordbox "Password for new user ${PRIMARY_USER}\n(blank = SSH-key only):" 11 64 3>&1 1>&2 2>&3); then ADMIN_PASSWORD="$v"; fi
+    tui_get_password "$PRIMARY_USER"
   fi
+}
+
+# tui_get_password <user> — prompt for a NEW account's password with a "show
+# password" option (visible vs masked entry) and a confirmation entry that must
+# match. Sets ADMIN_PASSWORD ("" = passwordless / SSH-key only). Cancel/Esc at
+# any step leaves the current value unchanged.
+tui_get_password() {
+  local user="$1" box p1 p2
+  if whiptail --backtitle "$BACKTITLE" --title "Password — ${user}" --defaultno \
+      --yesno "Show the password as you type?\n\n  Yes = visible entry (easier to verify)\n  No  = masked entry (•••)" 12 64; then
+    box="--inputbox"
+  else
+    box="--passwordbox"
+  fi
+  while true; do
+    p1=$(whiptail --backtitle "$BACKTITLE" --title "New password — ${user}" \
+      $box "Enter a login password for ${user}.\n(Leave blank = passwordless / SSH-key only.)" 11 66 3>&1 1>&2 2>&3) || return 0
+    if [[ -z "$p1" ]]; then ADMIN_PASSWORD=""; return 0; fi
+    p2=$(whiptail --backtitle "$BACKTITLE" --title "Confirm password — ${user}" \
+      $box "Re-enter the password to confirm:" 10 66 3>&1 1>&2 2>&3) || return 0
+    if [[ "$p1" == "$p2" ]]; then
+      ADMIN_PASSWORD="$p1"
+      return 0
+    fi
+    whiptail --backtitle "$BACKTITLE" --title "Passwords don't match" \
+      --msgbox "The two entries did not match — please try again." 8 58
+  done
 }
 
 tui_harden() {
@@ -735,19 +423,34 @@ tui_container() {
   if whiptail --backtitle "$BACKTITLE" --title "container.sh" --defaultno \
       --yesno "Install a container runtime (Docker and/or Podman, rootless)?\n\n(Off by default — Docker/Podman inside an LXC is advanced.)" 11 70; then A_CONTAINER=Y; else A_CONTAINER=N; return; fi
   local sel t
-  if sel=$(whiptail --backtitle "$BACKTITLE" --title "Container runtimes" \
+  # Loop the runtime checklist until at least one is chosen. Crucially we do NOT
+  # silently force Docker when nothing is ticked — that caused Docker to install
+  # even after the user un-ticked it. Cancel/Esc keeps the current selection.
+  while sel=$(whiptail --backtitle "$BACKTITLE" --title "Container runtimes" \
       --checklist "Choose runtime(s) — at least one (Space to toggle):" 11 66 2 \
       "docker" "Docker Engine + Compose (rootless)" "$(onoff "$A_DOCKER")" \
       "podman" "Podman (daemonless, rootless)"      "$(onoff "$A_PODMAN")" \
-      3>&1 1>&2 2>&3); then
+      3>&1 1>&2 2>&3); do
     A_DOCKER=N; A_PODMAN=N
     for t in $sel; do t="${t//\"/}"; case "$t" in docker) A_DOCKER=Y;; podman) A_PODMAN=Y;; esac; done
-    [[ "$A_DOCKER" == N && "$A_PODMAN" == N ]] && A_DOCKER=Y
+    [[ "$A_DOCKER" == "Y" || "$A_PODMAN" == "Y" ]] && break
+    whiptail --backtitle "$BACKTITLE" --title "Pick a runtime" \
+      --msgbox "Select at least one runtime — Docker and/or Podman." 8 60
+  done
+  # If the user ended up choosing neither runtime (e.g. cancelled the picker),
+  # treat that as "don't install a container runtime" rather than silently
+  # defaulting to Docker.
+  if [[ "$A_DOCKER" != "Y" && "$A_PODMAN" != "Y" ]]; then
+    A_CONTAINER=N; A_DISABLE_ROOTFUL=N; A_EXAMPLE_APP=N; A_JOURNALD=N
+    return
   fi
   if [[ "$A_DOCKER" == Y ]]; then
     if whiptail --backtitle "$BACKTITLE" --title "Docker" --yesno "Disable the system-wide (root) Docker daemon — rootless only?" 9 68; then A_DISABLE_ROOTFUL=Y; else A_DISABLE_ROOTFUL=N; fi
+    # The example app is Docker-specific; only offer it when Docker is installed.
+    if whiptail --backtitle "$BACKTITLE" --title "Example app" --yesno "Create an example app under /opt/docker?" 8 60; then A_EXAMPLE_APP=Y; else A_EXAMPLE_APP=N; fi
+  else
+    A_EXAMPLE_APP=N
   fi
-  if whiptail --backtitle "$BACKTITLE" --title "Example app" --yesno "Create an example app under /opt/docker?" 8 60; then A_EXAMPLE_APP=Y; else A_EXAMPLE_APP=N; fi
   if whiptail --backtitle "$BACKTITLE" --title "Logging" --defaultno --yesno "Send container logs to the journal (journald log-driver)?" 9 68; then A_JOURNALD=Y; else A_JOURNALD=N; fi
 }
 
@@ -795,49 +498,27 @@ tui_main() {
 
 tui_wizard() { tui_env; compute_defaults; tui_main; }
 
-# text_wizard — the no-whiptail fallback: defaults-first review + accept/edit.
-text_wizard() {
-  select_env_type
-  compute_defaults
-  ask_yn A_DOC "Create docs (run documentation.sh)?" "$A_DOC"
-  step "Review settings (accept the defaults, or edit)"
-  while true; do
-    print_summary
-    if confirm "Accept these settings and begin install?" Y; then
-      validate_answers && break
-      warn "Some required answers are missing — opening the questions so you can complete them."
-      collect_answers
-    else
-      info "Editing — re-answer each question (press Enter to keep the shown value)."
-      collect_answers
-    fi
-  done
-}
-
-# run_wizard — choose the front-end: whiptail TUI (interactive), or the text
-# wizard (no whiptail), or accept env-driven defaults (unattended).
+# run_wizard — this installer is whiptail-TUI only. It needs an interactive
+# terminal and whiptail (auto-installed if missing). No text fallback and no
+# unattended/defaults path: if either is unavailable, we stop with a clear error.
 run_wizard() {
-  if [[ "$ASSUME_YES" == "1" || ! -r /dev/tty ]]; then
-    select_env_type; compute_defaults
-    print_summary
-    if ! validate_answers; then
-      err "Unattended run is missing a required value (e.g. an SSH key). Provide it via env (PUBKEY=…, ZABBIX_SERVER_ACTIVE=…) and re-run."
-      exit 1
-    fi
-    return
+  if [[ ! -r /dev/tty ]]; then
+    err "This installer is an interactive menu (whiptail) and needs a terminal."
+    err "Run it directly on the console or over SSH — not piped, detached, or in a non-interactive job."
+    exit 1
   fi
   if ! command -v whiptail >/dev/null 2>&1; then
     info "Installing 'whiptail' for the setup menu…"
     DEBIAN_FRONTEND=noninteractive apt-get update >/dev/null 2>&1 || true
     DEBIAN_FRONTEND=noninteractive apt-get install -y whiptail >/dev/null 2>&1 || true
   fi
-  if command -v whiptail >/dev/null 2>&1; then
-    tui_wizard
-    clear 2>/dev/null || true
-  else
-    warn "whiptail unavailable — using the text wizard instead."
-    text_wizard
+  if ! command -v whiptail >/dev/null 2>&1; then
+    err "'whiptail' is required for the setup menu and couldn't be installed."
+    err "Install it manually ( apt-get install whiptail ) and re-run."
+    exit 1
   fi
+  tui_wizard
+  clear 2>/dev/null || true
 }
 
 # ==============================================================================
@@ -862,10 +543,10 @@ log "Running as root."
 command -v curl >/dev/null 2>&1 || warn "curl not found — the download fallback for remote scripts won't work (local copies still will)."
 
 # ==============================================================================
-step "Step 1 — Configure (menu-driven; falls back to a text wizard)"
+step "Step 1 — Configure (whiptail menu)"
 # ==============================================================================
-# whiptail menu hub when interactive: pick VM/LXC, then review & customise every
-# step in one place, Accept to install. No terminal → text wizard / defaults.
+# Pick VM/LXC, then review & customise every step in one menu; Accept to install.
+# TUI-only: requires a terminal + whiptail (auto-installed), else it stops.
 run_wizard
 
 materialize_selection

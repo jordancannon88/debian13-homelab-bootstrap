@@ -308,20 +308,20 @@ wall of questions up front: pick a step to open its options, or just choose
 - **Open a step** → a dialog for that step: a checklist of its packages/toggles
   and input boxes for any text (user, SSH key, ports, URLs). Close it to return
   to the hub with the new state shown.
-- **Accept** → validates required inputs, then the chosen scripts run
-  non-interactively (no further prompts). Missing a required value (e.g. the SSH
-  key) pops a message so you can fix it first.
-- **No terminal / piped** → a plain-text wizard (defaults-first review with
-  Accept/Edit) is used instead. `whiptail` is auto-installed if missing.
+- **Open a step** opens a dialog (checklist of toggles + input boxes for any
+  text). **Accept** validates required inputs, then the chosen scripts run
+  non-interactively. A missing required value (e.g. the SSH key) pops a message
+  so you can fix it before install.
 - Selected defaults worth noting: **`container.sh` is off by default** (Docker/
   Podman in an LXC is advanced, and on a VM you opt in); the **SSH port is a
   random high port**; **root password lock** and **usb-storage blacklist** are
   **on**; the **Zabbix server** defaults to `zabbix:10051` and **Loki** to
-  `loki:3100`. The **SSH public key** is the one field with no default — if you
-  Accept while a selected step still needs it, you're dropped into the questions.
+  `loki:3100`. The **SSH public key** is the one field with no default.
 
-> 🤖 For a fully unattended run, `ASSUME_YES=1 sudo ./init.sh` accepts every
-> default (including the autodetected VM/LXC choice) and starts immediately.
+> 🖥️ **`init.sh` is TUI-only.** It requires an **interactive terminal** and
+> **whiptail** (auto-installed if missing); there is no text-mode or unattended
+> path — run it on the console or over SSH, not piped/detached. (The individual
+> scripts can still be run directly and accept env overrides — see below.)
 
 > ⚠️ There is no dry-run mode — when you accept, the scripts make real changes.
 > They are idempotent and back up files they edit, but review the screen first.
@@ -463,7 +463,9 @@ docker compose up -d        # or: podman compose up -d
 | Variable | Effect |
 | --- | --- |
 | `REPO_RAW_BASE=<url>` | Base raw URL to download scripts from (e.g. a fork/branch) |
-| `ASSUME_YES=1` | Answer **yes** to every prompt (automation) |
+| `ENV_TYPE=vm\|lxc` | Preselect the VM/LXC choice in the menu (else autodetected) |
+
+> `init.sh` is TUI-only and has no `ASSUME_YES`/unattended mode — it always opens the menu.
 
 </details>
 
@@ -605,8 +607,10 @@ Every field auto-detects from the host it runs on (or is prompted); set any
 
 <br>
 
-> 🌐 Common to all: `ASSUME_YES=1` (accept defaults, fully unattended). `init.sh`
-> also takes `ENV_TYPE=vm\|lxc` to preset the VM/LXC default selection.
+> 🌐 The **individual scripts** accept `ASSUME_YES=1` (answer yes to every prompt)
+> when run on their own. **`init.sh` itself is TUI-only** — it ignores `ASSUME_YES`
+> and always opens the whiptail menu; it takes `ENV_TYPE=vm\|lxc` to preselect the
+> VM/LXC choice.
 
 <br>
 
