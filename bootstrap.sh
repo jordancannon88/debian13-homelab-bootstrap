@@ -22,7 +22,6 @@
 #                                (existing accounts are never changed; blank =
 #                                passwordless / SSH-key only)
 #    CREATE_<user>=1|0        -> auto-answer the "create missing user?" prompt
-#    DRY_RUN=1|0              -> force preview / actual (else asks)
 #    ASSUME_YES=1             -> answer "yes" to every prompt (automation)
 # ==============================================================================
 
@@ -33,9 +32,6 @@ set -euo pipefail
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
 
 ASSUME_YES="${ASSUME_YES:-0}"
-
-if [[ -n "${DRY_RUN+x}" ]]; then DRY_RUN_EXPLICIT=1; else DRY_RUN_EXPLICIT=0; fi
-DRY_RUN="${DRY_RUN:-}"
 
 START_TS="$(date +%s)"
 
@@ -82,9 +78,8 @@ info() { printf '%s%s%s %s\n' "$BLU" "$S_INFO" "$RESET" "$*"; }
 warn() { printf '%s%s %s%s\n' "$YEL" "$S_WARN" "$*" "$RESET"; }
 err()  { printf '%s%s %s%s\n' "$RED" "$S_ERR" "$*" "$RESET" >&2; }
 note() { printf '   %s%s%s\n' "$DIM" "$*" "$RESET"; }
-dry()  { printf '   %s[dry-run]%s %s\n' "$MAG" "$RESET" "$*"; }
 
-run() { if [[ "$DRY_RUN" == "1" ]]; then dry "$*"; return 0; fi; "$@"; }
+run() { "$@"; }
 
 INTERACTIVE=0
 if [[ "$ASSUME_YES" != "1" && -r /dev/tty ]]; then INTERACTIVE=1; fi
@@ -101,18 +96,6 @@ confirm() {
 }
 
 require_root() { if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then err "Run as root (e.g. sudo $0)."; exit 1; fi; }
-
-choose_run_mode() {
-  if [[ "$DRY_RUN_EXPLICIT" == "1" ]]; then [[ "$DRY_RUN" == "1" ]] && DRY_RUN=1 || DRY_RUN=0; return; fi
-  if [[ "$INTERACTIVE" -eq 0 ]]; then [[ "$ASSUME_YES" == "1" ]] && DRY_RUN=0 || DRY_RUN=1; return; fi
-  local choice=""
-  printf '\n%s%sHow do you want to run the bootstrap script?%s\n' "$BOLD" "$WHT" "$RESET" > /dev/tty
-  printf '   %s[1]%s %sDry run%s — preview, change NOTHING (recommended first)\n' "$BOLD" "$RESET" "$GRN" "$RESET" > /dev/tty
-  printf '   %s[2]%s %sActual run%s — create/update users & install keys\n' "$BOLD" "$RESET" "$RED" "$RESET" > /dev/tty
-  printf '%s%s Choose 1 or 2 [default: 1]: %s' "$YEL" "$S_WARN" "$RESET" > /dev/tty
-  read -r choice < /dev/tty || choice=""
-  case "${choice:-1}" in 2) DRY_RUN=0 ;; *) DRY_RUN=1 ;; esac
-}
 
 # valid_pubkey "<key line>" -> 0 if it looks like a valid SSH public key
 valid_pubkey() {
@@ -278,9 +261,6 @@ printf '%s%s  Debian 13 Homelab Bootstrap — bootstrap (admin user + SSH key)%s
 hr '─'
 
 require_root
-choose_run_mode
-
-if [[ "$DRY_RUN" == "1" ]]; then info "Mode: ${MAG}DRY RUN (no changes)${RESET}"; else info "Mode: ${RED}ACTUAL RUN${RESET}"; fi
 hr '─'
 
 # Ask which admin user(s) to create/update, unless ADMIN_USERS was set via env.
@@ -402,11 +382,7 @@ setup_admin_user() {
     # Set the password collected for this new account (if any); otherwise the
     # account stays passwordless (SSH-key only).
     if [[ -n "${USER_PASSWORD[$user]:-}" ]]; then
-      if [[ "$DRY_RUN" == "1" ]]; then
-        dry "set password for '$user' (chpasswd)"
-      else
-        printf '%s:%s\n' "$user" "${USER_PASSWORD[$user]}" | chpasswd
-      fi
+      printf '%s:%s\n' "$user" "${USER_PASSWORD[$user]}" | chpasswd
       log "Created '$user' (password set) and added to the sudo group."
       record "User:$user" "created (password set) + sudo"
     else
@@ -414,12 +390,8 @@ setup_admin_user() {
       record "User:$user" "created (disabled-password) + sudo"
     fi
     # Record newly-created users so later scripts can target them (e.g. fish).
-    if [[ "$DRY_RUN" == "1" ]]; then
-      dry "record newly-created user '$user' -> $CREATED_USERS_FILE (for ancillary.sh)"
-    else
-      mkdir -p "$STATE_DIR"
-      grep -qxF "$user" "$CREATED_USERS_FILE" 2>/dev/null || printf '%s\n' "$user" >> "$CREATED_USERS_FILE"
-    fi
+    mkdir -p "$STATE_DIR"
+    grep -qxF "$user" "$CREATED_USERS_FILE" 2>/dev/null || printf '%s\n' "$user" >> "$CREATED_USERS_FILE"
   else
     if id -nG "$user" | tr ' ' '\n' | grep -qx sudo; then
       log "User '$user' already exists and is in sudo."
@@ -433,22 +405,17 @@ setup_admin_user() {
   # 2) Install the SSH key (idempotent), or report the existing/none state.
   if [[ -n "$key" ]]; then
     info "Installing SSH public key for $user"
-    if [[ "$DRY_RUN" == "1" ]]; then
-      dry "ensure ~${user}/.ssh (700) and authorized_keys (600) contain the provided key"
-      record "Key:$user" "[dry-run] would install/verify"
+    home="$(getent passwd "$user" | cut -d: -f6)"
+    install -d -m 700 -o "$user" -g "$user" "$home/.ssh"
+    auth="$home/.ssh/authorized_keys"
+    touch "$auth"; chown "$user:$user" "$auth"; chmod 600 "$auth"
+    if ! grep -qF "$key" "$auth"; then
+      printf '%s\n' "$key" >> "$auth"
+      log "Public key installed to $auth"
     else
-      home="$(getent passwd "$user" | cut -d: -f6)"
-      install -d -m 700 -o "$user" -g "$user" "$home/.ssh"
-      auth="$home/.ssh/authorized_keys"
-      touch "$auth"; chown "$user:$user" "$auth"; chmod 600 "$auth"
-      if ! grep -qF "$key" "$auth"; then
-        printf '%s\n' "$key" >> "$auth"
-        log "Public key installed to $auth"
-      else
-        log "Public key already present for $user (no change)."
-      fi
-      record "Key:$user" "installed/verified"
+      log "Public key already present for $user (no change)."
     fi
+    record "Key:$user" "installed/verified"
   elif [[ "${USER_HASKEY[$user]}" == "1" ]]; then
     log "Existing authorized_keys found for $user (no new key needed)."
     record "Key:$user" "existing key reused"
@@ -467,41 +434,30 @@ done
 # ==============================================================================
 ELAPSED=$(( $(date +%s) - START_TS )); MM=$(( ELAPSED / 60 )); SS=$(( ELAPSED % 60 ))
 printf '\n'; hr '═'
-if [[ "$DRY_RUN" == "1" ]]; then
-  printf '%s%s  🧪  DRY RUN COMPLETE — NO CHANGES MADE — RECAP%s\n' "$BOLD" "$MAG" "$RESET"
-else
-  printf '%s%s  ✅  BOOTSTRAP COMPLETE — RECAP%s\n' "$BOLD" "$GRN" "$RESET"
-fi
+printf '%s%s  ✅  BOOTSTRAP COMPLETE — RECAP%s\n' "$BOLD" "$GRN" "$RESET"
 hr '═'
 printf '%s  Host: %s   |   Elapsed: %dm %ds%s\n' "$DIM" "$(hostname)" "$MM" "$SS" "$RESET"
 hr '─'
-printf '%s%s  WHAT %s%s\n' "$BOLD" "$CYN" "$( [[ $DRY_RUN == 1 ]] && echo 'WOULD BE DONE' || echo 'WAS DONE' )" "$RESET"
+printf '%s%s  WHAT %s%s\n' "$BOLD" "$CYN" "WAS DONE" "$RESET"
 for entry in "${SUMMARY[@]}"; do
   key="${entry%%$'\t'*}"; val="${entry#*$'\t'}"
   printf '   %s%s%-16s%s %s\n' "$GRN" "$S_OK " "$key" "$RESET" "$val"
 done
 hr '─'
 printf '%s%s  ⏭ NEXT STEPS%s\n' "$BOLD" "$MAG" "$RESET"
-if [[ "$DRY_RUN" == "1" ]]; then
-  printf '   %s•%s  This was a preview. To apply for real, re-run and choose %sActual%s,\n' "$BOLD" "$RESET" "$BOLD" "$RESET"
-  printf '       or run: %sDRY_RUN=0 ./%s%s\n' "$DIM" "$(basename "$0")" "$RESET"
-else
-  printf '   %s•%s  Verify the key works BEFORE hardening. From your machine:\n' "$BOLD" "$RESET"
-  for u in "${ADMIN_USER_LIST[@]}"; do
-    printf '        %sssh %s@<host>%s\n' "$DIM" "$u" "$RESET"
-  done
-  printf '   %s•%s  Then harden the system: %ssudo ./harden.sh%s\n' "$BOLD" "$RESET" "$DIM" "$RESET"
-fi
+printf '   %s•%s  Verify the key works BEFORE hardening. From your machine:\n' "$BOLD" "$RESET"
+for u in "${ADMIN_USER_LIST[@]}"; do
+  printf '        %sssh %s@<host>%s\n' "$DIM" "$u" "$RESET"
+done
+printf '   %s•%s  Then harden the system: %ssudo ./harden.sh%s\n' "$BOLD" "$RESET" "$DIM" "$RESET"
 printf '%s%s  Done. 👤%s\n\n' "$BOLD" "$GRN" "$RESET"
 
-# One-line summary for init.sh's bootstrap report (actual runs only).
-if [[ "$DRY_RUN" != "1" ]]; then
-  _keyed=(); _unkeyed=()
-  for u in "${ADMIN_USER_LIST[@]}"; do
-    if [[ -n "${USER_PUBKEY[$u]:-}" || "${USER_HASKEY[$u]:-0}" == "1" ]]; then _keyed+=("$u"); else _unkeyed+=("$u"); fi
-  done
-  mkdir -p /var/lib/homelab-bootstrap/summaries
-  printf 'admins: %s (sudo); keys: %s%s\n' \
-    "${ADMIN_USER_LIST[*]}" "${_keyed[*]:-none}" "${_unkeyed:+; NO key: ${_unkeyed[*]}}" \
-    > /var/lib/homelab-bootstrap/summaries/bootstrap.sh
-fi
+# One-line summary for init.sh's bootstrap report.
+_keyed=(); _unkeyed=()
+for u in "${ADMIN_USER_LIST[@]}"; do
+  if [[ -n "${USER_PUBKEY[$u]:-}" || "${USER_HASKEY[$u]:-0}" == "1" ]]; then _keyed+=("$u"); else _unkeyed+=("$u"); fi
+done
+mkdir -p /var/lib/homelab-bootstrap/summaries
+printf 'admins: %s (sudo); keys: %s%s\n' \
+  "${ADMIN_USER_LIST[*]}" "${_keyed[*]:-none}" "${_unkeyed:+; NO key: ${_unkeyed[*]}}" \
+  > /var/lib/homelab-bootstrap/summaries/bootstrap.sh

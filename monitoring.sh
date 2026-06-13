@@ -19,7 +19,7 @@
 #    container/image fields to labels. This relies on Docker using the journald
 #    log-driver — and if Docker is already installed on this host, monitoring.sh
 #    offers to set that driver itself (rootful and/or rootless), so you don't
-#    need to (re)run docker.sh. Works for both rootful and rootless Docker.
+#    need to (re)run container.sh. Works for both rootful and rootless Docker.
 #
 #  Config templates live alongside this script in zabbix/ and alloy/; if this
 #  script is run on its own (no repo checkout) they're fetched from the repo.
@@ -52,7 +52,6 @@
 #    DOCKER_LOG_LABELS=<csv> -> container labels the journald driver attaches for
 #                                       grouping in Loki (default the Compose
 #                                       project+service). Empty = none
-#    DRY_RUN=1|0            -> force preview / actual (else asks)
 #    ASSUME_YES=1           -> answer "yes" to every prompt (automation)
 # ==============================================================================
 
@@ -71,9 +70,6 @@ ZBX_CONFIG_SRC="${ZBX_CONFIG_SRC:-${SCRIPT_DIR}/zabbix/zabbix_agent2.conf}"
 REPO_RAW_BASE="${REPO_RAW_BASE:-https://raw.githubusercontent.com/jordancannon88/debian13-homelab-bootstrap/main}"
 
 ASSUME_YES="${ASSUME_YES:-0}"
-
-if [[ -n "${DRY_RUN+x}" ]]; then DRY_RUN_EXPLICIT=1; else DRY_RUN_EXPLICIT=0; fi
-DRY_RUN="${DRY_RUN:-}"
 
 START_TS="$(date +%s)"
 
@@ -106,7 +102,7 @@ LOKI_URL="${LOKI_URL:-}"
 ALLOY_DOCKER_LOGS="${ALLOY_DOCKER_LOGS:-}"
 # When ALLOY_DOCKER_LOGS=1 and Docker is already installed here, whether to set
 # Docker's journald log-driver ourselves (1/0). Empty = ask (default yes). This
-# means an existing Docker host needs no separate docker.sh run.
+# means an existing Docker host needs no separate container.sh run.
 ALLOY_SET_DOCKER_DRIVER="${ALLOY_SET_DOCKER_DRIVER:-}"
 # Container labels the journald driver attaches to each line so they can be
 # grouped in Loki (Alloy promotes compose project/service to labels). Default
@@ -158,24 +154,11 @@ info() { printf '%s%s%s %s\n' "$BLU" "$S_INFO" "$RESET" "$*"; }
 warn() { printf '%s%s %s%s\n' "$YEL" "$S_WARN" "$*" "$RESET"; }
 err()  { printf '%s%s %s%s\n' "$RED" "$S_ERR" "$*" "$RESET" >&2; }
 note() { printf '   %s%s%s\n' "$DIM" "$*" "$RESET"; }
-dry()  { printf '   %s[dry-run]%s %s\n' "$MAG" "$RESET" "$*"; }
 
 INTERACTIVE=0
 if [[ "$ASSUME_YES" != "1" && -r /dev/tty ]]; then INTERACTIVE=1; fi
 
 require_root() { if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then err "Run as root (e.g. sudo $0)."; exit 1; fi; }
-
-choose_run_mode() {
-  if [[ "$DRY_RUN_EXPLICIT" == "1" ]]; then [[ "$DRY_RUN" == "1" ]] && DRY_RUN=1 || DRY_RUN=0; return; fi
-  if [[ "$INTERACTIVE" -eq 0 ]]; then [[ "$ASSUME_YES" == "1" ]] && DRY_RUN=0 || DRY_RUN=1; return; fi
-  local choice=""
-  printf '\n%s%sHow do you want to run the monitoring installer?%s\n' "$BOLD" "$WHT" "$RESET" > /dev/tty
-  printf '   %s[1]%s %sDry run%s — preview, change NOTHING (recommended first)\n' "$BOLD" "$RESET" "$GRN" "$RESET" > /dev/tty
-  printf '   %s[2]%s %sActual run%s — install & configure\n' "$BOLD" "$RESET" "$RED" "$RESET" > /dev/tty
-  printf '%s%s Choose 1 or 2 [default: 1]: %s' "$YEL" "$S_WARN" "$RESET" > /dev/tty
-  read -r choice < /dev/tty || choice=""
-  case "${choice:-1}" in 2) DRY_RUN=0 ;; *) DRY_RUN=1 ;; esac
-}
 
 # resolve_template <local_src> <repo_relpath> — locate a config template. Sets
 # RESOLVED_TEMPLATE to a readable path: the local copy alongside this script if
@@ -272,7 +255,7 @@ detect_rootless_docker_users() {
 #   [5] the packaged logrotate rule repointed at that user — it recreates the
 #       log as zabbix:zabbix 0640 (not group-writable), which would kill the
 #       agent at its next start after a rotation.
-# Then reload + restart + verify docker.info. Honors DRY_RUN. Idempotent.
+# Then reload + restart + verify docker.info. Idempotent.
 # (Folds in the former fix-zabbix-rootless-docker.sh.)
 setup_zabbix_rootless_docker() {
   local du="$1" uid runtime sock dropin_dir dropin ovr_dir ovr d lr
@@ -291,17 +274,6 @@ setup_zabbix_rootless_docker() {
 
   info "Configuring zabbix-agent2 to monitor rootless Docker for ${BOLD}${du}${RESET} (UID ${uid}, socket ${sock})."
   [[ -S "$sock" ]] || warn "${sock} not present yet — lingering (below) plus a running rootless daemon will create it."
-
-  if [[ "$DRY_RUN" == "1" ]]; then
-    dry "write ${dropin} -> Plugins.Docker.Endpoint=unix://${sock}"
-    dry "loginctl enable-linger ${du}"
-    dry "write ${ovr} -> run zabbix-agent2 as User=${du} Group=${du}, XDG_RUNTIME_DIR=${runtime}, RuntimeDirectory/LogsDirectory=zabbix"
-    dry "chown -R ${du}:${du} /var/log/zabbix /run/zabbix (if present); usermod -aG zabbix ${du}"
-    dry "point the 'create' line in ${lr} at ${du} ${du} (if present; backup kept)"
-    dry "systemctl daemon-reload + restart zabbix-agent2, then verify docker.info"
-    record "Zabbix rootless Docker" "[dry-run] would monitor ${du}'s rootless Docker"
-    return 0
-  fi
 
   # [1] Docker-plugin drop-in pointing at the rootless socket. Agent 2 reads
   #     every *.conf under plugins.d/, so this overrides the endpoint without
@@ -390,14 +362,10 @@ write_alloy_conf() {
 # (and, if DOCKER_LOG_LABELS is non-empty, "log-opts":{"labels":"..."}). Creates
 # the file + parent dirs if absent; to merge into an EXISTING file (preserving
 # other keys) it uses jq, installing it first if missing. Returns non-zero only
-# if it couldn't apply the setting. (Same logic as docker.sh.)
+# if it couldn't apply the setting. (Same logic as container.sh.)
 write_journald_daemon_json() {
   local path="$1" owner="$2" dir; dir="$(dirname "$path")"
   local labels="$DOCKER_LOG_LABELS"
-  if [[ "$DRY_RUN" == "1" ]]; then
-    dry "set \"log-driver\":\"journald\"${labels:+ + log-opts labels=${labels}} in ${path} (owner ${owner})"
-    return 0
-  fi
   install -d -o "${owner%:*}" -g "${owner#*:}" -m 0755 "$dir"
   if [[ -s "$path" ]]; then
     if ! command -v jq >/dev/null 2>&1; then
@@ -435,7 +403,6 @@ write_journald_daemon_json() {
 run_as_user_docker() {
   local u="$1"; shift
   local uid; uid="$(id -u "$u" 2>/dev/null)" || return 1
-  if [[ "$DRY_RUN" == "1" ]]; then dry "su - $u -c '$*'"; return 0; fi
   runuser -l "$u" -c \
     "export XDG_RUNTIME_DIR=/run/user/${uid} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus PATH=/usr/bin:/usr/sbin:/sbin:\$PATH; $*"
 }
@@ -487,7 +454,7 @@ configure_docker_journald() {
   local applied=0
   if (( rootful )); then
     if write_journald_daemon_json /etc/docker/daemon.json "root:root"; then
-      if [[ "$DRY_RUN" == "1" ]]; then dry "systemctl restart docker"; else systemctl restart docker 2>/dev/null || true; fi
+      systemctl restart docker 2>/dev/null || true
       applied=1
     fi
   fi
@@ -501,13 +468,9 @@ configure_docker_journald() {
 
   if (( applied )); then
     DOCKER_DRIVER_SET=1
-    if [[ "$DRY_RUN" == "1" ]]; then
-      record "Docker log-driver" "[dry-run] would set journald (${targets})"
-    else
-      log "Docker now logs to the journal (journald)${DOCKER_LOG_LABELS:+; grouping labels: ${DOCKER_LOG_LABELS}}."
-      note "Recreate running containers to adopt it: ${DIM}docker compose up -d --force-recreate${RESET}"
-      record "Docker log-driver" "journald (${targets})"
-    fi
+    log "Docker now logs to the journal (journald)${DOCKER_LOG_LABELS:+; grouping labels: ${DOCKER_LOG_LABELS}}."
+    note "Recreate running containers to adopt it: ${DIM}docker compose up -d --force-recreate${RESET}"
+    record "Docker log-driver" "journald (${targets})"
   fi
 }
 
@@ -522,10 +485,6 @@ hr '─'
 
 require_root
 if ! command -v apt-get >/dev/null 2>&1; then err "apt-get not found — this targets Debian/apt systems."; exit 1; fi
-choose_run_mode
-
-if [[ "$DRY_RUN" == "1" ]]; then info "Mode: ${MAG}DRY RUN (no changes)${RESET}"; else info "Mode: ${RED}ACTUAL RUN${RESET}"; fi
-hr '─'
 
 info "Agents to install: ${BOLD}${SELECTED_PKGS[*]:-<none>}${RESET}"
 hr '─'
@@ -568,20 +527,6 @@ fi
 if [[ -z "$ZBX_SERVER_ACTIVE" ]]; then
   warn "No Zabbix server address provided (set ZABBIX_SERVER_ACTIVE=host:port) — skipping zabbix-agent2."
   record "Zabbix agent 2" "skipped (no ZABBIX_SERVER_ACTIVE)"
-elif [[ "$DRY_RUN" == "1" ]]; then
-  dry "add Zabbix ${ZBX_VERSION} apt repo, then apt-get install zabbix-agent2 inxi"
-  if [[ -r "$ZBX_CONFIG_SRC" ]]; then
-    dry "render ${ZBX_CONFIG_SRC} -> ${ZBX_CONF} with Hostname=${ZBX_HOSTNAME} and ServerActive=${ZBX_SERVER_ACTIVE}"
-  else
-    dry "fetch zabbix/zabbix_agent2.conf from repo -> ${ZBX_CONF} with Hostname=${ZBX_HOSTNAME} and ServerActive=${ZBX_SERVER_ACTIVE}"
-  fi
-  if [[ "$ZBX_VIRT" == "1" ]]; then
-    dry "VM/container detected — write plugins.d/cpu-temperature.conf with the ${ZBX_HOSTNAME}.cpuTemperature UserParameter commented out"
-  else
-    dry "write plugins.d/cpu-temperature.conf with UserParameter key ${ZBX_HOSTNAME}.cpuTemperature"
-  fi
-  dry "enable + restart zabbix-agent2"
-  record "Zabbix agent 2" "[dry-run] would install + configure (server ${ZBX_SERVER_ACTIVE})"
 else
   # Derive the Debian major version for the release package name (e.g. debian13).
   _osrel="$(awk -F= '/^VERSION_ID=/{gsub(/"/,"",$2); print $2}' /etc/os-release 2>/dev/null || true)"
@@ -717,19 +662,7 @@ fi
 # Normalise to 0/1 (accept yes/true/1 from the environment).
 [[ "${ALLOY_DOCKER_LOGS,,}" =~ ^(1|y|yes|true|on)$ ]] && ALLOY_DOCKER_LOGS=1 || ALLOY_DOCKER_LOGS=0
 
-if [[ "$DRY_RUN" == "1" ]]; then
-  dry "add Grafana apt repo, then apt-get install alloy"
-  _docker_note="$( [[ "$ALLOY_DOCKER_LOGS" == "1" ]] && echo ' + Docker container logs' || echo '' )"
-  if [[ -r "$ALLOY_CONFIG_SRC" ]]; then
-    dry "render ${ALLOY_CONFIG_SRC} -> ${ALLOY_CONF} (root:alloy 0640) pushing to ${LOKI_URL}/loki/api/v1/push${_docker_note}"
-  else
-    dry "fetch alloy/config.alloy from repo -> ${ALLOY_CONF} (root:alloy 0640) pushing to ${LOKI_URL}/loki/api/v1/push${_docker_note}"
-  fi
-  [[ "$ALLOY_DOCKER_LOGS" == "1" ]] && dry "keep the journald container/image relabel rules (set Docker's log-driver to journald separately)"
-  dry "enable + restart alloy"
-  record "Grafana Alloy" "[dry-run] would install + configure (Loki ${LOKI_URL}${_docker_note})"
-else
-  # gpg --dearmor needs gnupg; ensure it's present before adding the repo key.
+# gpg --dearmor needs gnupg; ensure it's present before adding the repo key.
   command -v gpg >/dev/null 2>&1 || apt-get install -y gnupg
 
   info "Adding the Grafana apt repository..."
@@ -778,12 +711,11 @@ else
     warn "alloy installed but its config could not be written — service left as-is."
     record "Grafana Alloy" "installed; config NOT written (template missing)"
   fi
-fi
 
 # If Docker-log capture is on and Docker is already installed on THIS host, offer
 # to set its journald log-driver ourselves — so an existing Docker host needs no
-# separate docker.sh run. (On a fresh host where docker.sh installs Docker later,
-# Docker isn't present yet here, so this is skipped and docker.sh handles it.)
+# separate container.sh run. (On a fresh host where container.sh installs Docker
+# later, Docker isn't present yet here, so this is skipped and container.sh handles it.)
 if [[ "$ALLOY_DOCKER_LOGS" == "1" ]] && command -v docker >/dev/null 2>&1; then
   configure_docker_journald
 fi
@@ -794,15 +726,11 @@ fi   # end: pkg_selected alloy
 # ==============================================================================
 ELAPSED=$(( $(date +%s) - START_TS )); MM=$(( ELAPSED / 60 )); SS=$(( ELAPSED % 60 ))
 printf '\n'; hr '═'
-if [[ "$DRY_RUN" == "1" ]]; then
-  printf '%s%s  🧪  DRY RUN COMPLETE — NO CHANGES MADE — RECAP%s\n' "$BOLD" "$MAG" "$RESET"
-else
-  printf '%s%s  ✅  MONITORING SETUP COMPLETE — RECAP%s\n' "$BOLD" "$GRN" "$RESET"
-fi
+printf '%s%s  ✅  MONITORING SETUP COMPLETE — RECAP%s\n' "$BOLD" "$GRN" "$RESET"
 hr '═'
 printf '%s  Host: %s   |   Elapsed: %dm %ds%s\n' "$DIM" "$(hostname)" "$MM" "$SS" "$RESET"
 hr '─'
-printf '%s%s  WHAT %s%s\n' "$BOLD" "$CYN" "$( [[ $DRY_RUN == 1 ]] && echo 'WOULD BE DONE' || echo 'WAS DONE' )" "$RESET"
+printf '%s%s  WHAT %s%s\n' "$BOLD" "$CYN" "WAS DONE" "$RESET"
 for entry in "${SUMMARY[@]}"; do
   key="${entry%%$'\t'*}"; val="${entry#*$'\t'}"
   printf '   %s%s%-16s%s %s\n' "$GRN" "$S_OK " "$key" "$RESET" "$val"
@@ -836,10 +764,8 @@ fi
 (( _had_step == 0 )) && printf '   %s•%s  Nothing further to do.\n' "$BOLD" "$RESET"
 printf '%s%s  Done. 📈%s\n\n' "$BOLD" "$GRN" "$RESET"
 
-# One-line summary for init.sh's bootstrap report (actual runs only).
-if [[ "$DRY_RUN" != "1" ]]; then
-  if (( ${#SELECTED_PKGS[@]} > 0 )); then _agents="installed ${SELECTED_PKGS[*]}"; else _agents="no agents selected"; fi
-  mkdir -p /var/lib/homelab-bootstrap/summaries
-  printf '%s\n' "$_agents" \
-    > /var/lib/homelab-bootstrap/summaries/monitoring.sh
-fi
+# One-line summary for init.sh's bootstrap report.
+if (( ${#SELECTED_PKGS[@]} > 0 )); then _agents="installed ${SELECTED_PKGS[*]}"; else _agents="no agents selected"; fi
+mkdir -p /var/lib/homelab-bootstrap/summaries
+printf '%s\n' "$_agents" \
+  > /var/lib/homelab-bootstrap/summaries/monitoring.sh
