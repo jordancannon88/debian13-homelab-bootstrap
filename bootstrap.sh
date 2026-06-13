@@ -406,10 +406,17 @@ setup_admin_user() {
   if [[ -n "$key" ]]; then
     info "Installing SSH public key for $user"
     home="$(getent passwd "$user" | cut -d: -f6)"
+    if [[ -z "$home" || "$home" != /* ]]; then
+      warn "Cannot determine a valid home directory for '$user' (got '${home:-empty}') — skipping key install."
+      record "Key:$user" "skipped (no valid home)"
+      return 1
+    fi
     install -d -m 700 -o "$user" -g "$user" "$home/.ssh"
     auth="$home/.ssh/authorized_keys"
     touch "$auth"; chown "$user:$user" "$auth"; chmod 600 "$auth"
-    if ! grep -qF "$key" "$auth"; then
+    # Whole-line match so a key that is a substring of an existing line isn't
+    # falsely treated as already present.
+    if ! grep -qxF "$key" "$auth"; then
       printf '%s\n' "$key" >> "$auth"
       log "Public key installed to $auth"
     else
@@ -459,5 +466,5 @@ for u in "${ADMIN_USER_LIST[@]}"; do
 done
 mkdir -p /var/lib/homelab-bootstrap/summaries
 printf 'admins: %s (sudo); keys: %s%s\n' \
-  "${ADMIN_USER_LIST[*]}" "${_keyed[*]:-none}" "${_unkeyed:+; NO key: ${_unkeyed[*]}}" \
+  "${ADMIN_USER_LIST[*]}" "${_keyed[*]:-none}" "${_unkeyed[*]:+; NO key: ${_unkeyed[*]}}" \
   > /var/lib/homelab-bootstrap/summaries/bootstrap.sh

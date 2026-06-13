@@ -77,9 +77,6 @@ write_file() {
   cat > "$path"
 }
 
-INTERACTIVE=0
-if [[ "$ASSUME_YES" != "1" && -r /dev/tty ]]; then INTERACTIVE=1; fi
-
 require_root() { if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then err "Run as root (e.g. sudo $0)."; exit 1; fi; }
 
 # ask "Question" "default" -> echoes the answer (reads /dev/tty); honours automation.

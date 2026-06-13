@@ -33,13 +33,8 @@ REPO_RAW_BASE="${REPO_RAW_BASE:-https://raw.githubusercontent.com/jordancannon88
 ASSUME_YES="${ASSUME_YES:-0}"
 START_TS="$(date +%s)"
 
-# Extra services init can install, presented to the user as one "extra services"
-# group. The apt packages are handled by ancillary.sh (chosen list passed via
-# ANCILLARY_PKGS); "container" runs container.sh (rootless Docker and/or Podman).
-# Order = display. Pickable packages, split by the script that installs them.
-# container is a standalone yes/no (asked on its own below).
-ANCILLARY_SERVICES=(vim btop duf fish rsync qemu-guest-agent)
-MONITORING_SERVICES=(zabbix-agent2 alloy)
+# Short descriptions for the pickable extra packages / monitoring agents, shown
+# in the wizard prompts and the review summary.
 declare -A EXTRA_DESC=(
   [vim]="Vim text editor"
   [btop]="resource monitor (htop-like)"
@@ -172,9 +167,6 @@ describe() {
     *)            printf 'bootstrap script';;
   esac
 }
-in_selected() { local x; for x in "${SELECTED[@]}"; do [[ "$x" == "$1" ]] && return 0; done; return 1; }
-# in_selected_arr <needle> <item...> — is <needle> among the remaining args?
-in_selected_arr() { local n="$1"; shift; local x; for x in "$@"; do [[ "$x" == "$n" ]] && return 0; done; return 1; }
 
 # ==============================================================================
 #  Wizard machinery — VM/LXC-aware defaults, ask-everything, review, accept/edit
