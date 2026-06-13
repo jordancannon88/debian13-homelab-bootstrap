@@ -204,29 +204,43 @@ resolve_template() {
   return 1
 }
 
-# write_zabbix_conf <target> <hostname> <serveractive> <virtualized> — render the
-# custom zabbix_agent2.conf to <target>, substituting this host's name and the
-# Zabbix server address into the two relevant lines. The cpuTemperature
-# UserParameter's key prefix is rewritten from pve2 to this host's name; on a
-# VM/container it's commented out (no real CPU thermal sensors there). The
-# template is zabbix/zabbix_agent2.conf alongside this script (or fetched from
-# the repo); awk -v then swaps the values safely regardless of characters they
-# contain. Returns non-zero if the template can't be found.
+# write_zabbix_conf <target> <hostname> <serveractive> — render the custom
+# zabbix_agent2.conf to <target>, substituting this host's name and the Zabbix
+# server address into the two relevant lines. The cpuTemperature UserParameter
+# is no longer in this template; it ships as a plugins.d drop-in written by
+# write_cpu_temp_dropin(). The template is zabbix/zabbix_agent2.conf alongside
+# this script (or fetched from the repo); awk -v then swaps the values safely
+# regardless of characters they contain. Returns non-zero if the template can't
+# be found.
 write_zabbix_conf() {
-  local target="$1" hn="$2" sa="$3" virt="${4:-0}"
+  local target="$1" hn="$2" sa="$3"
   resolve_template "$ZBX_CONFIG_SRC" "zabbix/zabbix_agent2.conf" || return 1
-  awk -v hn="$hn" -v sa="$sa" -v virt="$virt" '
+  awk -v hn="$hn" -v sa="$sa" '
     /^Hostname=machine001$/       { print "Hostname=" hn; next }
     /^ServerActive=zabbix:10051$/ { print "ServerActive=" sa; next }
-    /^UserParameter=pve2\.cpuTemperature,/ {
-      sub(/^UserParameter=pve2\./, "UserParameter=" hn ".")   # key prefix -> hostname
-      if (virt == "1") $0 = "#" $0                            # VM/container: no CPU sensors
-      print; next
-    }
     { print }
   ' "$RESOLVED_TEMPLATE" > "$target"
   [[ "$RESOLVED_TEMPLATE_IS_TMP" == "1" ]] && rm -f "$RESOLVED_TEMPLATE"
   return 0
+}
+
+# write_cpu_temp_dropin <hostname> <virtualized> — write the cpuTemperature
+# UserParameter as a plugins.d drop-in so it's independent of the packaged
+# config (upgrade-safe, easy to add/remove). The key is prefixed with the
+# hostname (item key "<host>.cpuTemperature", matching the Zabbix template).
+# The command is label-matched (greps the value after inxi's "cpu:" label)
+# rather than positional, so it survives inxi reordering its sensor fields;
+# -c 0 strips ANSI colour codes that would otherwise corrupt the value. On a
+# VM/container the line is commented out (no real CPU thermal sensors there).
+write_cpu_temp_dropin() {
+  local hn="$1" virt="${2:-0}" dir="/etc/zabbix/zabbix_agent2.d/plugins.d" pfx=""
+  [[ "$virt" == "1" ]] && pfx="#"
+  install -d -m 755 "$dir"
+  cat > "${dir}/cpu-temperature.conf" <<EOF
+# CPU temperature for Zabbix (bare-metal only) — debian13-homelab-bootstrap.
+# Label-matched so it survives inxi reordering fields; -c 0 strips colour codes.
+${pfx}UserParameter=${hn}.cpuTemperature,inxi -s -c 0 | grep -oP 'cpu:\s*\K[0-9.]+'
+EOF
 }
 
 # detect_rootless_docker_users — print the username(s) that currently own a
@@ -533,7 +547,7 @@ banner "Installing Zabbix agent 2"
 ZBX_HOSTNAME="$(hostname)"
 
 # CPU thermal sensors only exist on bare metal. If this is a VM or a container
-# (LXC/etc.), the cpuTemperature UserParameter is commented out in the config.
+# (LXC/etc.), the cpuTemperature UserParameter drop-in is written commented out.
 ZBX_VIRT=0
 if command -v systemd-detect-virt >/dev/null 2>&1 && systemd-detect-virt -q 2>/dev/null; then
   ZBX_VIRT=1
@@ -562,9 +576,9 @@ elif [[ "$DRY_RUN" == "1" ]]; then
     dry "fetch zabbix/zabbix_agent2.conf from repo -> ${ZBX_CONF} with Hostname=${ZBX_HOSTNAME} and ServerActive=${ZBX_SERVER_ACTIVE}"
   fi
   if [[ "$ZBX_VIRT" == "1" ]]; then
-    dry "VM/container detected — comment out the ${ZBX_HOSTNAME}.cpuTemperature UserParameter"
+    dry "VM/container detected — write plugins.d/cpu-temperature.conf with the ${ZBX_HOSTNAME}.cpuTemperature UserParameter commented out"
   else
-    dry "set the cpuTemperature UserParameter key to ${ZBX_HOSTNAME}.cpuTemperature"
+    dry "write plugins.d/cpu-temperature.conf with UserParameter key ${ZBX_HOSTNAME}.cpuTemperature"
   fi
   dry "enable + restart zabbix-agent2"
   record "Zabbix agent 2" "[dry-run] would install + configure (server ${ZBX_SERVER_ACTIVE})"
@@ -586,7 +600,7 @@ else
   rm -f "$_rel_tmp"
   apt-get update
 
-  # inxi backs the pve2.cpuTemperature UserParameter in the config below.
+  # inxi backs the cpuTemperature UserParameter drop-in (written below).
   info "Installing zabbix-agent2 and inxi..."
   apt-get install -y zabbix-agent2 inxi
 
@@ -596,14 +610,15 @@ else
   fi
   install -d -m 755 "$(dirname "$ZBX_CONF")"
   _zbx_tmp="$(mktemp)"
-  if write_zabbix_conf "$_zbx_tmp" "$ZBX_HOSTNAME" "$ZBX_SERVER_ACTIVE" "$ZBX_VIRT"; then
+  if write_zabbix_conf "$_zbx_tmp" "$ZBX_HOSTNAME" "$ZBX_SERVER_ACTIVE"; then
     install -m 0644 "$_zbx_tmp" "$ZBX_CONF"
     rm -f "$_zbx_tmp"
     log "Wrote ${ZBX_CONF} (Hostname=${ZBX_HOSTNAME}, ServerActive=${ZBX_SERVER_ACTIVE})."
+    write_cpu_temp_dropin "$ZBX_HOSTNAME" "$ZBX_VIRT"
     if [[ "$ZBX_VIRT" == "1" ]]; then
       note "VM/container detected — ${ZBX_HOSTNAME}.cpuTemperature UserParameter commented out (no CPU sensors)."
     else
-      note "cpuTemperature UserParameter key set to ${ZBX_HOSTNAME}.cpuTemperature."
+      note "cpuTemperature UserParameter key set to ${ZBX_HOSTNAME}.cpuTemperature (plugins.d drop-in)."
     fi
 
     systemctl enable zabbix-agent2 >/dev/null 2>&1 || true
