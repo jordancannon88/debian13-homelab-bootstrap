@@ -429,9 +429,15 @@ if [[ "$ROOTLESS_NEEDED" == "1" && "$APPARMOR_USERNS_ON" == "1" ]]; then
 fi
 USERNS_METHOD="${USERNS_METHOD:-none}"
 
-# The /opt/docker layout is always created; only ask whether to add an example app.
-[[ -z "$CREATE_EXAMPLE_APP" ]] && { confirm "Also create an example app under ${OPT_DOCKER_DIR}?" Y && CREATE_EXAMPLE_APP=1 || CREATE_EXAMPLE_APP=0; }
-CREATE_EXAMPLE_APP="${CREATE_EXAMPLE_APP:-1}"
+# The /opt/docker layout is always created; only ask whether to add an example
+# app — and only when Docker is being installed (the example is a docker-compose
+# stack). Podman-only installs skip it.
+if [[ "$INSTALL_DOCKER" == "1" ]]; then
+  [[ -z "$CREATE_EXAMPLE_APP" ]] && { confirm "Also create an example app under ${OPT_DOCKER_DIR}?" Y && CREATE_EXAMPLE_APP=1 || CREATE_EXAMPLE_APP=0; }
+  CREATE_EXAMPLE_APP="${CREATE_EXAMPLE_APP:-1}"
+else
+  CREATE_EXAMPLE_APP=0
+fi
 
 # Optionally route container logs to the journal (so a shipper like Grafana Alloy
 # picks them up). Default no — it changes the log-driver and needs containers recreated.
