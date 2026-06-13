@@ -3,8 +3,9 @@
 #  Debian 13 Homelab Bootstrap — documentation
 #  Generates the "Connecting to the Server" HTML doc (docs/connect.html) that
 #  documents a server and how to SSH into it on its hardened port. The page is
-#  an HTML fragment matching the other files in docs/ (subtitle / note / warn /
-#  tip callouts, a TOC, a server details table and a cross-linking footer).
+#  an HTML fragment matching the other files in docs/ (subtitle + BookStack
+#  "callout info / success / warning" callouts, a TOC, a server details table
+#  and a cross-linking footer).
 #
 #  Everything is parameterised: run it on the box itself to auto-detect the
 #  details, or pass overrides via the environment for any other host.
@@ -161,7 +162,7 @@ HTML="$(cat <<EOF
 <h1>🔌 Connecting to the Server</h1>
 <p class="subtitle">How to reach the <code>${e_alias}</code> Docker host and open an SSH session on the hardened port — Debian 13 Homelab Bootstrap.</p>
 
-<div class="note">
+<div class="callout info">
   <strong>SSH is not on port 22.</strong> <code>harden.sh</code> moves the daemon to a non-standard
   port and the nftables firewall is <em>deny-by-default</em>, so only the configured SSH port is reachable.
   On this host that port is <code>${e_port}</code> — every example below sets it explicitly.
@@ -189,7 +190,7 @@ HTML="$(cat <<EOF
   <tr><th>Root access</th><td>${e_root}</td></tr>
   <tr><th>SSH Key</th><td>${e_key}</td></tr>
 </table>
-<div class="tip">
+<div class="callout success">
   <strong>Name vs. address.</strong> Prefer the hostname <code>${e_fqdn}</code> so the box can
   change IP without breaking your config. If internal DNS isn't resolving it yet, fall back to
   <code>${e_ip}</code> or add a line to your local <code>/etc/hosts</code>.
@@ -200,7 +201,7 @@ HTML="$(cat <<EOF
 <pre><code class="language-bash">ssh -p ${e_port} ${e_user}@${e_fqdn}</code></pre>
 <p>Or straight to the LAN address:</p>
 <pre><code class="language-bash">ssh -p ${e_port} ${e_user}@${e_ip}</code></pre>
-<div class="warn">
+<div class="callout warning">
   <strong>Plain <code>ssh ${e_fqdn}</code> will time out</strong> — it defaults to port 22, which the
   firewall drops. Always pass <code>-p ${e_port}</code>, or set the port in your SSH config (below) so you can omit it.
 </div>
@@ -212,7 +213,7 @@ HTML="$(cat <<EOF
 <pre><code class="language-bash">alias --save ${e_alias} "ssh -p ${e_port} ${e_user}@${e_ip}"</code></pre>
 <p>Then just run:</p>
 <pre><code class="language-bash">${e_alias}</code></pre>
-<div class="tip">
+<div class="callout success">
   <strong>Want passthrough args?</strong> Write it as a function instead so you can append flags like a tunnel —
   e.g. <code>${e_alias} -L 3000:localhost:3000</code>:
 </div>
@@ -220,7 +221,7 @@ HTML="$(cat <<EOF
     ssh -p ${e_port} ${e_user}@${e_fqdn} \$argv
 end
 funcsave ${e_alias}</code></pre>
-<div class="note">
+<div class="callout info">
   <strong>Shell-specific.</strong> <code>alias --save</code> and <code>funcsave</code> are <code>fish</code> features —
   in bash/zsh use <code>~/.ssh/config</code> (the <a href="#config">SSH client config</a> section below) instead, which every SSH tool inherits.
 </div>
@@ -235,7 +236,7 @@ funcsave ${e_alias}</code></pre>
     IdentityFile ~/.ssh/${e_key}</code></pre>
 <p>Then the connection collapses to a short alias:</p>
 <pre><code class="language-bash">ssh ${e_alias}</code></pre>
-<div class="tip">
+<div class="callout success">
   <strong>One alias, everywhere.</strong> Once <code>Host ${e_alias}</code> exists, <code>scp</code>, <code>rsync</code>,
   <code>sftp</code>, and tools that read your SSH config all inherit the port and user — no <code>-p ${e_port}</code> needed.
 </div>
@@ -249,7 +250,7 @@ nc -vz ${e_fqdn} ${e_port}</code></pre>
 <p>Host key changed (e.g. after a rebuild)? Remove the stale entry, then reconnect to accept the new one:</p>
 <pre><code class="language-bash">ssh-keygen -R "[${e_fqdn}]:${e_port}"
 ssh-keygen -R "[${e_ip}]:${e_port}"</code></pre>
-<div class="warn">
+<div class="callout warning">
   <strong>Timeout almost always means the firewall or the wrong port.</strong> A <em>connection refused</em> means
   you reached the host but nothing is listening on that port — check you used <code>${e_port}</code> and that
   <code>sshd</code> is running on the server.
