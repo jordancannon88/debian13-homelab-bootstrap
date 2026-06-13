@@ -15,7 +15,7 @@ ran, plus a single next-steps list).
 
 - [📦 What's in the box](#-whats-in-the-box)
 - [🚀 Quick start](#-quick-start)
-- [🧪 Dry run first](#-dry-run-first-recommended)
+- [🧭 VM vs LXC & the setup menu](#-vm-vs-lxc--the-setup-menu)
 - [🐳 Docker & the `/opt/docker` layout](#-docker--the-optdocker-layout)
 - [⚙️ Environment overrides](#️-environment-overrides)
 - [🛟 Troubleshooting](#-troubleshooting)
@@ -36,16 +36,16 @@ ran, plus a single next-steps list).
 | **`init.sh`** | 🚀 | Orchestrator — root check, then runs the scripts below (local copy or download), one at a time, with a single consolidated review + next-steps report at the end. |
 | **`bootstrap.sh`** | 👤 | **Runs first** — creates the admin user (or updates an existing one), adds it to `sudo`, and installs its SSH public key into `~/.ssh/authorized_keys`. Optional password for newly-created accounts (blank = SSH-key only). `harden.sh` relies on this account + key existing, since hardening disables password login. |
 | **`harden.sh`** | 🔒 | System hardening — verifies the admin user(s) from `bootstrap.sh` (key + sudo), then SSH lockdown, nftables firewall (deny-by-default), fail2ban, unattended-upgrades, persistent journald, sysctl & kernel hardening, AppArmor, AIDE, auditd, plus extra fixes to clear common Lynis findings, then a Lynis audit. **Detects VM vs LXC** and skips host-managed steps (e.g. AppArmor, auditd) inside containers. |
-| **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `btop`, `fish`, `rsync`, `qemu-guest-agent` — plus the **fish** shell set as the default shell for users `bootstrap.sh` created (or current users you pick). |
+| **`ancillary.sh`** | 🐟 | **Pick-and-install** extra packages — choose any of `vim`, `btop`, `duf`, `fish`, `rsync`, `qemu-guest-agent` — plus the **fish** shell set as the default shell for users `bootstrap.sh` created (or current users you pick). |
 | **`monitoring.sh`** | 📈 | **Pick-and-install** monitoring agents from their vendor repos. **`zabbix-agent2`** adds Zabbix's official repo, installs the agent, and writes a custom config with this host's name and the Zabbix server address you provide — and when a **rootless Docker** daemon is detected, offers to set the agent up to monitor it (socket path + lingering + running the agent as that user). **`alloy`** adds Grafana's official repo and installs Grafana Alloy, a journal-first log shipper pointed at the Loki URL you provide — with an **optional prompt to also capture Docker container logs** (via Docker's `journald` log-driver, so it works for both rootful and rootless Docker). |
-| **`docker.sh`** | 🐳 | Docker Engine + Compose + **rootless** Docker, plus the `/opt/docker` layout (always created) with an optional example app. Optionally sets Docker's **`journald` log-driver** so container logs flow to the journal (and on to Loki via Alloy) — works for rootful and rootless, and tags lines with the **Compose project/service** so you can group by stack in Loki. |
+| **`container.sh`** | 🐳 | **Container runtimes** — installs **Docker** and/or **Podman** (you're asked for each; pick either or both) for a chosen user, rootless. Docker brings Engine + Compose + rootless Docker; Podman is daemonless + rootless with `podman-compose`, and is set up to **coexist** with Docker (the `podman-docker` shim that would hijack the `docker` command is never installed). Both share the rootless plumbing (uidmap/subuid/subgid + userns AppArmor). Creates the `/opt/docker` layout (always) with an optional example app, and optionally sets the **`journald` log-driver** so container logs flow to the journal (and on to Loki via Alloy), tagging Docker lines with the **Compose project/service** for grouping by stack. |
 | **`motd.sh`** | 🖥️ | A cool **dynamic login banner** (MOTD) showing live host, IP, uptime, OS/kernel, load, memory, disk &amp; sessions — plus a link to your homelab documentation. |
 | **`documentation.sh`** | 🔌 | Generates the **connection doc** (`docs/connect.html` by default) — server details plus how to SSH in on the hardened port, with a `fish` alias and `~/.ssh/config` recipe. Auto-detects host / IP / port / user, or takes `CONN_*` overrides. _Offered by `init.sh` as the optional **final step**, reusing the SSH port/user you configured — when run via `init.sh` the doc is always written to `/tmp/connect.html`._ |
 
 <br>
 
-✨ Every setup script is **idempotent**, has a **dry-run** preview, **prompts**
-before changes, **backs up** files it edits, and prints a **recap** at the end.
+✨ Every setup script is **idempotent**, **prompts** before changes, **backs up**
+files it edits, and prints a **recap** at the end.
 (`documentation.sh` follows the same conventions but writes a doc rather than
 changing the system, so it needs no root and backs nothing up.)
 
@@ -70,7 +70,7 @@ script that installs it. Most come from **Debian's own repositories**; the ones
 that come from an added third-party repo are flagged in the **Source** column.
 Nothing here is installed without you selecting it — `harden.sh`'s core tools
 install when you run hardening; everything in `ancillary.sh`, `monitoring.sh`
-and `docker.sh` is opt-in.
+and `container.sh` is opt-in.
 
 <br>
 
@@ -82,7 +82,6 @@ Installed when you run hardening (skipped individually if already present).
 | --- | :---: | --- |
 | `openssh-server` | Debian | OpenSSH server daemon — remote login. |
 | `sudo` | Debian | Run commands as root / another user. |
-| `vim` | Debian | Text editor. |
 | `gnupg` | Debian | GnuPG — key handling and signature verification (e.g. apt repo keys). |
 | `lsb-release` | Debian | Reports the distro / release version for other tooling. |
 | `ca-certificates` | Debian | Trusted root CA certificates for TLS. |
@@ -108,7 +107,9 @@ Only the packages you tick in the picker are installed.
 
 | Package | Source | What it is |
 | --- | :---: | --- |
+| `vim` | Debian | Vim text editor. |
 | `btop` | Debian | Resource monitor (htop-like). |
+| `duf` | Debian | Disk usage/free utility (a friendlier `df`). |
 | `fish` | Debian | Friendly interactive shell (also settable as default shell). |
 | `rsync` | Debian | Fast file copy / sync. |
 | `qemu-guest-agent` | Debian | QEMU/KVM guest integration (VMs only). |
@@ -135,19 +136,22 @@ tick in the picker are installed.
 > rootless** Docker. **You don't have to set the driver by hand:** if Docker is
 > already installed, `monitoring.sh` detects it and offers to set the `journald`
 > driver itself (rootful and/or rootless) when you enable Docker-log capture; and
-> `docker.sh` sets it on fresh installs (its `DOCKER_JOURNALD_LOGS` step, auto-enabled
-> when you opt into Alloy Docker logs via `init.sh`). To do it manually instead, put
+> `container.sh` sets it on fresh installs (its `DOCKER_JOURNALD_LOGS` step, auto-enabled
+> when you opt into Alloy Docker logs via `init.sh`; for Podman it sets the user's
+> `containers.conf` `log_driver`). To do it manually instead, put
 > `{"log-driver":"journald"}` in `/etc/docker/daemon.json` (rootful) or
 > `~/.config/docker/daemon.json` (rootless), restart Docker, and recreate your
 > containers. Query them with
 > `{host="<host>", container=~".+"}`, or **group by Compose stack/service** with
-> `{compose_project="media"}` / `{compose_service="nginx"}` — `docker.sh` attaches
+> `{compose_project="media"}` / `{compose_service="nginx"}` — `container.sh` attaches
 > those labels by default (`DOCKER_LOG_LABELS`) and Alloy promotes them. (The
 > daemon's own logs already arrive via `docker.service`.)
 
 <br>
 
-### 🐳 `docker.sh` — Docker Engine + rootless
+### 🐳 `container.sh` — Docker and/or Podman (rootless)
+
+Docker packages (installed when you choose **Docker**):
 
 | Package | Source | What it is |
 | --- | :---: | --- |
@@ -157,13 +161,27 @@ tick in the picker are installed.
 | `docker-buildx-plugin` | **Docker repo** | Buildx build plugin. |
 | `docker-compose-plugin` | **Docker repo** | Compose v2 plugin (`docker compose`). |
 | `docker-ce-rootless-extras` | **Docker repo** | Rootless-mode support files. |
+
+Podman packages (installed when you choose **Podman**):
+
+| Package | Source | What it is |
+| --- | :---: | --- |
+| `podman` | Debian | Daemonless container engine (pulls in crun/conmon/netavark/passt). |
+| `podman-compose` | Debian | Compose front-end (`podman compose` / `podman-compose`). |
+
+Shared rootless prerequisites (installed when rootless Docker or Podman is selected):
+
+| Package | Source | What it is |
+| --- | :---: | --- |
 | `uidmap` | Debian | `newuidmap`/`newgidmap` — user-namespace ID mapping for rootless. |
 | `dbus-user-session` | Debian | Per-user D-Bus session, required for rootless systemd. |
 | `slirp4netns` | Debian | User-mode networking for rootless containers. |
 
-> 🧹 `docker.sh` also **removes** any conflicting legacy packages it finds
-> (`docker.io`, `docker-doc`, `docker-compose`, `podman-docker`, `containerd`,
-> `runc`) before installing the above.
+> 🧹 When installing **Docker**, `container.sh` **removes** any conflicting legacy
+> packages it finds (`docker.io`, `docker-doc`, `docker-compose`, `podman-docker`,
+> `containerd`, `runc`) first. Note `podman-docker` is intentionally **never
+> installed** — it drops a `docker` shim that would shadow the real Docker CLI, so
+> keeping it out is what lets Docker and Podman coexist.
 
 <br>
 
@@ -171,7 +189,7 @@ tick in the picker are installed.
 
 | Repo | URL | Added by | Signing key |
 | --- | --- | :---: | --- |
-| Docker | `https://download.docker.com/linux/debian` | `docker.sh` | `/etc/apt/keyrings/docker.asc` |
+| Docker | `https://download.docker.com/linux/debian` | `container.sh` (Docker only) | `/etc/apt/keyrings/docker.asc` |
 | Zabbix | `https://repo.zabbix.com` | `monitoring.sh` (via `zabbix-release`) | shipped in the `zabbix-release` package |
 | Grafana | `https://apt.grafana.com` | `monitoring.sh` | `/etc/apt/keyrings/grafana.gpg` |
 
@@ -242,9 +260,9 @@ sudo ./init.sh
 ```bash
 sudo ./bootstrap.sh   # 1️⃣  create/update the admin user + install the SSH key
 sudo ./harden.sh      # 2️⃣  harden the system (relies on the user/key from 1️⃣)
-sudo ./ancillary.sh   # 3️⃣  extra packages (btop, fish, rsync, qemu-guest-agent) + fish shell
+sudo ./ancillary.sh   # 3️⃣  extra packages (vim, btop, duf, fish, rsync, qemu-guest-agent) + fish shell
 sudo ./monitoring.sh  # 4️⃣  monitoring agents (zabbix-agent2, alloy)
-sudo ./docker.sh      # 5️⃣  install Docker + Compose (rootless)
+sudo ./container.sh   # 5️⃣  install Docker and/or Podman (rootless) + Compose
 sudo ./motd.sh        # 6️⃣  install the dynamic login banner (MOTD)
 ./documentation.sh    # 7️⃣  generate docs/connect.html (no sudo needed)
 ```
@@ -255,23 +273,58 @@ sudo ./motd.sh        # 6️⃣  install the dynamic login banner (MOTD)
 
 <br>
 
-## 🧪 Dry run first (recommended)
+## 🧭 VM vs LXC & the setup menu
 
 <br>
 
-All setup scripts ask **Dry run vs Actual** on start and **default to a dry
-run** that previews every action without changing anything. To force it:
+When you run `init.sh`, the very first question is whether this host is a **VM**
+or an **LXC container** (it autodetects and pre-selects the likely answer). That
+choice sets **sensible defaults** for everything that follows — for example the
+**QEMU guest agent** defaults to *yes* on a VM and *no* in an LXC (it has no use
+inside a container). Most questions are the same on both; the VM/LXC switch just
+picks better starting points.
 
-<br>
+`init.sh` then opens a **whiptail menu (TUI)** — a single hub that lists every
+step with its current state, pre-filled from those defaults. You don't answer a
+wall of questions up front: pick a step to open its options, or just choose
+**Accept** to install with the defaults.
 
-```bash
-sudo DRY_RUN=1 ./bootstrap.sh
-sudo DRY_RUN=1 ./harden.sh
-sudo DRY_RUN=1 ./ancillary.sh
-sudo DRY_RUN=1 ./docker.sh
-sudo DRY_RUN=1 ./motd.sh
-DRY_RUN=1 ./documentation.sh # no sudo — just previews the generated HTML
+```text
+        Review & customise  —  [VM]
+  ┌────────────────────────────────────────────────────┐
+  │  bootstrap    [yes]  admin user + SSH key           │
+  │  harden       [yes]  hardening — SSH port 24917     │
+  │  ancillary    [yes]  packages: vim,btop,duf,fish…   │
+  │  monitoring   [yes]  agents: zabbix,alloy           │
+  │  container    [no ]  runtime: off                   │
+  │  motd         [yes]  dynamic login banner           │
+  │  docs         [yes]  SSH connection doc             │
+  │  ────────────────────────────────────────────────  │
+  │  ✓  Accept these settings and install               │
+  └────────────────────────────────────────────────────┘
+        <Open>                              <Quit>
 ```
+
+- **Open a step** → a dialog for that step: a checklist of its packages/toggles
+  and input boxes for any text (user, SSH key, ports, URLs). Close it to return
+  to the hub with the new state shown.
+- **Accept** → validates required inputs, then the chosen scripts run
+  non-interactively (no further prompts). Missing a required value (e.g. the SSH
+  key) pops a message so you can fix it first.
+- **No terminal / piped** → a plain-text wizard (defaults-first review with
+  Accept/Edit) is used instead. `whiptail` is auto-installed if missing.
+- Selected defaults worth noting: **`container.sh` is off by default** (Docker/
+  Podman in an LXC is advanced, and on a VM you opt in); the **SSH port is a
+  random high port**; **root password lock** and **usb-storage blacklist** are
+  **on**; the **Zabbix server** defaults to `zabbix:10051` and **Loki** to
+  `loki:3100`. The **SSH public key** is the one field with no default — if you
+  Accept while a selected step still needs it, you're dropped into the questions.
+
+> 🤖 For a fully unattended run, `ASSUME_YES=1 sudo ./init.sh` accepts every
+> default (including the autodetected VM/LXC choice) and starts immediately.
+
+> ⚠️ There is no dry-run mode — when you accept, the scripts make real changes.
+> They are idempotent and back up files they edit, but review the screen first.
 
 <br>
 
@@ -279,13 +332,19 @@ DRY_RUN=1 ./documentation.sh # no sudo — just previews the generated HTML
 
 <br>
 
-## 🐳 Docker & the `/opt/docker` layout
+## 🐳 Container runtimes & the `/opt/docker` layout
 
 <br>
 
-`docker.sh` installs Docker Engine, the Compose plugin and (by default) sets up
-**rootless** Docker for a chosen user. It then creates a tidy, predictable home
-for your stacks under **`/opt/docker`** — one folder per app.
+`container.sh` installs **Docker and/or Podman** (you choose for each — pick
+either or both) for a chosen user. Docker brings the Engine + Compose plugin and
+(by default) **rootless** Docker; **Podman** is daemonless and rootless, with
+`podman-compose`. When you pick both they **coexist** — the real `docker` CLI and
+`podman` live side by side (the `podman-docker` shim is never installed), and they
+share the rootless plumbing (uidmap / subuid-subgid / the userns AppArmor
+profiles). Either way it creates a tidy, predictable home for your stacks under
+**`/opt/docker`** — one folder per app, usable by `docker compose` or
+`podman compose` (same compose files).
 
 <br>
 
@@ -320,8 +379,8 @@ for your stacks under **`/opt/docker`** — one folder per app.
 
 | Mode | Owner | Notes |
 | --- | --- | --- |
-| **Rootless** (default) | `<docker-user>:<docker-user>` | the user runs Docker and owns the files |
-| **Rootful** | `root:docker` | when you keep the system daemon |
+| **Rootless** (default; any rootless Docker or Podman) | `<container-user>:<container-user>` | the user runs the runtime and owns the files |
+| **Rootful** (Docker root daemon only) | `root:docker` | when you keep the system daemon |
 
 `.env` files are `600` (sensitive), `docker-compose.yml` is `644`.
 
@@ -334,7 +393,7 @@ A minimal **`traefik/whoami`** service is dropped in at `/opt/docker/example-app
 
 ```bash
 cd /opt/docker/example-app
-docker compose up -d
+docker compose up -d        # or: podman compose up -d
 # then browse http://<host>:8080
 ```
 
@@ -359,8 +418,27 @@ docker compose up -d
   DNS until manually recreated. A drop-in
   (`~/.config/systemd/user/docker.service.d/wait-online.conf`) makes `dockerd`
   poll until the host resolves names (fail-open after ~2 min) before starting.
-- On Debian 13, `harden.sh` keeps AppArmor on; `docker.sh` grants **only**
-  `rootlesskit` the `userns` permission so rootless still works (`USERNS_METHOD`).
+- On Debian 13, `harden.sh` keeps AppArmor on; `container.sh` grants **only** the
+  rootless binaries in play (`rootlesskit` for Docker and/or `podman`) the `userns`
+  permission so rootless still works (`USERNS_METHOD`).
+
+<br>
+
+### 🦭 Podman alongside Docker
+
+- Pick Podman (with or without Docker) and it's set up **rootless** for the same
+  user. It's daemonless, so there's no system service — containers run under the
+  user's session (lingering is enabled so they survive logout).
+- A **Docker-API-compatible socket** is enabled at
+  `unix:///run/user/<uid>/podman/podman.sock`, so docker-API tools (e.g. the
+  Zabbix Docker plugin, `lazydocker`) can talk to Podman too. If you install
+  **Podman only**, your shell's `DOCKER_HOST` is pointed at that socket; if Docker
+  is also installed, `DOCKER_HOST` stays on the Docker socket and you target
+  Podman explicitly via `podman` / `podman compose`.
+- `podman-docker` (which would alias `docker` → `podman`) is deliberately **not**
+  installed, so the two CLIs never collide.
+- With the journald log-driver chosen, Podman's `~/.config/containers/containers.conf`
+  gets `log_driver = "journald"` so its container logs ship to Loki via Alloy too.
 
 <br>
 
@@ -441,7 +519,7 @@ docker compose up -d
 
 | Variable | Effect |
 | --- | --- |
-| `ANCILLARY_PKGS="btop rsync"` | Install exactly these packages (any of `btop fish rsync qemu-guest-agent`), or `none` for nothing; **unset** installs the full default set |
+| `ANCILLARY_PKGS="vim btop duf rsync"` | Install exactly these packages (any of `vim btop duf fish rsync qemu-guest-agent`), or `none` for nothing; **unset** installs the full default set |
 | `FISH_USERS="u1 u2"` | Set fish as the default shell for exactly these users (skips prompts) |
 
 </details>
@@ -461,7 +539,7 @@ docker compose up -d
 | `ZABBIX_DOCKER_USER=<user>` | The rootless Docker owner to monitor (default: auto-detected from the running daemon; falls back to `$SUDO_USER`) |
 | `LOKI_URL="scheme://host:port"` | Loki base URL for Alloy to push to — used when `alloy` is selected (asked interactively; defaults to `http://localhost:3100`). The `/loki/api/v1/push` path is appended automatically |
 | `ALLOY_DOCKER_LOGS=1` | Also capture **Docker container** logs — used when `alloy` is selected (asked interactively; defaults to off). Keeps the journald relabel rules that promote `container`/`image`/`compose_project`/`compose_service` labels; relies on Docker using the `journald` log-driver (rootful **or** rootless). Container logs then ship via the journal under `{host="<host>", container=~".+"}` |
-| `ALLOY_SET_DOCKER_DRIVER=1\|0` | When `ALLOY_DOCKER_LOGS=1` **and Docker is already installed here**, set Docker's `journald` log-driver from `monitoring.sh` itself (rootful via `/etc/docker/daemon.json`, rootless via the user's `~/.config/docker/daemon.json`) — so an existing Docker host needs no separate `docker.sh` run. Empty = ask; default yes |
+| `ALLOY_SET_DOCKER_DRIVER=1\|0` | When `ALLOY_DOCKER_LOGS=1` **and Docker is already installed here**, set Docker's `journald` log-driver from `monitoring.sh` itself (rootful via `/etc/docker/daemon.json`, rootless via the user's `~/.config/docker/daemon.json`) — so an existing Docker host needs no separate `container.sh` run. Empty = ask; default yes |
 | `DOCKER_LOG_LABELS=<csv>` | Container labels the journald driver attaches for grouping in Loki (default `com.docker.compose.project,com.docker.compose.service`, promoted to `compose_project`/`compose_service`). Empty = none |
 
 </details>
@@ -469,19 +547,21 @@ docker compose up -d
 <br>
 
 <details open>
-<summary>🐳 &nbsp;<strong><code>docker.sh</code></strong></summary>
+<summary>🐳 &nbsp;<strong><code>container.sh</code></strong></summary>
 
 <br>
 
 | Variable | Effect |
 | --- | --- |
-| `DOCKER_USER=<name>` | User to set up rootless Docker for |
-| `SETUP_ROOTLESS=1` · `DISABLE_ROOTFUL=1` | Rootless setup / disable the root daemon |
-| `USERNS_METHOD=apparmor\|sysctl\|none` | How to allow unprivileged user namespaces |
+| `INSTALL_DOCKER=1\|0` | Install Docker (Engine + Compose, rootless). Else asks; default yes |
+| `INSTALL_PODMAN=1\|0` | Install Podman (daemonless, rootless) alongside. Else asks; default no. At least one of Docker/Podman is required |
+| `CONTAINER_USER=<name>` | User to set up rootless Docker/Podman for (`DOCKER_USER` is still accepted as an alias) |
+| `SETUP_ROOTLESS=1` · `DISABLE_ROOTFUL=1` | Rootless **Docker** setup / disable the root daemon (Podman is always rootless) |
+| `USERNS_METHOD=apparmor\|sysctl\|none` | How to allow unprivileged user namespaces — with `apparmor`, a targeted profile is added for each rootless binary in play (`rootlesskit` and/or `podman`) |
 | `CREATE_EXAMPLE_APP=1\|0` | Also drop an example app into the layout (the `/opt/docker` hierarchy is always created) |
 | `EXAMPLE_APP=<name>` · `EXAMPLE_PORT=8080` | Example app name / host port |
-| `DOCKER_JOURNALD_LOGS=1\|0` | Set Docker's `journald` log-driver so container logs flow to the systemd journal (and on to Loki via Alloy, no socket needed). Applies to the active daemon(s) — rootful (`/etc/docker/daemon.json`) and/or rootless (`~/.config/docker/daemon.json`). Else asks; default no. When run via `init.sh`, auto-enabled if you opted into Alloy Docker-log capture |
-| `DOCKER_LOG_LABELS=<csv>` | Container labels the journald driver attaches to each line for grouping in Loki (default `com.docker.compose.project,com.docker.compose.service`, which Alloy promotes to `compose_project` / `compose_service` labels). Empty = attach none |
+| `DOCKER_JOURNALD_LOGS=1\|0` | Set the `journald` log-driver so container logs flow to the systemd journal (and on to Loki via Alloy, no socket needed). For Docker: the active daemon(s) — rootful (`/etc/docker/daemon.json`) and/or rootless (`~/.config/docker/daemon.json`); for Podman: the user's `~/.config/containers/containers.conf`. Else asks; default no. When run via `init.sh`, auto-enabled if you opted into Alloy Docker-log capture |
+| `DOCKER_LOG_LABELS=<csv>` | Docker container labels the journald driver attaches to each line for grouping in Loki (default `com.docker.compose.project,com.docker.compose.service`, which Alloy promotes to `compose_project` / `compose_service` labels). Empty = attach none |
 
 </details>
 
@@ -525,7 +605,8 @@ Every field auto-detects from the host it runs on (or is prompted); set any
 
 <br>
 
-> 🌐 Common to all: `DRY_RUN=1\|0`, `ASSUME_YES=1`.
+> 🌐 Common to all: `ASSUME_YES=1` (accept defaults, fully unattended). `init.sh`
+> also takes `ENV_TYPE=vm\|lxc` to preset the VM/LXC default selection.
 
 <br>
 
