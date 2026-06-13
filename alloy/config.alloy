@@ -68,7 +68,7 @@ loki.relabel "journal" {
     target_label  = "image"
   }
   // Compose project/service for grouping — populated when Docker's journald
-  // `labels` log-opt includes com.docker.compose.project/service (docker.sh
+  // `labels` log-opt includes com.docker.compose.project/service (container.sh
   // sets this by default). Low-cardinality, so safe as labels.
   rule {
     source_labels = ["__journal_com_docker_compose_project"]

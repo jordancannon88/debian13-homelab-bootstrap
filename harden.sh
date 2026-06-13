@@ -13,7 +13,7 @@
 #  disabled here), but no longer creates accounts or installs keys itself.
 #
 #  Environment overrides:
-#   ADMIN_USER, SSH_PORT, ALLOW_HTTP, ALLOW_HTTPS, ALLOW_SSH_CIDRS,
+#   ADMIN_USERS, SSH_PORT, ALLOW_HTTP, ALLOW_HTTPS, ALLOW_SSH_CIDRS,
 #   ALLOW_SSH_PORT_22, ENABLE_SSH_2FA
 #   ALLOW_TCP_PORTS="8080 8096" -> open extra TCP ports (e.g. published container
 #                                  ports — rootless Docker ports need this!)
@@ -828,13 +828,18 @@ if [[ -f "$NFT_CONF" ]]; then
 fi
 
 # --- Build SSH allow rules (emits REAL newlines) ----------------------------
+# Emit the address-family that matches the CIDR: an IPv4 literal under `ip6
+# saddr` (or vice-versa) is an nft type error that fails the WHOLE ruleset load
+# — which, after sshd is already key-only on the new port, is a lockout. So pick
+# the family per-CIDR (':' ⇒ IPv6).
 emit_ssh_rule() {
   local cidr="$1" port="$2"
-  if [[ -n "$cidr" ]]; then
-    printf '    ip saddr %s tcp dport %s ct state new accept\n' "$cidr" "$port"
+  if [[ -z "$cidr" ]]; then
+    printf '    tcp dport %s ct state new accept\n' "$port"
+  elif [[ "$cidr" == *:* ]]; then
     printf '    ip6 saddr %s tcp dport %s ct state new accept\n' "$cidr" "$port"
   else
-    printf '    tcp dport %s ct state new accept\n' "$port"
+    printf '    ip saddr %s tcp dport %s ct state new accept\n' "$cidr" "$port"
   fi
 }
 
@@ -935,9 +940,24 @@ ${EXTRA_PORT_RULES}
 EOF
 
 info "Loading firewall ruleset..."
-run nft -f "$NFT_CONF"
-run systemctl enable --now nftables
-log "Firewall configured: default-drop input, SSH allowed, established/related kept."
+# Validate BEFORE applying. A malformed ruleset must never abort the run with
+# the new sshd config already live and no firewall — that's a lockout. If the
+# check fails, restore the backup (if any) and warn loudly instead of dying.
+if ! nft -c -f "$NFT_CONF" 2>/tmp/nft-check.$$; then
+  err "Generated nftables ruleset is invalid — NOT applying it (your current firewall is untouched)."
+  sed 's/^/    /' /tmp/nft-check.$$ 2>/dev/null | head -n 10 || true
+  rm -f /tmp/nft-check.$$
+  if [[ -f "$BACKUP_DIR/nftables.conf.bak" ]]; then
+    run cp -a "$BACKUP_DIR/nftables.conf.bak" "$NFT_CONF"
+    note "Restored previous nftables.conf from backup."
+  fi
+  warn "Fix the firewall inputs (e.g. ALLOW_SSH_CIDRS / ALLOW_TCP_PORTS) and re-run. SSH on ${SSH_PORT} is configured but may be unprotected/unreachable until the firewall loads."
+else
+  rm -f /tmp/nft-check.$$
+  run nft -f "$NFT_CONF"
+  run systemctl enable --now nftables
+  log "Firewall configured: default-drop input, SSH allowed, established/related kept."
+fi
 note "SSH allowed on: ${SSH_PORT}$( [[ $ALLOW_SSH_PORT_22 == 1 ]] && echo ' + 22' )  | sources: ${ALLOW_SSH_CIDRS:-any}"
 [[ -n "$HTTP_RULE"  ]] && note "HTTP/80 allowed"
 [[ -n "$HTTPS_RULE" ]] && note "HTTPS/443 allowed"

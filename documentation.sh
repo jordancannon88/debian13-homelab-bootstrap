@@ -58,9 +58,6 @@ warn() { printf '%s%s %s%s\n' "$YEL" "$S_WARN" "$*" "$RESET"; }
 err()  { printf '%s%s %s%s\n' "$RED" "$S_ERR" "$*" "$RESET" >&2; }
 note() { printf '   %s%s%s\n' "$DIM" "$*" "$RESET"; }
 
-INTERACTIVE=0
-if [[ "$ASSUME_YES" != "1" && -r /dev/tty ]]; then INTERACTIVE=1; fi
-
 # ask "Question" "default" -> echoes the answer (reads /dev/tty); honours automation.
 ask() {
   local prompt="$1" default="${2:-}" reply

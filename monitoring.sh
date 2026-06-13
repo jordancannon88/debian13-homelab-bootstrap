@@ -198,9 +198,11 @@ resolve_template() {
 write_zabbix_conf() {
   local target="$1" hn="$2" sa="$3"
   resolve_template "$ZBX_CONFIG_SRC" "zabbix/zabbix_agent2.conf" || return 1
+  # Anchor on the key only (not the placeholder value) so substitution still
+  # works if the template's placeholder ever changes.
   awk -v hn="$hn" -v sa="$sa" '
-    /^Hostname=machine001$/       { print "Hostname=" hn; next }
-    /^ServerActive=zabbix:10051$/ { print "ServerActive=" sa; next }
+    /^Hostname=/     { print "Hostname=" hn; next }
+    /^ServerActive=/ { print "ServerActive=" sa; next }
     { print }
   ' "$RESOLVED_TEMPLATE" > "$target"
   [[ "$RESOLVED_TEMPLATE_IS_TMP" == "1" ]] && rm -f "$RESOLVED_TEMPLATE"
