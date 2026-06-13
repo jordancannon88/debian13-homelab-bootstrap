@@ -161,16 +161,20 @@ prompt_for_pubkey() {
 prompt_for_password() {
   local user="$1"
   [[ "$INTERACTIVE" -eq 1 ]] || return 0   # cannot prompt without a TTY
-  local p1 p2
+  local p1 p2 reply readopt
+  printf '\n%s%sSet a login password for the new user %s%s%s\n' \
+    "$BOLD" "$WHT" "$BOLD" "$user" "$RESET" > /dev/tty
+  printf '   %s(press Enter to skip — the account stays passwordless / SSH-key only)%s\n' "$DIM" "$RESET" > /dev/tty
+  # Show-password option: visible entry (-r) vs masked (-rs).
+  printf '%s%s Show the password as you type? [y/N] %s' "$YEL" "$S_INFO" "$RESET" > /dev/tty
+  read -r reply < /dev/tty || reply=""
+  if [[ "$reply" =~ ^[Yy] ]]; then readopt="-r"; else readopt="-rs"; fi
   while true; do
-    printf '\n%s%sSet a login password for the new user %s%s%s\n' \
-      "$BOLD" "$WHT" "$BOLD" "$user" "$RESET" > /dev/tty
-    printf '   %s(press Enter to skip — the account stays passwordless / SSH-key only)%s\n' "$DIM" "$RESET" > /dev/tty
     printf '%s%s %s password> %s' "$YEL" "$S_INFO" "$user" "$RESET" > /dev/tty
-    IFS= read -rs p1 < /dev/tty || p1=""; printf '\n' > /dev/tty
+    IFS= read $readopt p1 < /dev/tty || p1=""; printf '\n' > /dev/tty
     [[ -z "$p1" ]] && return 0
     printf '%s%s %s confirm > %s' "$YEL" "$S_INFO" "$user" "$RESET" > /dev/tty
-    IFS= read -rs p2 < /dev/tty || p2=""; printf '\n' > /dev/tty
+    IFS= read $readopt p2 < /dev/tty || p2=""; printf '\n' > /dev/tty
     if [[ "$p1" != "$p2" ]]; then
       printf '%s%s Passwords do not match — try again.%s\n' "$RED" "$S_ERR" "$RESET" > /dev/tty
       continue
