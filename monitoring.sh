@@ -296,6 +296,15 @@ EOF
   #     RuntimeDirectory/LogsDirectory make systemd (re-)own /run/zabbix and
   #     /var/log/zabbix as User=/Group= at every start — /run is tmpfs, so
   #     without this the PID file/sockets break on the first reboot.
+  #     UPGRADE-PROOFING: the zabbix-agent2 package postinst resets
+  #     /var/log/zabbix back to zabbix:zabbix on every (unattended) upgrade,
+  #     which locks the re-usered agent out of its log -> "Cannot open log
+  #     file" and a crash-loop. LogsDirectory= already re-owns the dir at
+  #     start, but (a) drop-ins written before this fix lacked it and (b) it
+  #     does not touch a stale log *file* left owned by zabbix inside. The
+  #     '+'-prefixed ExecStartPre runs as root regardless of User= and chowns
+  #     the whole tree to the run-as user immediately before the agent opens
+  #     its log — so no package upgrade or log rotation can desync it again.
   install -d -m 755 "$ovr_dir"
   cat > "$ovr" <<EOF
 [Service]
@@ -304,6 +313,7 @@ Group=${du}
 Environment=XDG_RUNTIME_DIR=${runtime}
 RuntimeDirectory=zabbix
 LogsDirectory=zabbix
+ExecStartPre=+/bin/chown -R ${du}:${du} /var/log/zabbix
 EOF
 
   # [4] Repair ownership/group so the re-usered agent can start and read configs.
