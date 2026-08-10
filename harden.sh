@@ -247,10 +247,33 @@ detect_docker_conflicts() {
 
 # prompt_for_docker — resolve DOCKER_COMPAT (Docker-friendly firewall/sysctl)
 prompt_for_docker() {
-  # Detect existing/intended Docker
+  # Detect Docker that is installed OR clearly on its way.
+  #
+  # Hardening normally runs BEFORE the services it protects — harden the host,
+  # then install Docker onto it. So "docker isn't here yet" must never be read
+  # as "docker is never coming": that misread used to leave the host with a
+  # dropped forward chain, which breaks container->LAN traffic later as silent
+  # timeouts that look like a network or application fault, not a firewall one.
+  # Anything below that smells like Docker counts as detected; guessing "yes"
+  # costs an enabled ip_forward, guessing "no" costs a day of debugging.
   DOCKER_DETECTED=0
-  if command -v docker >/dev/null 2>&1 || [[ -d /var/lib/docker ]] \
-     || systemctl list-unit-files 2>/dev/null | grep -q '^docker\.service'; then
+  if command -v docker >/dev/null 2>&1 \
+     || [[ -d /var/lib/docker || -d /etc/docker ]] \
+     || systemctl list-unit-files 2>/dev/null | grep -q '^docker\.service' \
+     || command -v containerd >/dev/null 2>&1 \
+     || getent group docker >/dev/null 2>&1 \
+     || compgen -G '/etc/apt/sources.list.d/docker*' >/dev/null \
+     || compgen -G '/etc/apt/keyrings/docker*' >/dev/null \
+     || compgen -G '/opt/*/docker-compose.y*ml' >/dev/null \
+     || compgen -G '/opt/*/compose.y*ml' >/dev/null \
+     || compgen -G '/srv/*/docker-compose.y*ml' >/dev/null \
+     || compgen -G '/srv/*/compose.y*ml' >/dev/null; then
+    DOCKER_DETECTED=1
+  fi
+  # The "remove these before installing Docker Engine" packages are themselves a
+  # strong signal that containers are the plan for this host.
+  detect_docker_conflicts
+  if (( ${#FOUND_CONFLICTS[@]} > 0 )); then
     DOCKER_DETECTED=1
   fi
 
@@ -883,16 +906,27 @@ EXTRA_PORT_RULES="${EXTRA_PORT_RULES%$'\n'}"
 # Docker-compatible firewall: flush ONLY our own table (so we never clobber
 # Docker's iptables-nft tables), and don't drop the forward hook (Docker
 # manages forwarding via its own chains + DOCKER-USER). See Docker prereqs.
+#
+# The scoped flush is used in BOTH modes deliberately. "flush ruleset" would
+# also destroy Docker's iptables-nft tables on every boot — and whether this
+# host runs Docker is precisely what detection can get wrong. Replacing only
+# our own table is just as complete for us and never clobbers anyone else's.
+NFT_FLUSH=$'# Replace only our own table, leaving any iptables-nft (ip/ip6) tables intact\ntable inet filter\ndelete table inet filter'
+
 if [[ "$DOCKER_COMPAT" == "1" ]]; then
   NFT_TITLE="# Hardened firewall — deny-by-default input (Docker-compatible)"
-  NFT_FLUSH=$'# Docker-safe: replace only our table, leaving iptables-nft (ip/ip6) tables intact\ntable inet filter\ndelete table inet filter'
   FWD_POLICY="accept"
   FWD_COMMENT=$'\n    # Docker-compat: forwarding handled by Docker\'s iptables-nft chains / DOCKER-USER'
 else
   NFT_TITLE="# Hardened firewall — deny-by-default"
-  NFT_FLUSH="flush ruleset"
   FWD_POLICY="drop"
-  FWD_COMMENT=""
+  # Forwarding stays dropped, but Docker-managed bridges are let through anyway.
+  # These interfaces do not exist on a non-Docker host, so the rules are inert
+  # and cost nothing here. If Docker is installed AFTER this hardening runs,
+  # container networking works instead of failing as silent timeouts. Docker's
+  # own ip-filter rules (network isolation, DOCKER-USER) still apply on top —
+  # in nftables every table must accept, so this weakens no Docker isolation.
+  FWD_COMMENT=$'\n    # Docker bridges: inert unless Docker is installed later (see harden.sh)\n    iifname "docker0" accept\n    oifname "docker0" accept\n    iifname "br-*" accept\n    oifname "br-*" accept'
 fi
 
 write_file "$NFT_CONF" <<EOF
@@ -1059,7 +1093,14 @@ banner "Applying kernel/network sysctl hardening"
 SYSCTL_H="/etc/sysctl.d/99-hardening.conf"
 run cp -a /etc/sysctl.conf "$BACKUP_DIR/sysctl.conf.bak" 2>/dev/null || true
 # Docker requires IPv4 forwarding; otherwise keep it off for a non-router host.
-if [[ "$DOCKER_COMPAT" == "1" ]]; then IP_FWD=1; IP_FWD_NOTE="enabled for Docker"; else IP_FWD=0; IP_FWD_NOTE="off (host is not a router)"; fi
+if [[ "$DOCKER_COMPAT" == "1" ]]; then
+  IP_FWD=1; IP_FWD_NOTE="enabled for Docker"
+else
+  # dockerd sets this to 1 itself at startup, so installing Docker later still
+  # works — but a later 'sysctl --system' would silently re-apply the 0 and
+  # break container routing. Flip this to 1 if this host gains Docker.
+  IP_FWD=0; IP_FWD_NOTE="off (host is not a router) — set to 1 if you add Docker later"
+fi
 write_file "$SYSCTL_H" <<EOF
 # Minimal kernel/network hardening
 net.ipv4.ip_forward = ${IP_FWD}   # ${IP_FWD_NOTE}
@@ -1456,7 +1497,8 @@ if [[ "$DOCKER_COMPAT" == "1" ]]; then
   printf '   %sDocker-compat%s: %syes%s — ip_forward=1, forward=accept, scoped nft flush; filter via DOCKER-USER\n' \
     "$WHT" "$RESET" "$GRN" "$RESET"
 else
-  printf '   %sDocker-compat%s: no (firewall is pure-nft, forward dropped, ip_forward=0)\n' "$WHT" "$RESET"
+  printf '   %sDocker-compat%s: no (forward dropped, ip_forward=0) — scoped nft flush + docker0/br-* forward\n' "$WHT" "$RESET"
+  printf '                   accepts are still in place, so installing Docker later will not break it.\n'
 fi
 
 # Lynis security scan — details
