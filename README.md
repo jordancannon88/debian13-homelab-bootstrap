@@ -246,17 +246,19 @@ of questions up front. Pick a step to open its options, or just choose Accept to
 install with the defaults.
 
 ```text
-        Review & customise  —  [VM]
+        Setup  —  [VM]
   ┌────────────────────────────────────────────────────┐
-  │  bootstrap    [ ⚠ ]  user config                    │
-  │  harden       [ ✔ ]  hardening                      │
-  │  ancillary    [ ✔ ]  extra packages                 │
-  │  monitoring   [ ✔ ]  monitoring services            │
-  │  container    [ ✗ ]  container runtime              │
-  │  motd         [ ✔ ]  login banner                   │
-  │  docs         [ ✔ ]  connection doc                 │
-  │  ────────────────────────────────────────────────  │
-  │  ✓  Accept these settings and install               │
+  │  user         [ ⚠ ]  admin user + SSH key           │
+  │  harden       [ ✔ ]  security hardening             │
+  │  packages     [ ✔ ]  extra packages                 │
+  │  monitoring   [ ✔ ]  monitoring & alerts            │
+  │  container    [ ✗ ]  Docker / Podman                │
+  │  banner       [ ✔ ]  login banner (MOTD)            │
+  │  docs         [ ✔ ]  connection guide               │
+  │               ────────────────────────────          │
+  │  help         [ ? ]  what does each step do?        │
+  │               ────────────────────────────          │
+  │  ACCEPT       ✓  Accept these settings and install  │
   └────────────────────────────────────────────────────┘
         <Open>                              <Quit>
 ```

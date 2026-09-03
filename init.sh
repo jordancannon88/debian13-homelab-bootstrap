@@ -496,11 +496,12 @@ bs_key_icon() {
 tui_bootstrap() {
   local sel v
   while true; do
-    sel=$(hubmenu "Setup › bootstrap (user config)" 5 \
+    sel=$(hubmenu "Setup › bootstrap (user config)" 6 \
       "enabled"  "[$(onoff3 "$A_BOOTSTRAP")]  run this step" \
       "user"     "[$(valic "$PRIMARY_USER" Y)]  admin username: $(valp "$PRIMARY_USER")" \
       "sshkey"   "[$(bs_key_icon)]  SSH public key: $(bs_key_state)" \
       "password" "[$(onoff3 "$([[ -n "$ADMIN_PASSWORD" ]] && echo Y || echo N)")]  password: $([[ -n "$ADMIN_PASSWORD" ]] && echo set || echo 'SSH-key only')" \
+      " "        "────────────────────────────────────" \
       "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
@@ -611,14 +612,15 @@ tui_harden_options() {
 tui_harden() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › harden (hardening)" 8 \
+    sel=$(hubmenu "Setup › harden (security hardening)" 9 \
       "enabled"    "[$(onoff3 "$A_HARDEN")]  run this step" \
-      "components" "[ ✔ ]  components: $(hc_count)/10 enabled" \
-      "options"    "[ ✔ ]  options: $(opt_list)" \
+      "components" "[ ✔ ]  hardening components: $(hc_count)/10 on" \
+      "options"    "[ ✔ ]  extra options: $(opt_list)" \
       "sshport"    "[$(valic "$SSH_PORT" N)]  SSH port: $(valp "$SSH_PORT")" \
       "tcpports"   "[$(valic "$ALLOW_TCP_PORTS" N)]  extra TCP ports: $(valp "$ALLOW_TCP_PORTS")" \
       "udpports"   "[$(valic "$ALLOW_UDP_PORTS" N)]  extra UDP ports: $(valp "$ALLOW_UDP_PORTS")" \
-      "cidrs"      "[ ✔ ]  SSH sources: ${ALLOW_SSH_CIDRS:-any}" \
+      "cidrs"      "[ ✔ ]  SSH allowed from: ${ALLOW_SSH_CIDRS:-anywhere}" \
+      " "        "────────────────────────────────────" \
       "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
@@ -668,10 +670,11 @@ tui_ancillary_packages() {
 tui_ancillary() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › packages (extra packages)" 4 \
+    sel=$(hubmenu "Setup › packages (extra packages)" 5 \
       "enabled"  "[$(onoff3 "$A_ANCILLARY")]  run this step" \
       "packages" "[$(valic "$( [[ "$(anc_list)" != none ]] && echo x )" "$A_ANCILLARY")]  packages: $(anc_list)" \
       "fish"     "[$(onoff3 "$A_FISH_DEFAULT")]  fish as the default shell (if picked)" \
+      " "        "────────────────────────────────────" \
       "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
@@ -689,10 +692,11 @@ fish as the default shell: switches the admin user's login shell to fish once it
 tui_svc_zabbix() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › monitoring › zabbix (metrics agent)" 4 \
+    sel=$(hubmenu "Setup › monitoring › zabbix (metrics agent)" 5 \
       "enabled" "[$(onoff3 "$A_AGENT_zabbix")]  install this service" \
       "server"  "[$(valic "$ZABBIX_SERVER_ACTIVE" "$A_AGENT_zabbix")]  Zabbix server: $(valp "$ZABBIX_SERVER_ACTIVE")" \
       "docker"  "[$(onoff3 "$A_ZBX_DOCKER")]  monitor rootless Docker" \
+      " "        "────────────────────────────────────" \
       "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
@@ -710,10 +714,11 @@ monitor rootless Docker: rootless Docker's API socket lives in the owner's runti
 tui_svc_alloy() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › monitoring › alloy (log shipper)" 4 \
+    sel=$(hubmenu "Setup › monitoring › alloy (log shipper)" 5 \
       "enabled"    "[$(onoff3 "$A_AGENT_alloy")]  install this service" \
       "loki"       "[$(valic "$LOKI_URL" "$A_AGENT_alloy")]  Loki URL: $(valp "$LOKI_URL")" \
       "dockerlogs" "[$(onoff3 "$A_ALLOY_DOCKERLOGS")]  capture Docker container logs" \
+      " "        "────────────────────────────────────" \
       "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
@@ -732,10 +737,11 @@ tui_svc_buzz() {
   local sel t v cur
   while true; do
     cur="$BUZZ_TARGET"; [[ -n "$cur" && "${BUZZ_PORT:-6523}" != "6523" ]] && cur="${cur}:${BUZZ_PORT}"
-    sel=$(hubmenu "Setup › monitoring › buzz (alert relay)" 4 \
+    sel=$(hubmenu "Setup › monitoring › buzz (alert relay)" 5 \
       "enabled" "[$(onoff3 "$A_AGENT_buzz")]  install this service" \
       "alerts"  "[$(valic "$( [[ "$(buzz_alert_list)" != none ]] && echo x )" "$A_AGENT_buzz")]  alerts: $(buzz_alert_list)" \
       "relay"   "[$(valic "$BUZZ_TARGET" "$A_AGENT_buzz")]  relay address: $(valp "$cur")" \
+      " "        "────────────────────────────────────" \
       "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
@@ -772,10 +778,11 @@ relay address: the dev box the watches ssh their alerts to, as user@host or user
 tui_monitoring() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › monitoring (services)" 4 \
+    sel=$(hubmenu "Setup › monitoring (monitoring & alerts)" 5 \
       "zabbix" "[$(stat3 "$A_AGENT_zabbix" "$(need_zabbix)")]  metrics agent" \
       "alloy"  "[$(stat3 "$A_AGENT_alloy" "")]  log shipper" \
       "buzz"   "[$(stat3 "$A_AGENT_buzz" "$(need_buzz)")]  alert relay" \
+      " "        "────────────────────────────────────" \
       "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
@@ -800,12 +807,13 @@ rt_list() {
 tui_container() {
   local sel t
   while true; do
-    sel=$(hubmenu "Setup › container (container runtime)" 6 \
+    sel=$(hubmenu "Setup › container (Docker / Podman)" 7 \
       "enabled"  "[$(onoff3 "$A_CONTAINER")]  run this step" \
       "runtimes" "[$(valic "$( [[ "$(rt_list)" != none ]] && echo x )" "$A_CONTAINER")]  runtimes: $(rt_list)" \
-      "rootful"  "[$(onoff3 "$A_DISABLE_ROOTFUL")]  disable the rootful Docker daemon" \
-      "example"  "[$(onoff3 "$A_EXAMPLE_APP")]  create the example app" \
+      "rootful"  "[$(onoff3 "$A_DISABLE_ROOTFUL")]  rootless only (no root Docker daemon)" \
+      "example"  "[$(onoff3 "$A_EXAMPLE_APP")]  example app (traefik/whoami on :8080)" \
       "journald" "[$(onoff3 "$A_JOURNALD")]  container logs to the journal" \
+      " "        "────────────────────────────────────" \
       "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
@@ -837,25 +845,27 @@ container logs to the journal: sets the journald log-driver so container output 
 tui_motd() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › motd (login banner)" 3 \
+    sel=$(hubmenu "Setup › banner (login banner)" 4 \
       "enabled" "[$(onoff3 "$A_MOTD")]  run this step" \
-      "docurl"  "[$(valic "$DOC_URL" N)]  documentation URL: $(valp "$DOC_URL")" \
+      "docurl"  "[$(valic "$DOC_URL" N)]  wiki/docs link in the banner: $(valp "$DOC_URL")" \
+      " "        "────────────────────────────────────" \
       "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
       enabled) tgl A_MOTD ;;
-      help) show_help "Setup › motd › help" "run this step: installs a dynamic login banner showing host, IP, uptime, OS/kernel, load, memory, disk and sessions on every SSH login.
+      help) show_help "Setup › banner › help" "run this step: installs a dynamic login banner showing host, IP, uptime, OS/kernel, load, memory, disk and sessions on every SSH login.
 
 documentation URL: an optional link shown in the banner (your wiki page for this host, say). Blank omits it." ;;
-      docurl)  ask "Setup › motd › documentation URL" "Documentation URL to show in the banner (blank to omit):" "$DOC_URL" DOC_URL ;;
+      docurl)  ask "Setup › banner › docs link" "Documentation URL to show in the banner (blank to omit):" "$DOC_URL" DOC_URL ;;
     esac
   done
 }
 tui_docs() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › docs (connection doc)" 2 \
+    sel=$(hubmenu "Setup › docs (connection guide)" 3 \
       "enabled" "[$(onoff3 "$A_DOC")]  run this step" \
+      " "        "────────────────────────────────────" \
       "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
@@ -872,24 +882,25 @@ tui_main() {
     sel=$(whiptail --backtitle "$BACKTITLE" --title "Setup  —  [${ENV_TYPE^^}]" \
       --ok-button "Open" --cancel-button "Quit" \
       --menu "${MENU_HINT}"$'\n'"Defaults are pre-set — choose Accept to install as-is." 21 78 11 \
-      "bootstrap"  "[$(stat3 "$A_BOOTSTRAP" "$(need_bootstrap)")]  user config" \
-      "harden"     "[$(stat3 "$A_HARDEN" "$(need_harden)")]  hardening" \
-      "ancillary"  "[$(stat3 "$A_ANCILLARY" "$(need_ancillary)")]  extra packages" \
-      "monitoring" "[$(stat3 "$A_MONITORING" "$(need_monitoring)")]  monitoring services" \
-      "container"  "[$(stat3 "$A_CONTAINER" "$(need_container)")]  container runtime" \
-      "motd"       "[$(stat3 "$A_MOTD" "")]  login banner" \
-      "docs"       "[$(stat3 "$A_DOC" "")]  connection doc" \
+      "user"       "[$(stat3 "$A_BOOTSTRAP" "$(need_bootstrap)")]  admin user + SSH key" \
+      "harden"     "[$(stat3 "$A_HARDEN" "$(need_harden)")]  security hardening" \
+      "packages"   "[$(stat3 "$A_ANCILLARY" "$(need_ancillary)")]  extra packages" \
+      "monitoring" "[$(stat3 "$A_MONITORING" "$(need_monitoring)")]  monitoring & alerts" \
+      "container"  "[$(stat3 "$A_CONTAINER" "$(need_container)")]  Docker / Podman" \
+      "banner"     "[$(stat3 "$A_MOTD" "")]  login banner (MOTD)" \
+      "docs"       "[$(stat3 "$A_DOC" "")]  connection guide" \
+      " "          "────────────────────────────────────" \
       "help"       "[ ? ]  what does each step do?" \
-      "sep"        "────────────────────────────────────" \
+      "  "         "────────────────────────────────────" \
       "ACCEPT"     "✓  Accept these settings and install" \
       3>&1 1>&2 2>&3) || { if whiptail --backtitle "$BACKTITLE" --yesno "Quit without installing?" 8 50; then clear; info "Cancelled — nothing was changed."; exit 0; fi; continue; }
     case "$sel" in
-      bootstrap)  tui_bootstrap ;;
+      user)       tui_bootstrap ;;
       harden)     tui_harden ;;
-      ancillary)  tui_ancillary ;;
+      packages)   tui_ancillary ;;
       monitoring) tui_monitoring ;;
       container)  tui_container ;;
-      motd)       tui_motd ;;
+      banner)     tui_motd ;;
       docs)       tui_docs ;;
       help) show_help "Setup › help" "bootstrap: creates/updates the admin user and installs its SSH key — runs first; hardening relies on it.
 
@@ -904,7 +915,6 @@ container runtime: Docker and/or Podman, rootless, plus the /opt/docker layout.
 login banner: dynamic MOTD with live host info on every login.
 
 connection doc: generates an HTML how-to-connect page for this host." ;;
-      sep)        : ;;
       ACCEPT)     if validate_tui; then break; fi ;;
     esac
   done
