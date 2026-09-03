@@ -404,6 +404,17 @@ if [[ "$SSH_PORT" == "22" ]]; then
   ALLOW_SSH_PORT_22=0
 fi
 
+# --- Competing firewall managers ----------------------------------------------
+# ufw/firewalld also program netfilter; running them alongside this nftables
+# ruleset means packets must pass BOTH filters and rules fight each other.
+if [[ "$HARDEN_FIREWALL" == "1" ]]; then
+  for _fw in ufw firewalld; do
+    if systemctl is-active --quiet "$_fw" 2>/dev/null; then
+      warn "${_fw} is active — it will filter alongside this nftables ruleset (both apply; either can drop). Disable one: systemctl disable --now ${_fw}, or skip this firewall with HARDEN_FIREWALL=0."
+    fi
+  done
+fi
+
 # --- Proxmox VE host guard ----------------------------------------------------
 # A bare PVE host reached over its web UI must not be cut off by the firewall,
 # and cluster ssh assumes port 22. Auto-repair the ports; warn on the rest.

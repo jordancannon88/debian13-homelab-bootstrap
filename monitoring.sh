@@ -196,7 +196,18 @@ require_root() { if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then err "Run as root (e.g.
 open_firewall_port() {
   local proto="$1" port="$2" what="${3:-service}"
   local conf=/etc/nftables.conf
-  [[ -f "$conf" ]] && grep -q 'deny-by-default' "$conf" || return 0
+  if ! { [[ -f "$conf" ]] && grep -q 'deny-by-default' "$conf"; }; then
+    # No firewall from this bootstrap. Two possibilities:
+    #  - no filtering at all (Debian default ACCEPT): nothing to open, silent;
+    #  - a FOREIGN firewall (ufw/firewalld/custom nftables): never edit
+    #    someone else's ruleset — tell the operator what to open instead.
+    if systemctl is-active --quiet ufw 2>/dev/null \
+       || systemctl is-active --quiet firewalld 2>/dev/null \
+       || { [[ -f "$conf" ]] && systemctl is-active --quiet nftables 2>/dev/null; }; then
+      warn "A firewall not managed by this bootstrap is active — open ${proto}/${port} for ${what} in it yourself."
+    fi
+    return 0
+  fi
   if grep -qE "^[[:space:]]*${proto} dport ${port} ct state new accept" "$conf"; then
     return 0
   fi
