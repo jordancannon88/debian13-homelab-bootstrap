@@ -13,7 +13,7 @@ one consolidated report: a review of what ran plus a single next-steps list.
 - [What's in the box](#whats-in-the-box)
 - [Packages installed](#packages-installed)
 - [Quick start](#quick-start)
-- [VM vs LXC and the setup menu](#vm-vs-lxc-and-the-setup-menu)
+- [VM, LXC or PVE host, and the setup menu](#vm-lxc-or-pve-host-and-the-setup-menu)
 - [Container runtimes and the /opt/docker layout](#container-runtimes-and-the-optdocker-layout)
 - [Environment overrides](#environment-overrides)
 - [Troubleshooting](#troubleshooting)
@@ -221,13 +221,24 @@ sudo ./motd.sh        # 6. install the dynamic login banner (MOTD)
 ./documentation.sh    # 7. generate docs/connect.html (no sudo needed)
 ```
 
-## VM vs LXC and the setup menu
+## VM, LXC or PVE host, and the setup menu
 
-When you run `init.sh`, the first question is whether this host is a VM or an
-LXC container (it autodetects and pre-selects the likely answer). That choice
-sets the defaults for everything that follows. For example the QEMU guest agent
-defaults to yes on a VM and no in an LXC, where it has no use. Most questions
-are the same on both; the VM/LXC switch just picks better starting points.
+When you run `init.sh`, the first question is what this host is: a VM, an LXC
+container, or a Proxmox VE host (the hypervisor itself). It autodetects and
+pre-selects the likely answer — `pveversion` on the system means PVE host. That
+choice sets the defaults for everything that follows. For example the QEMU
+guest agent defaults to yes on a VM and no elsewhere, where it has no use. Most
+questions are the same everywhere; the environment switch just picks better
+starting points.
+
+The PVE-host defaults exist because a hypervisor breaks differently than a
+guest: the root password lock is off (the web UI's `root@pam` login needs a
+working root password), the firewall is pre-seeded with 8006 (web UI) and 3128
+(SPICE console proxy), the SSH port defaults to 22 (inter-node ssh for
+migration, replication and cluster joins assumes it — change it only
+fleet-wide), the usb-storage blacklist is off (passthrough and installer
+media), and the buzz repl/ha watches default on since their tooling lives
+there. Everything stays editable in the menu.
 
 `init.sh` then opens a whiptail menu (TUI): a single hub that lists every step
 with its current state, pre-filled from those defaults. You don't answer a wall
@@ -378,7 +389,7 @@ folder.
 | Variable | Effect |
 | --- | --- |
 | `REPO_RAW_BASE=<url>` | Base raw URL to download scripts from (a fork or branch) |
-| `ENV_TYPE=vm\|lxc` | Preselect the VM/LXC choice in the menu (else autodetected) |
+| `ENV_TYPE=vm\|lxc\|pve` | Preselect the environment choice in the menu (else autodetected) |
 
 > `init.sh` is TUI-only and has no `ASSUME_YES`/unattended mode; it always opens the menu.
 
@@ -497,8 +508,8 @@ Every field auto-detects from the host it runs on (or is prompted); set any
 
 > The individual scripts accept `ASSUME_YES=1` (answer yes to every prompt) when
 > run on their own. `init.sh` itself is TUI-only; it ignores `ASSUME_YES` and
-> always opens the whiptail menu. It takes `ENV_TYPE=vm\|lxc` to preselect the
-> VM/LXC choice.
+> always opens the whiptail menu. It takes `ENV_TYPE=vm\|lxc\|pve` to preselect
+> the environment choice.
 
 ## Troubleshooting
 
@@ -589,10 +600,12 @@ sudo ss -ltnp | grep <port>          # confirm sshd is listening on the new port
 - outbound HTTPS, for Option 1 and for Docker installation
 - bare metal, a VM, or an LXC container (tested on Proxmox VMs and LXC containers)
 
-> VM vs LXC: `harden.sh` auto-detects whether it's running in an LXC container
-> and skips host-managed steps that can't work inside one, most notably AppArmor
-> and auditd, whose subsystems are owned by the Proxmox host kernel (enable and
-> confirm them on the host, not in the container; auditd isn't even installed
-> inside a container). On bare metal and full VMs every step runs as normal. The
-> optional `qemu-guest-agent` package (via `ancillary.sh`) is only useful inside
-> a VM.
+> VM vs LXC vs PVE host: `harden.sh` auto-detects whether it's running in an
+> LXC container and skips host-managed steps that can't work inside one, most
+> notably AppArmor and auditd, whose subsystems are owned by the Proxmox host
+> kernel (enable and confirm them on the host, not in the container; auditd
+> isn't even installed inside a container). On bare metal, full VMs and PVE
+> hosts every step runs as normal, and `init.sh`'s `pve` environment adjusts
+> the recommended defaults (see the setup-menu section) so hardening doesn't
+> break the web UI, console, or cluster ssh. The optional `qemu-guest-agent`
+> package (via `ancillary.sh`) is only useful inside a VM.

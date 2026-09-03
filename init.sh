@@ -126,6 +126,11 @@ describe() {
 # sets default ANSWERS (e.g. the QEMU guest agent — useful on a VM, pointless in
 # an LXC); everything is shown for review and is editable before anything runs.
 detect_env_default() {
+  # A Proxmox VE host is Debian underneath, so detect it FIRST — pveversion (or
+  # a mounted /etc/pve) means this is the hypervisor itself, not a guest.
+  if command -v pveversion >/dev/null 2>&1 || [[ -d /etc/pve/local ]]; then
+    printf 'pve'; return
+  fi
   if command -v systemd-detect-virt >/dev/null 2>&1; then
     case "$(systemd-detect-virt 2>/dev/null || true)" in
       lxc|lxc-libvirt|systemd-nspawn|openvz) printf 'lxc'; return;;
@@ -139,8 +144,15 @@ detect_env_default() {
   printf 'vm'
 }
 
-# env-aware Y/N default: yn_def <vm-default> <lxc-default>
-yn_def() { [[ "$ENV_TYPE" == "vm" ]] && printf '%s' "$1" || printf '%s' "$2"; }
+# env-aware Y/N default: yn_def <vm-default> <lxc-default> [<pve-default>]
+# (the pve default falls back to the vm one when a call doesn't care)
+yn_def() {
+  case "$ENV_TYPE" in
+    vm)  printf '%s' "$1";;
+    pve) printf '%s' "${3:-$1}";;
+    *)   printf '%s' "$2";;
+  esac
+}
 
 declare -A STATUS DETAIL SUMM LOGS
 SELECTED=(); ANCILLARY_PICK=(); MONITORING_PICK=()
@@ -168,15 +180,20 @@ compute_defaults() {
   A_BOOTSTRAP="$(yn_def Y Y)"; A_HARDEN="$(yn_def Y Y)"; A_ANCILLARY="$(yn_def Y Y)"
   A_MONITORING="$(yn_def Y Y)"; A_CONTAINER="$(yn_def N N)"; A_MOTD="$(yn_def N N)"; A_DOC="$(yn_def Y Y)"
   A_PKG_vim="$(yn_def Y Y)"; A_PKG_btop="$(yn_def Y Y)"; A_PKG_duf="$(yn_def Y Y)"
-  A_PKG_fish="$(yn_def Y Y)"; A_PKG_rsync="$(yn_def Y Y)"; A_PKG_qemu="$(yn_def Y N)"
+  A_PKG_fish="$(yn_def Y Y)"; A_PKG_rsync="$(yn_def Y Y)"; A_PKG_qemu="$(yn_def Y N N)"
   A_AGENT_zabbix="$(yn_def Y Y)"; A_AGENT_alloy="$(yn_def Y Y)"
   # buzz is off by default: it needs a dev box running the forced-command
   # dispatcher, and its key must be registered there before alerts flow.
   A_AGENT_buzz="$(yn_def N N)"
-  A_BUZZ_disk=Y; A_BUZZ_repl=N; A_BUZZ_ha=N; A_BUZZ_tbmesh=N
+  # On a PVE host the Proxmox watches are worth having by default (their
+  # tooling exists there); tbmesh stays opt-in (Thunderbolt-mesh nodes only).
+  A_BUZZ_disk=Y; A_BUZZ_repl="$(yn_def N N Y)"; A_BUZZ_ha="$(yn_def N N Y)"; A_BUZZ_tbmesh=N
   BUZZ_PORT="${BUZZ_PORT:-6523}"
   A_FISH_DEFAULT="$(yn_def Y Y)"
-  A_UPGRADE="$(yn_def Y Y)"; A_LOCKROOT="$(yn_def Y Y)"; A_USBBLACK="$(yn_def Y Y)"
+  # PVE host: root@pam web-UI login needs the root password UNLOCKED, and
+  # hypervisors routinely need USB (passthrough, installer media) — so both
+  # hardening extras default OFF there.
+  A_UPGRADE="$(yn_def Y Y)"; A_LOCKROOT="$(yn_def Y Y N)"; A_USBBLACK="$(yn_def Y Y N)"
   A_ZBX_DOCKER="$(yn_def N N)"; A_ALLOY_DOCKERLOGS="$(yn_def N N)"
   # Neither runtime is pre-selected: enabling the container step then opens the
   # runtime picker where you explicitly choose Docker and/or Podman. (Pre-ticking
@@ -185,7 +202,16 @@ compute_defaults() {
   A_DOCKER="N"; A_PODMAN="N"; A_DISABLE_ROOTFUL="$(yn_def Y Y)"
   A_EXAMPLE_APP="$(yn_def Y Y)"; A_JOURNALD="$(yn_def N N)"
   # Default SSH port: a random high port (away from 22 and the ephemeral range).
-  SSH_PORT="${SSH_PORT:-$(( RANDOM % 22000 + 10000 ))}"
+  # On a PVE host, default to 22 instead: inter-node ssh (migration,
+  # replication, cluster join) assumes it — change it only fleet-wide.
+  if [[ "$ENV_TYPE" == "pve" ]]; then
+    SSH_PORT="${SSH_PORT:-22}"
+    # The PVE web UI (8006) and SPICE console proxy (3128) must stay reachable
+    # through the deny-by-default firewall.
+    [[ -z "$ALLOW_TCP_PORTS" ]] && ALLOW_TCP_PORTS="8006 3128"
+  else
+    SSH_PORT="${SSH_PORT:-$(( RANDOM % 22000 + 10000 ))}"
+  fi
   LOKI_URL="${LOKI_URL:-loki:3100}"
   ZABBIX_SERVER_ACTIVE="${ZABBIX_SERVER_ACTIVE:-zabbix:10051}"
   # Default admin user: the sudo invoker, else the sole human account (if any).
@@ -327,11 +353,12 @@ validate_tui() {
 
 tui_env() {
   local def sel; def="${ENV_TYPE:-}"
-  [[ "$def" == "vm" || "$def" == "lxc" ]] || def="$(detect_env_default)"
+  [[ "$def" == "vm" || "$def" == "lxc" || "$def" == "pve" ]] || def="$(detect_env_default)"
   sel=$(whiptail --backtitle "$BACKTITLE" --title "Environment" --default-item "$def" \
-    --menu "Is this host a VM or an LXC container?\n(sets sensible defaults — you can change anything next)" 13 66 2 \
+    --menu "What is this host?\n(sets sensible defaults — you can change anything next)" 14 72 3 \
     "vm"  "Virtual machine (KVM/QEMU, etc.)" \
     "lxc" "Proxmox / LXC system container" \
+    "pve" "Proxmox VE host (the hypervisor itself)" \
     3>&1 1>&2 2>&3) || { clear; info "Cancelled — nothing was changed."; exit 0; }
   ENV_TYPE="$sel"
 }
