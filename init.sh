@@ -350,21 +350,14 @@ need_monitoring() {
   [[ "$A_AGENT_buzz" == Y && "$(buzz_alert_list)" == "none" ]] && n+=("alert pick")
   local IFS='+'; printf '%s' "${n[*]:-}"
 }
-# need_tag <needs> — render the hub-line marker (" ⚠ needs X"), or nothing.
-need_tag() { [[ -n "$1" ]] && printf ' ⚠ needs %s' "$1"; return 0; }
-# boot_key_note — say WHERE the SSH key requirement is satisfied from, so a
-# quiet bootstrap line is explainable ("key on file" = the user already exists
-# with a populated authorized_keys; no key is ever defaulted).
-boot_key_note() {
-  local akf
-  [[ "$A_BOOTSTRAP" == Y ]] || return 0
-  if [[ -n "$PUBKEY" ]]; then
-    printf ' (key entered)'
-  elif [[ -n "$PRIMARY_USER" ]] && id "$PRIMARY_USER" &>/dev/null; then
-    akf="$(getent passwd "$PRIMARY_USER" 2>/dev/null | cut -d: -f6)/.ssh/authorized_keys"
-    [[ -s "$akf" ]] && printf ' (key on file)'
+# stat3 <Y/N> <needs> — the hub status bracket: "no " when the step is off,
+# " ⚠ " when it's on but still needs configuration, "yes" when ready. The
+# bracket IS the indicator; open the step to see and fill in what's missing.
+stat3() {
+  if [[ "$1" != "Y" ]]; then printf 'no '
+  elif [[ -n "$2" ]]; then printf ' ⚠ '
+  else printf 'yes'
   fi
-  return 0
 }
 
 # validate_tui — check required inputs are present; collect any problems and
@@ -582,11 +575,11 @@ tui_main() {
   while true; do
     sel=$(whiptail --backtitle "$BACKTITLE" --title "Review & customise  —  [${ENV_TYPE^^}]" \
       --ok-button "Open" --cancel-button "Quit" \
-      --menu "Select a step to change its options, then choose Accept.\nThe defaults are already set — just Accept to use them as-is.\n⚠ marks a step that needs configuration before install." 21 78 11 \
-      "bootstrap"  "[$(pad3 "$A_BOOTSTRAP")]  admin user + SSH key$(boot_key_note)$(need_tag "$(need_bootstrap)")" \
-      "harden"     "[$(pad3 "$A_HARDEN")]  hardening — SSH port ${SSH_PORT:-22}$(need_tag "$(need_harden)")" \
+      --menu "Select a step to change its options, then choose Accept.\nThe defaults are already set — just Accept to use them as-is.\n[ ⚠ ] = needs configuration — open the step to fill it in." 21 78 11 \
+      "bootstrap"  "[$(stat3 "$A_BOOTSTRAP" "$(need_bootstrap)")]  admin user + SSH key" \
+      "harden"     "[$(stat3 "$A_HARDEN" "$(need_harden)")]  hardening — SSH port ${SSH_PORT:-22}" \
       "ancillary"  "[$(pad3 "$A_ANCILLARY")]  packages: $(anc_list)" \
-      "monitoring" "[$(pad3 "$A_MONITORING")]  agents: $(mon_list)$(need_tag "$(need_monitoring)")" \
+      "monitoring" "[$(stat3 "$A_MONITORING" "$(need_monitoring)")]  agents: $(mon_list)" \
       "container"  "[$(pad3 "$A_CONTAINER")]  runtime: $(ct_list)" \
       "motd"       "[$(pad3 "$A_MOTD")]  dynamic login banner" \
       "docs"       "[$(pad3 "$A_DOC")]  SSH connection doc" \
