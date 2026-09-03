@@ -404,8 +404,9 @@ materialize_selection() {
     [[ "$A_SH_tcsh" == Y ]] && _shells+="tcsh "
     export SHELL_PKGS="${_shells% }"
     export DEFAULT_SHELL="$DEFAULT_SHELL_CHOICE"
-    if [[ "$DEFAULT_SHELL_CHOICE" != "keep" && -n "$PRIMARY_USER" ]]; then
-      export SHELL_USERS="$PRIMARY_USER"
+    if [[ "$DEFAULT_SHELL_CHOICE" != "keep" ]]; then
+      # The default shell applies to the admin user AND root.
+      export SHELL_USERS="${PRIMARY_USER:+${PRIMARY_USER} }root"
     else
       export SHELL_USERS="none"
     fi
@@ -860,7 +861,7 @@ tui_shell() {
     local items=("enabled" "[$(onoff3 "$A_SHELL")]  run this step$([[ "$A_SHELL" == Y ]] || echo ' — enable to configure')")
     if [[ "$A_SHELL" == Y ]]; then
       items+=("install" "[ ✔ ]  shells to install: $(shell_list)")
-      items+=("default" "[ ✔ ]  default login shell: ${DEFAULT_SHELL_CHOICE}$( [[ "$DEFAULT_SHELL_CHOICE" == keep ]] && echo ' (unchanged)' || true )")
+      items+=("default" "[ ✔ ]  default shell (admin + root): ${DEFAULT_SHELL_CHOICE}$( [[ "$DEFAULT_SHELL_CHOICE" == keep ]] && echo ' (unchanged)' || true )")
     fi
     items+=(" " "────────────────────────────────────")
     items+=("help" "[ ? ]  what does each setting do?")
@@ -880,17 +881,17 @@ tui_shell() {
       default)
         if v=$(whiptail --backtitle "$BACKTITLE" --title "Setup › shell › default shell" \
             --default-item "$DEFAULT_SHELL_CHOICE" \
-            --menu "Default LOGIN shell for the admin user.\nThe shell is verified before any change — a broken login\nshell would be an SSH lockout once password auth is off." 16 70 6 \
-            "keep" "keep the current shell (no change)" \
-            "bash" "GNU bash (Debian default)" \
-            "sh"   "POSIX sh (dash)" \
-            "fish" "fish" \
-            "zsh"  "zsh" \
-            "tcsh" "tcsh" \
+            --menu "Default LOGIN shell for the admin user AND root.\nThe shell is verified before any change — a broken login\nshell would be an SSH lockout once password auth is off." 16 74 6 \
+            "keep" "Keep the current shells (no change)" \
+            "bash" "GNU bash — the Debian default" \
+            "sh"   "POSIX sh (dash) — minimal, script-safe" \
+            "fish" "fish — friendly, autosuggestions out of the box" \
+            "zsh"  "zsh — powerful, oh-my-zsh ecosystem" \
+            "tcsh" "tcsh — C-shell syntax" \
             3>&1 1>&2 2>&3); then DEFAULT_SHELL_CHOICE="$v"; fi ;;
       help) show_help "Setup › shell › help" "shells to install: extra shells added via apt — fish (friendly, great defaults), zsh (popular, oh-my-zsh ecosystem), tcsh (C-shell syntax). bash and sh always exist on Debian and need no install.
 
-default login shell: which shell the admin user lands in at login. 'keep' changes nothing. Any other choice is applied to the admin user (or the users bootstrap created), and only after the shell binary passes a smoke test — a broken login shell would lock you out of SSH once password auth is disabled. If you pick a shell that isn't installed and isn't selected above, the hub shows a warning." ;;
+default shell: which shell the admin user AND root land in at login. 'keep' changes nothing. Any other choice is applied to both accounts, and only after the shell binary passes a smoke test — a broken login shell would lock you out of SSH once password auth is disabled. If you pick a shell that isn't installed and isn't selected above, the hub shows a warning." ;;
     esac
   done
 }
