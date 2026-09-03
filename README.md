@@ -281,7 +281,9 @@ its own line showing its current value:
 Toggle lines (`enabled`, yes/no settings) flip in place when you select them;
 value lines open an input screen; list lines open a checklist. Breadcrumb
 titles (`Setup › monitoring › buzz › relay address`) always show where you
-are, and Cancel/Back never loses anything.
+are, and Cancel/Back never loses anything. Every menu also carries a
+`[ ? ] help` line that opens a plain-language explanation of each setting on
+that screen.
 
 - Monitoring is a hub of services (zabbix, alloy, buzz), each opening its own
   sub-hub with exactly that service's settings — the Zabbix server address, the
