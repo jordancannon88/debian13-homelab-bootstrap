@@ -318,6 +318,13 @@ materialize_selection() {
       [[ "$A_DISABLE_ROOTFUL" == "Y" ]] && export DISABLE_ROOTFUL=1 || export DISABLE_ROOTFUL=0
     fi
     [[ "$A_EXAMPLE_APP" == "Y" ]] && export CREATE_EXAMPLE_APP=1 || export CREATE_EXAMPLE_APP=0
+    # Rootless published ports are subject to the deny-by-default input
+    # filter — open the example app's port so it works out of the box.
+    if [[ "$A_EXAMPLE_APP" == "Y" && "$A_HARDEN" == "Y" && "$A_HC_firewall" == "Y" ]] \
+       && ! grep -qw 8080 <<<"${ALLOW_TCP_PORTS//,/ }"; then
+      ALLOW_TCP_PORTS="${ALLOW_TCP_PORTS:+${ALLOW_TCP_PORTS} }8080"
+      export ALLOW_TCP_PORTS
+    fi
     [[ "$A_JOURNALD"    == "Y" ]] && export DOCKER_JOURNALD_LOGS=1 || export DOCKER_JOURNALD_LOGS=0
   fi
   [[ "$A_MOTD" == "Y" ]] && export DOC_URL
