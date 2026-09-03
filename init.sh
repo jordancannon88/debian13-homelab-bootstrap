@@ -760,7 +760,7 @@ tui_harden_options() {
 tui_harden() {
   local sel
   while true; do
-    local items=("enabled" "[$(onoff3 "$A_HARDEN")]  run this step$([[ "$A_HARDEN" == Y ]] || echo ' — enable to configure')$( (( ${SYS_HARDENED:-0} )) && echo ' (re-run)' )")
+    local items=("enabled" "[$(onoff3 "$A_HARDEN")]  run this step$([[ "$A_HARDEN" == Y ]] || echo ' — enable to configure')$( (( ${SYS_HARDENED:-0} )) && echo ' (re-run)' || true )")
     if (( ${SYS_UFW:-0} )) || (( ${SYS_FIREWALLD:-0} )); then
       items+=("fwconflict" "[ ⚠ ]  another firewall is active — press Enter for details")
     fi
@@ -860,7 +860,7 @@ tui_shell() {
     local items=("enabled" "[$(onoff3 "$A_SHELL")]  run this step$([[ "$A_SHELL" == Y ]] || echo ' — enable to configure')")
     if [[ "$A_SHELL" == Y ]]; then
       items+=("install" "[ ✔ ]  shells to install: $(shell_list)")
-      items+=("default" "[ ✔ ]  default login shell: ${DEFAULT_SHELL_CHOICE}$( [[ "$DEFAULT_SHELL_CHOICE" == keep ]] && echo ' (unchanged)' )")
+      items+=("default" "[ ✔ ]  default login shell: ${DEFAULT_SHELL_CHOICE}$( [[ "$DEFAULT_SHELL_CHOICE" == keep ]] && echo ' (unchanged)' || true )")
     fi
     items+=(" " "────────────────────────────────────")
     items+=("help" "[ ? ]  what does each setting do?")
@@ -1036,9 +1036,9 @@ rt_list() {
 tui_container() {
   local sel t
   while true; do
-    local items=("enabled" "[$(onoff3 "$A_CONTAINER")]  run this step$([[ "$A_CONTAINER" == Y ]] || echo ' — enable to configure')$( (( ${SYS_DOCKER_RUNNING:-0} > 0 )) && echo " ⚠ ${SYS_DOCKER_RUNNING} containers running" )")
+    local items=("enabled" "[$(onoff3 "$A_CONTAINER")]  run this step$([[ "$A_CONTAINER" == Y ]] || echo ' — enable to configure')$( (( ${SYS_DOCKER_RUNNING:-0} > 0 )) && echo " ⚠ ${SYS_DOCKER_RUNNING} containers running" || true )")
     if [[ "$A_CONTAINER" == Y ]]; then
-      items+=("runtimes" "[$(valic "$( [[ "$(rt_list)" != none ]] && echo x )" "$A_CONTAINER")]  runtimes: $(rt_list)$( (( ${SYS_DOCKER:-0} )) && echo ' (docker installed)' )")
+      items+=("runtimes" "[$(valic "$( [[ "$(rt_list)" != none ]] && echo x )" "$A_CONTAINER")]  runtimes: $(rt_list)$( (( ${SYS_DOCKER:-0} )) && echo ' (docker installed)' || true )")
       items+=("rootful"  "[$(onoff3 "$A_DISABLE_ROOTFUL")]  rootless only (no root Docker daemon)")
       items+=("example"  "[$(onoff3 "$A_EXAMPLE_APP")]  example app (traefik/whoami on :8080)")
       items+=("journald" "[$(onoff3 "$A_JOURNALD")]  container logs to the journal")
@@ -1176,6 +1176,10 @@ run_wizard() {
     err "Install it manually ( apt-get install whiptail ) and re-run."
     exit 1
   fi
+  # Blank the screen for the duration of the menu session: whiptail dialogs
+  # are separate processes, so a brief flash of the underlying terminal
+  # between menus is inherent — make that frame empty instead of the splash.
+  clear 2>/dev/null || true
   tui_wizard
   clear 2>/dev/null || true
 }
