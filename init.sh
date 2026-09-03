@@ -472,6 +472,12 @@ ask() {
   fi
 }
 
+# show_help <breadcrumb> <text> — uniform info screen; every menu carries a
+# help line so what a setting does is always one Enter away.
+show_help() {
+  whiptail --backtitle "$BACKTITLE" --title "$1" --scrolltext --msgbox "$2" 20 74
+}
+
 # --- bootstrap ----------------------------------------------------------------
 bs_key_state() {
   local akf
@@ -490,11 +496,12 @@ bs_key_icon() {
 tui_bootstrap() {
   local sel v
   while true; do
-    sel=$(hubmenu "Setup › bootstrap (user config)" 4 \
+    sel=$(hubmenu "Setup › bootstrap (user config)" 5 \
       "enabled"  "[$(onoff3 "$A_BOOTSTRAP")]  run this step" \
       "user"     "[$(valic "$PRIMARY_USER" Y)]  admin username: $(valp "$PRIMARY_USER")" \
       "sshkey"   "[$(bs_key_icon)]  SSH public key: $(bs_key_state)" \
       "password" "[$(onoff3 "$([[ -n "$ADMIN_PASSWORD" ]] && echo Y || echo N)")]  password: $([[ -n "$ADMIN_PASSWORD" ]] && echo set || echo 'SSH-key only')" \
+      "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
       enabled)  tgl A_BOOTSTRAP ;;
@@ -504,6 +511,13 @@ tui_bootstrap() {
             --inputbox "Paste the admin user's PUBLIC SSH key.\nLeave blank to use an existing authorized_keys file.\n\n(Cancel keeps the current value.)" 13 78 "$PUBKEY" 3>&1 1>&2 2>&3); then
           PUBKEY="${v#"${v%%[![:space:]]*}"}"; PUBKEY="${PUBKEY%"${PUBKEY##*[![:space:]]}"}"
         fi ;;
+      help) show_help "Setup › bootstrap › help" "enabled: whether this step runs at install time.
+
+user: the admin account to create or update. It gets sudo and is the account you log in with after hardening.
+
+SSH public key: pasted into the user's authorized_keys. Required when the harden step's SSH lockdown runs, because that disables password login — without a working key you would be locked out. If the user already exists with keys on file, this can stay blank.
+
+password: optional login password for a NEWLY created account. Blank means SSH-key only (recommended). Existing accounts are never changed." ;;
       password) tui_get_password "${PRIMARY_USER:-admin}" ;;
     esac
   done
@@ -597,7 +611,7 @@ tui_harden_options() {
 tui_harden() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › harden (hardening)" 7 \
+    sel=$(hubmenu "Setup › harden (hardening)" 8 \
       "enabled"    "[$(onoff3 "$A_HARDEN")]  run this step" \
       "components" "[ ✔ ]  components: $(hc_count)/10 enabled" \
       "options"    "[ ✔ ]  options: $(opt_list)" \
@@ -605,6 +619,7 @@ tui_harden() {
       "tcpports"   "[$(valic "$ALLOW_TCP_PORTS" N)]  extra TCP ports: $(valp "$ALLOW_TCP_PORTS")" \
       "udpports"   "[$(valic "$ALLOW_UDP_PORTS" N)]  extra UDP ports: $(valp "$ALLOW_UDP_PORTS")" \
       "cidrs"      "[ ✔ ]  SSH sources: ${ALLOW_SSH_CIDRS:-any}" \
+      "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
       enabled)    tgl A_HARDEN ;;
@@ -613,6 +628,15 @@ tui_harden() {
       sshport)    ask "Setup › harden › SSH port" "SSH port (a random high port is suggested;\non a PVE host keep 22 for cluster ssh):" "${SSH_PORT:-22}" SSH_PORT ;;
       tcpports)   ask "Setup › harden › extra TCP ports" "Extra TCP ports to open (space-separated, blank for none):" "$ALLOW_TCP_PORTS" ALLOW_TCP_PORTS raw ;;
       udpports)   ask "Setup › harden › extra UDP ports" "Extra UDP ports to open (space-separated, blank for none):" "$ALLOW_UDP_PORTS" ALLOW_UDP_PORTS raw ;;
+      help) show_help "Setup › harden › help" "components: which hardening subsystems run — SSH lockdown, nftables firewall, fail2ban, automatic security updates, persistent journald, AppArmor, AIDE, sysctl, extra Lynis fixes, closing audit. All on by default.
+
+options: toggles within those components — apt full-upgrade, locking the root password (sudo still works), blacklisting usb-storage (disables USB drives), TOTP 2FA for SSH, restricting compilers to root, opening ports 80/443.
+
+SSH port: where sshd listens. Keep 22 on a PVE host (cluster ssh assumes it); elsewhere a random high port cuts scan noise.
+
+extra TCP/UDP ports: opened through the deny-by-default firewall — published container ports need this.
+
+SSH sources: limit which source networks may reach SSH at all (blank = anywhere)." ;;
       cidrs)      ask "Setup › harden › SSH sources" "Restrict SSH to these source CIDRs\n(space-separated, blank = allow from anywhere):" "$ALLOW_SSH_CIDRS" ALLOW_SSH_CIDRS raw ;;
     esac
   done
@@ -644,14 +668,18 @@ tui_ancillary_packages() {
 tui_ancillary() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › packages (extra packages)" 3 \
+    sel=$(hubmenu "Setup › packages (extra packages)" 4 \
       "enabled"  "[$(onoff3 "$A_ANCILLARY")]  run this step" \
       "packages" "[$(valic "$( [[ "$(anc_list)" != none ]] && echo x )" "$A_ANCILLARY")]  packages: $(anc_list)" \
       "fish"     "[$(onoff3 "$A_FISH_DEFAULT")]  fish as the default shell (if picked)" \
+      "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
       enabled)  tgl A_ANCILLARY ;;
       packages) tui_ancillary_packages ;;
+      help) show_help "Setup › packages › help" "packages: quality-of-life tools — vim, btop (resource monitor), duf (disk usage), fish (shell), rsync, and the QEMU guest agent (useful only inside a VM: enables clean shutdown, IP reporting and snapshots from the host).
+
+fish as the default shell: switches the admin user's login shell to fish once it is installed." ;;
       fish)     tgl A_FISH_DEFAULT ;;
     esac
   done
@@ -661,14 +689,20 @@ tui_ancillary() {
 tui_svc_zabbix() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › monitoring › zabbix (metrics agent)" 3 \
+    sel=$(hubmenu "Setup › monitoring › zabbix (metrics agent)" 4 \
       "enabled" "[$(onoff3 "$A_AGENT_zabbix")]  install this service" \
       "server"  "[$(valic "$ZABBIX_SERVER_ACTIVE" "$A_AGENT_zabbix")]  Zabbix server: $(valp "$ZABBIX_SERVER_ACTIVE")" \
       "docker"  "[$(onoff3 "$A_ZBX_DOCKER")]  monitor rootless Docker" \
+      "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
       enabled) tgl A_AGENT_zabbix ;;
       server)  ask "Setup › monitoring › zabbix › server" "Zabbix server/proxy for active checks (host or host:port):" "${ZABBIX_SERVER_ACTIVE:-zabbix:10051}" ZABBIX_SERVER_ACTIVE ;;
+      help) show_help "Setup › monitoring › zabbix › help" "install this service: adds Zabbix's apt repo and installs zabbix-agent2.
+
+Zabbix server: the server/proxy the agent reports to for active checks (host or host:port). The host must also be added on the Zabbix server side.
+
+monitor rootless Docker: rootless Docker's API socket lives in the owner's runtime dir, which the agent normally cannot reach. This points the Docker plugin at that socket, enables lingering, and runs the agent as that user so container metrics work." ;;
       docker)  tgl A_ZBX_DOCKER ;;
     esac
   done
@@ -676,14 +710,20 @@ tui_svc_zabbix() {
 tui_svc_alloy() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › monitoring › alloy (log shipper)" 3 \
+    sel=$(hubmenu "Setup › monitoring › alloy (log shipper)" 4 \
       "enabled"    "[$(onoff3 "$A_AGENT_alloy")]  install this service" \
       "loki"       "[$(valic "$LOKI_URL" "$A_AGENT_alloy")]  Loki URL: $(valp "$LOKI_URL")" \
       "dockerlogs" "[$(onoff3 "$A_ALLOY_DOCKERLOGS")]  capture Docker container logs" \
+      "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
       enabled)    tgl A_AGENT_alloy ;;
       loki)       ask "Setup › monitoring › alloy › Loki URL" "Loki base URL for Alloy (host:port):" "${LOKI_URL:-loki:3100}" LOKI_URL ;;
+      help) show_help "Setup › monitoring › alloy › help" "install this service: adds Grafana's apt repo and installs Alloy, a journal-first log shipper.
+
+Loki URL: the Loki server Alloy pushes logs to (host:port; the /loki/api/v1/push path is appended automatically).
+
+capture Docker container logs: also ships container output to Loki. It works by pointing Docker at the journald log-driver, so container stdout/stderr lands in the systemd journal like any other log — no Docker socket access needed, and it works for rootful AND rootless Docker. Lines arrive tagged with container/image and Compose project/service labels, so you can query {compose_project=\"media\"} in Grafana. Running containers must be recreated once to adopt the driver." ;;
       dockerlogs) tgl A_ALLOY_DOCKERLOGS ;;
     esac
   done
@@ -692,10 +732,11 @@ tui_svc_buzz() {
   local sel t v cur
   while true; do
     cur="$BUZZ_TARGET"; [[ -n "$cur" && "${BUZZ_PORT:-6523}" != "6523" ]] && cur="${cur}:${BUZZ_PORT}"
-    sel=$(hubmenu "Setup › monitoring › buzz (alert relay)" 3 \
+    sel=$(hubmenu "Setup › monitoring › buzz (alert relay)" 4 \
       "enabled" "[$(onoff3 "$A_AGENT_buzz")]  install this service" \
       "alerts"  "[$(valic "$( [[ "$(buzz_alert_list)" != none ]] && echo x )" "$A_AGENT_buzz")]  alerts: $(buzz_alert_list)" \
       "relay"   "[$(valic "$BUZZ_TARGET" "$A_AGENT_buzz")]  relay address: $(valp "$cur")" \
+      "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
       enabled) tgl A_AGENT_buzz ;;
@@ -720,20 +761,31 @@ tui_svc_buzz() {
             BUZZ_TARGET="$v"; BUZZ_PORT="${BUZZ_PORT:-6523}"
           fi
         fi ;;
+      help) show_help "Setup › monitoring › buzz › help" "install this service: generates a dedicated ssh key (/root/.ssh/buzz_report) and installs the selected watch scripts with their crons. Alerts only start flowing after you register the printed public key on the relay (shown in NEXT STEPS).
+
+alerts: disk = SMART + zpool health, daily, any host. repl = Proxmox replication failures, every 30 min. ha = Proxmox HA recover/migrate events, every 5 min. tbmesh = Thunderbolt mesh auto-heal actions, every minute. The Proxmox and mesh watches install only where their tooling exists, so over-selecting is harmless.
+
+relay address: the dev box the watches ssh their alerts to, as user@host or user@host:port (default port 6523)." ;;
     esac
   done
 }
 tui_monitoring() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › monitoring (services)" 3 \
+    sel=$(hubmenu "Setup › monitoring (services)" 4 \
       "zabbix" "[$(stat3 "$A_AGENT_zabbix" "$(need_zabbix)")]  metrics agent" \
       "alloy"  "[$(stat3 "$A_AGENT_alloy" "")]  log shipper" \
       "buzz"   "[$(stat3 "$A_AGENT_buzz" "$(need_buzz)")]  alert relay" \
+      "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
       zabbix) tui_svc_zabbix ;;
       alloy)  tui_svc_alloy ;;
+      help) show_help "Setup › monitoring › help" "zabbix: installs Zabbix agent 2, which reports metrics (CPU, memory, disks, services) to a central Zabbix server for dashboards and alerting.
+
+alloy: installs Grafana Alloy, which ships this host's logs (systemd journal first) to a Loki server so they are searchable in Grafana.
+
+buzz: sets this host up to send alerts (disk health, Proxmox replication/HA, Thunderbolt mesh) to a buzz relay over forced-command ssh. Needs its key registered on the relay afterward." ;;
       buzz)   tui_svc_buzz ;;
     esac
   done
@@ -748,12 +800,13 @@ rt_list() {
 tui_container() {
   local sel t
   while true; do
-    sel=$(hubmenu "Setup › container (container runtime)" 5 \
+    sel=$(hubmenu "Setup › container (container runtime)" 6 \
       "enabled"  "[$(onoff3 "$A_CONTAINER")]  run this step" \
       "runtimes" "[$(valic "$( [[ "$(rt_list)" != none ]] && echo x )" "$A_CONTAINER")]  runtimes: $(rt_list)" \
       "rootful"  "[$(onoff3 "$A_DISABLE_ROOTFUL")]  disable the rootful Docker daemon" \
       "example"  "[$(onoff3 "$A_EXAMPLE_APP")]  create the example app" \
       "journald" "[$(onoff3 "$A_JOURNALD")]  container logs to the journal" \
+      "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
       enabled)  tgl A_CONTAINER ;;
@@ -768,6 +821,13 @@ tui_container() {
         fi ;;
       rootful)  tgl A_DISABLE_ROOTFUL ;;
       example)  tgl A_EXAMPLE_APP ;;
+      help) show_help "Setup › container › help" "runtimes: Docker (Engine + Compose, rootless by default) and/or Podman (daemonless, rootless). They coexist; the podman-docker shim is never installed.
+
+disable the rootful Docker daemon: keeps only the per-user rootless daemon running, shrinking the root attack surface.
+
+create the example app: drops a minimal traefik/whoami stack in /opt/docker/example-app (port 8080) so the layout has a working reference.
+
+container logs to the journal: sets the journald log-driver so container output flows into the systemd journal (and on to Loki via Alloy if configured)." ;;
       journald) tgl A_JOURNALD ;;
     esac
   done
@@ -777,12 +837,16 @@ tui_container() {
 tui_motd() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › motd (login banner)" 2 \
+    sel=$(hubmenu "Setup › motd (login banner)" 3 \
       "enabled" "[$(onoff3 "$A_MOTD")]  run this step" \
       "docurl"  "[$(valic "$DOC_URL" N)]  documentation URL: $(valp "$DOC_URL")" \
+      "help"     "[ ? ]  what does each setting do?" \
       ) || break
     case "$sel" in
       enabled) tgl A_MOTD ;;
+      help) show_help "Setup › motd › help" "run this step: installs a dynamic login banner showing host, IP, uptime, OS/kernel, load, memory, disk and sessions on every SSH login.
+
+documentation URL: an optional link shown in the banner (your wiki page for this host, say). Blank omits it." ;;
       docurl)  ask "Setup › motd › documentation URL" "Documentation URL to show in the banner (blank to omit):" "$DOC_URL" DOC_URL ;;
     esac
   done
@@ -790,10 +854,14 @@ tui_motd() {
 tui_docs() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › docs (connection doc)" 1 \
+    sel=$(hubmenu "Setup › docs (connection doc)" 2 \
       "enabled" "[$(onoff3 "$A_DOC")]  run this step" \
+      "help"     "[ ? ]  what does each setting do?" \
       ) || break
-    case "$sel" in enabled) tgl A_DOC ;; esac
+    case "$sel" in
+      enabled) tgl A_DOC ;;
+      help) show_help "Setup › docs › help" "run this step: generates an HTML connection doc (written to /tmp/connect.html when run via this wizard) with the host's details and exactly how to SSH in on the hardened port — including a ready-made ~/.ssh/config entry and a fish alias. Handy to paste into your wiki after setup." ;;
+    esac
   done
 }
 
@@ -811,6 +879,7 @@ tui_main() {
       "container"  "[$(stat3 "$A_CONTAINER" "$(need_container)")]  container runtime" \
       "motd"       "[$(stat3 "$A_MOTD" "")]  login banner" \
       "docs"       "[$(stat3 "$A_DOC" "")]  connection doc" \
+      "help"       "[ ? ]  what does each step do?" \
       "sep"        "────────────────────────────────────" \
       "ACCEPT"     "✓  Accept these settings and install" \
       3>&1 1>&2 2>&3) || { if whiptail --backtitle "$BACKTITLE" --yesno "Quit without installing?" 8 50; then clear; info "Cancelled — nothing was changed."; exit 0; fi; continue; }
@@ -822,6 +891,19 @@ tui_main() {
       container)  tui_container ;;
       motd)       tui_motd ;;
       docs)       tui_docs ;;
+      help) show_help "Setup › help" "bootstrap: creates/updates the admin user and installs its SSH key — runs first; hardening relies on it.
+
+harden: system hardening — SSH lockdown, deny-by-default firewall, fail2ban, automatic updates, AppArmor, AIDE, sysctl, Lynis. Components and options are pickable inside.
+
+extra packages: quality-of-life tools (vim, btop, duf, fish, rsync, guest agent).
+
+monitoring services: Zabbix metrics agent, Grafana Alloy log shipper, and buzz relay alerting — each configured in its own screen.
+
+container runtime: Docker and/or Podman, rootless, plus the /opt/docker layout.
+
+login banner: dynamic MOTD with live host info on every login.
+
+connection doc: generates an HTML how-to-connect page for this host." ;;
       sep)        : ;;
       ACCEPT)     if validate_tui; then break; fi ;;
     esac
