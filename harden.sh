@@ -685,6 +685,11 @@ export DEBIAN_FRONTEND=noninteractive
 info "Refreshing package lists..."
 run apt update
 if [[ "$DO_UPGRADE" -eq 1 ]]; then
+  # full-upgrade (= dist-upgrade) is deliberately the Proxmox-blessed form:
+  # plain 'apt upgrade' can hold back packages with changed dependencies and
+  # break PVE. pveupgrade is only a wrapper around dist-upgrade whose extra
+  # (the new-kernel reboot notice) detect_reboot_required already provides —
+  # and the wrapper takes no -y, so it would hang/abort non-interactive runs.
   info "Applying full upgrade (this can take a while)..."
   run apt -y full-upgrade
   log "System packages updated."
