@@ -41,6 +41,7 @@ declare -A EXTRA_DESC=(
   [qemu-guest-agent]="QEMU/KVM guest integration (VMs only)"
   [zabbix-agent2]="Zabbix agent 2 monitoring (needs a Zabbix server)"
   [alloy]="Grafana Alloy log shipper (needs a Loki server)"
+  [buzz]="buzz relay alerting over forced-command ssh (needs the dev box)"
   [container]="Docker and/or Podman (rootless) + Compose + /opt/docker layout"
 )
 
@@ -150,7 +151,9 @@ skip_script() { STATUS[$1]="skipped"; DETAIL[$1]="you chose not to run it"; }
 ENV_TYPE="${ENV_TYPE:-}"
 A_BOOTSTRAP=""; A_HARDEN=""; A_ANCILLARY=""; A_MONITORING=""; A_CONTAINER=""; A_MOTD=""; A_DOC=""
 A_PKG_vim=""; A_PKG_btop=""; A_PKG_duf=""; A_PKG_fish=""; A_PKG_rsync=""; A_PKG_qemu=""
-A_AGENT_zabbix=""; A_AGENT_alloy=""
+A_AGENT_zabbix=""; A_AGENT_alloy=""; A_AGENT_buzz=""
+A_BUZZ_disk=""; A_BUZZ_repl=""; A_BUZZ_ha=""; A_BUZZ_tbmesh=""
+BUZZ_TARGET="${BUZZ_TARGET:-}"; BUZZ_PORT="${BUZZ_PORT:-}"
 PRIMARY_USER="${PRIMARY_USER:-}"; PUBKEY="${PUBKEY:-}"; ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 SSH_PORT="${SSH_PORT:-}"; A_UPGRADE=""; A_LOCKROOT=""; A_USBBLACK=""; ALLOW_TCP_PORTS="${ALLOW_TCP_PORTS:-}"
 A_FISH_DEFAULT=""
@@ -167,6 +170,11 @@ compute_defaults() {
   A_PKG_vim="$(yn_def Y Y)"; A_PKG_btop="$(yn_def Y Y)"; A_PKG_duf="$(yn_def Y Y)"
   A_PKG_fish="$(yn_def Y Y)"; A_PKG_rsync="$(yn_def Y Y)"; A_PKG_qemu="$(yn_def Y N)"
   A_AGENT_zabbix="$(yn_def Y Y)"; A_AGENT_alloy="$(yn_def Y Y)"
+  # buzz is off by default: it needs a dev box running the forced-command
+  # dispatcher, and its key must be registered there before alerts flow.
+  A_AGENT_buzz="$(yn_def N N)"
+  A_BUZZ_disk=Y; A_BUZZ_repl=N; A_BUZZ_ha=N; A_BUZZ_tbmesh=N
+  BUZZ_PORT="${BUZZ_PORT:-6523}"
   A_FISH_DEFAULT="$(yn_def Y Y)"
   A_UPGRADE="$(yn_def Y Y)"; A_LOCKROOT="$(yn_def Y Y)"; A_USBBLACK="$(yn_def Y Y)"
   A_ZBX_DOCKER="$(yn_def N N)"; A_ALLOY_DOCKERLOGS="$(yn_def N N)"
@@ -210,6 +218,7 @@ materialize_selection() {
 
   [[ "$A_AGENT_zabbix" == "Y" ]] && MONITORING_PICK+=(zabbix-agent2)
   [[ "$A_AGENT_alloy"  == "Y" ]] && MONITORING_PICK+=(alloy)
+  [[ "$A_AGENT_buzz"   == "Y" ]] && MONITORING_PICK+=(buzz)
   if [[ "$A_MONITORING" == "Y" && ${#MONITORING_PICK[@]} -gt 0 ]]; then SELECTED+=(monitoring.sh); else skip_script monitoring.sh; fi
 
   [[ "$A_CONTAINER" == "Y" ]] && SELECTED+=(container.sh)     || skip_script container.sh
@@ -245,6 +254,11 @@ materialize_selection() {
       export LOKI_URL
       [[ "$A_ALLOY_DOCKERLOGS" == "Y" ]] && export ALLOY_DOCKER_LOGS=1 || export ALLOY_DOCKER_LOGS=0
     fi
+    if [[ "$A_AGENT_buzz" == "Y" ]]; then
+      export BUZZ_TARGET
+      export BUZZ_PORT="${BUZZ_PORT:-6523}"
+      export BUZZ_ALERTS="$(buzz_alert_list)"
+    fi
   fi
   if [[ "$A_CONTAINER" == "Y" ]]; then
     export CONTAINER_USER="$PRIMARY_USER"
@@ -277,7 +291,8 @@ onoff() { [[ "$1" == "Y" ]] && printf 'ON' || printf 'OFF'; }    # checklist sta
 pad3()  { [[ "$1" == "Y" ]] && printf 'yes' || printf 'no '; }   # aligned menu state
 # Short status summaries for the hub menu lines.
 anc_list() { local p=(); [[ "$A_PKG_vim" == Y ]] && p+=(vim); [[ "$A_PKG_btop" == Y ]] && p+=(btop); [[ "$A_PKG_duf" == Y ]] && p+=(duf); [[ "$A_PKG_fish" == Y ]] && p+=(fish); [[ "$A_PKG_rsync" == Y ]] && p+=(rsync); [[ "$A_PKG_qemu" == Y ]] && p+=(qemu); local IFS=,; printf '%s' "${p[*]:-none}"; }
-mon_list() { local p=(); [[ "$A_AGENT_zabbix" == Y ]] && p+=(zabbix); [[ "$A_AGENT_alloy" == Y ]] && p+=(alloy); local IFS=,; printf '%s' "${p[*]:-none}"; }
+mon_list() { local p=(); [[ "$A_AGENT_zabbix" == Y ]] && p+=(zabbix); [[ "$A_AGENT_alloy" == Y ]] && p+=(alloy); [[ "$A_AGENT_buzz" == Y ]] && p+=(buzz); local IFS=,; printf '%s' "${p[*]:-none}"; }
+buzz_alert_list() { local p=(); [[ "$A_BUZZ_disk" == Y ]] && p+=(disk); [[ "$A_BUZZ_repl" == Y ]] && p+=(repl); [[ "$A_BUZZ_ha" == Y ]] && p+=(ha); [[ "$A_BUZZ_tbmesh" == Y ]] && p+=(tbmesh); printf '%s' "${p[*]:-none}"; }
 ct_list()  { [[ "$A_CONTAINER" != Y ]] && { printf 'off'; return; }; local p=(); [[ "$A_DOCKER" == Y ]] && p+=(docker); [[ "$A_PODMAN" == Y ]] && p+=(podman); local IFS=,; printf '%s' "${p[*]:-none}"; }
 
 # validate_tui — check required inputs are present; collect any problems and
@@ -299,6 +314,8 @@ validate_tui() {
     fi
   fi
   [[ "$A_MONITORING" == Y && "$A_AGENT_zabbix" == Y && -z "${ZABBIX_SERVER_ACTIVE//[[:space:]]/}" ]] && m+=("zabbix-agent2 needs a server address.")
+  [[ "$A_MONITORING" == Y && "$A_AGENT_buzz" == Y && -z "${BUZZ_TARGET//[[:space:]]/}" ]] && m+=("buzz alerting needs the dev box target (user@host).")
+  [[ "$A_MONITORING" == Y && "$A_AGENT_buzz" == Y && "$(buzz_alert_list)" == "none" ]] && m+=("buzz alerting: pick at least one alert type (disk/repl/ha/tbmesh).")
   [[ "$A_BOOTSTRAP$A_HARDEN$A_ANCILLARY$A_MONITORING$A_CONTAINER$A_MOTD$A_DOC" != *Y* ]] && m+=("Select at least one step to run.")
   if ((${#m[@]})); then
     whiptail --backtitle "$BACKTITLE" --title "Can't install yet" \
@@ -403,13 +420,14 @@ tui_ancillary() {
 tui_monitoring() {
   local sel t v
   if sel=$(whiptail --backtitle "$BACKTITLE" --title "monitoring.sh — agents" \
-      --checklist "Monitoring agents (Space to toggle):" 11 72 2 \
+      --checklist "Monitoring agents (Space to toggle):" 12 76 3 \
       "zabbix" "Zabbix agent 2 (needs a Zabbix server)" "$(onoff "$A_AGENT_zabbix")" \
       "alloy"  "Grafana Alloy log shipper (needs Loki)" "$(onoff "$A_AGENT_alloy")" \
+      "buzz"   "buzz relay alerting (needs the dev box)" "$(onoff "$A_AGENT_buzz")" \
       3>&1 1>&2 2>&3); then
-    A_AGENT_zabbix=N; A_AGENT_alloy=N
-    for t in $sel; do t="${t//\"/}"; case "$t" in zabbix) A_AGENT_zabbix=Y;; alloy) A_AGENT_alloy=Y;; esac; done
-    [[ "$A_AGENT_zabbix" == Y || "$A_AGENT_alloy" == Y ]] && A_MONITORING=Y || A_MONITORING=N
+    A_AGENT_zabbix=N; A_AGENT_alloy=N; A_AGENT_buzz=N
+    for t in $sel; do t="${t//\"/}"; case "$t" in zabbix) A_AGENT_zabbix=Y;; alloy) A_AGENT_alloy=Y;; buzz) A_AGENT_buzz=Y;; esac; done
+    [[ "$A_AGENT_zabbix" == Y || "$A_AGENT_alloy" == Y || "$A_AGENT_buzz" == Y ]] && A_MONITORING=Y || A_MONITORING=N
   fi
   if [[ "$A_AGENT_zabbix" == Y ]]; then
     if v=$(whiptail --backtitle "$BACKTITLE" --title "Zabbix server" \
@@ -420,6 +438,22 @@ tui_monitoring() {
     if v=$(whiptail --backtitle "$BACKTITLE" --title "Loki URL" \
         --inputbox "Loki base URL for Alloy (host:port):" 9 64 "${LOKI_URL:-loki:3100}" 3>&1 1>&2 2>&3); then LOKI_URL="${v//[[:space:]]/}"; fi
     if whiptail --backtitle "$BACKTITLE" --title "Alloy" --defaultno --yesno "Also capture Docker container logs (journald log-driver)?" 9 68; then A_ALLOY_DOCKERLOGS=Y; else A_ALLOY_DOCKERLOGS=N; fi
+  fi
+  if [[ "$A_AGENT_buzz" == Y ]]; then
+    if sel=$(whiptail --backtitle "$BACKTITLE" --title "buzz — alerts to send" \
+        --checklist "Which alerts should this node send? (Space to toggle)\nrepl/ha/tbmesh install only where their tooling exists." 14 76 4 \
+        "disk"   "Disk health: SMART + zpool errors (daily)"       "$(onoff "$A_BUZZ_disk")" \
+        "repl"   "Proxmox replication failures (every 30 min)"     "$(onoff "$A_BUZZ_repl")" \
+        "ha"     "Proxmox HA recover/migrate events (every 5 min)" "$(onoff "$A_BUZZ_ha")" \
+        "tbmesh" "Thunderbolt mesh auto-heal actions (every min)"  "$(onoff "$A_BUZZ_tbmesh")" \
+        3>&1 1>&2 2>&3); then
+      A_BUZZ_disk=N; A_BUZZ_repl=N; A_BUZZ_ha=N; A_BUZZ_tbmesh=N
+      for t in $sel; do t="${t//\"/}"; case "$t" in disk) A_BUZZ_disk=Y;; repl) A_BUZZ_repl=Y;; ha) A_BUZZ_ha=Y;; tbmesh) A_BUZZ_tbmesh=Y;; esac; done
+    fi
+    if v=$(whiptail --backtitle "$BACKTITLE" --title "buzz dev box" \
+        --inputbox "Dev box the watches ssh to (user@host):" 9 64 "$BUZZ_TARGET" 3>&1 1>&2 2>&3); then BUZZ_TARGET="${v//[[:space:]]/}"; fi
+    if v=$(whiptail --backtitle "$BACKTITLE" --title "buzz dev box port" \
+        --inputbox "ssh port on the dev box:" 9 50 "${BUZZ_PORT:-6523}" 3>&1 1>&2 2>&3); then BUZZ_PORT="${v//[[:space:]]/}"; fi
   fi
 }
 
