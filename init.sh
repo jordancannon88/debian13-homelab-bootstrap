@@ -321,6 +321,44 @@ mon_list() { local p=(); [[ "$A_AGENT_zabbix" == Y ]] && p+=(zabbix); [[ "$A_AGE
 buzz_alert_list() { local p=(); [[ "$A_BUZZ_disk" == Y ]] && p+=(disk); [[ "$A_BUZZ_repl" == Y ]] && p+=(repl); [[ "$A_BUZZ_ha" == Y ]] && p+=(ha); [[ "$A_BUZZ_tbmesh" == Y ]] && p+=(tbmesh); printf '%s' "${p[*]:-none}"; }
 ct_list()  { [[ "$A_CONTAINER" != Y ]] && { printf 'off'; return; }; local p=(); [[ "$A_DOCKER" == Y ]] && p+=(docker); [[ "$A_PODMAN" == Y ]] && p+=(podman); local IFS=,; printf '%s' "${p[*]:-none}"; }
 
+# need_* — what a step still needs before Accept will pass (empty = ready).
+# These feed the ⚠ indicators on the hub menu so required configuration is
+# visible at a glance instead of only at Accept time. KEEP IN SYNC with
+# validate_tui: same conditions, attributed to the step whose dialog fixes them.
+need_bootstrap() {
+  local n=() akf
+  if [[ "$A_BOOTSTRAP" == Y || "$A_HARDEN" == Y || "$A_CONTAINER" == Y || "$A_ANCILLARY" == Y ]]; then
+    { [[ -z "$PRIMARY_USER" ]] || ! valid_user "$PRIMARY_USER"; } && n+=("admin user")
+  fi
+  if [[ "$A_BOOTSTRAP" == Y && "$A_HARDEN" == Y && -n "$PRIMARY_USER" ]] && valid_user "$PRIMARY_USER"; then
+    akf="$(getent passwd "$PRIMARY_USER" 2>/dev/null | cut -d: -f6)/.ssh/authorized_keys"
+    if [[ -z "$PUBKEY" ]] && ! { id "$PRIMARY_USER" &>/dev/null && [[ -s "$akf" ]]; }; then
+      n+=("SSH key")
+    fi
+  fi
+  local IFS='+'; printf '%s' "${n[*]:-}"
+}
+need_harden() {
+  local akf
+  [[ "$A_HARDEN" == Y && "$A_BOOTSTRAP" != Y && -n "$PRIMARY_USER" ]] || return 0
+  if ! id "$PRIMARY_USER" &>/dev/null; then
+    printf 'existing user'
+  else
+    akf="$(getent passwd "$PRIMARY_USER" 2>/dev/null | cut -d: -f6)/.ssh/authorized_keys"
+    [[ -s "$akf" ]] || printf 'SSH key on file'
+  fi
+}
+need_monitoring() {
+  [[ "$A_MONITORING" == Y ]] || return 0
+  local n=()
+  [[ "$A_AGENT_zabbix" == Y && -z "${ZABBIX_SERVER_ACTIVE//[[:space:]]/}" ]] && n+=("Zabbix server")
+  [[ "$A_AGENT_buzz" == Y && -z "${BUZZ_TARGET//[[:space:]]/}" ]] && n+=("dev box")
+  [[ "$A_AGENT_buzz" == Y && "$(buzz_alert_list)" == "none" ]] && n+=("alert pick")
+  local IFS='+'; printf '%s' "${n[*]:-}"
+}
+# need_tag <needs> — render the hub-line marker (" ⚠ needs X"), or nothing.
+need_tag() { [[ -n "$1" ]] && printf ' ⚠ needs %s' "$1"; return 0; }
+
 # validate_tui — check required inputs are present; collect any problems and
 # show them in a whiptail msgbox. Returns 0 if ready to install.
 validate_tui() {
@@ -536,11 +574,11 @@ tui_main() {
   while true; do
     sel=$(whiptail --backtitle "$BACKTITLE" --title "Review & customise  —  [${ENV_TYPE^^}]" \
       --ok-button "Open" --cancel-button "Quit" \
-      --menu "Select a step to change its options, then choose Accept.\nThe defaults are already set — just Accept to use them as-is." 21 78 11 \
-      "bootstrap"  "[$(pad3 "$A_BOOTSTRAP")]  admin user + SSH key" \
-      "harden"     "[$(pad3 "$A_HARDEN")]  hardening — SSH port ${SSH_PORT:-22}" \
+      --menu "Select a step to change its options, then choose Accept.\nThe defaults are already set — just Accept to use them as-is.\n⚠ marks a step that needs configuration before install." 21 78 11 \
+      "bootstrap"  "[$(pad3 "$A_BOOTSTRAP")]  admin user + SSH key$(need_tag "$(need_bootstrap)")" \
+      "harden"     "[$(pad3 "$A_HARDEN")]  hardening — SSH port ${SSH_PORT:-22}$(need_tag "$(need_harden)")" \
       "ancillary"  "[$(pad3 "$A_ANCILLARY")]  packages: $(anc_list)" \
-      "monitoring" "[$(pad3 "$A_MONITORING")]  agents: $(mon_list)" \
+      "monitoring" "[$(pad3 "$A_MONITORING")]  agents: $(mon_list)$(need_tag "$(need_monitoring)")" \
       "container"  "[$(pad3 "$A_CONTAINER")]  runtime: $(ct_list)" \
       "motd"       "[$(pad3 "$A_MOTD")]  dynamic login banner" \
       "docs"       "[$(pad3 "$A_DOC")]  SSH connection doc" \

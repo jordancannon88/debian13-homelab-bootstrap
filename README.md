@@ -264,6 +264,10 @@ install with the defaults.
 - Opening a step shows a dialog for it: a checklist of its packages and toggles,
   and input boxes for any text (user, SSH key, ports, URLs). Close it to return
   to the hub with the new state shown.
+- Steps that still need input carry a ⚠ marker right on the hub line (for
+  example `bootstrap [yes] admin user + SSH key ⚠ needs SSH key`), so required
+  configuration is visible before you try to install. The marker clears as soon
+  as the step's dialog has what it needs.
 - Accept validates required inputs, then the chosen scripts run
   non-interactively. A missing required value (the SSH key, say) pops a message
   so you can fix it before install.
