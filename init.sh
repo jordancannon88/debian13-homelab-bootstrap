@@ -214,15 +214,9 @@ compute_defaults() {
   fi
   LOKI_URL="${LOKI_URL:-loki:3100}"
   ZABBIX_SERVER_ACTIVE="${ZABBIX_SERVER_ACTIVE:-zabbix:10051}"
-  # Default admin user: the sudo invoker, else the sole human account (if any).
-  if [[ -z "$PRIMARY_USER" ]]; then
-    local du="${SUDO_USER:-}" _h=()
-    if [[ -z "$du" ]]; then
-      mapfile -t _h < <(awk -F: '$3>=1000 && $3<65534 && $7 !~ /(nologin|false)$/ {print $1}' /etc/passwd)
-      (( ${#_h[@]} == 1 )) && du="${_h[0]}"
-    fi
-    PRIMARY_USER="$du"
-  fi
+  # The admin username is deliberately NOT defaulted (no SUDO_USER guessing):
+  # the operator must enter it, and the hub shows "needs admin user" until they
+  # do. An explicit PRIMARY_USER=<name> environment override still works.
 }
 
 # materialize_selection — turn the answers into SELECTED[] + exported env vars

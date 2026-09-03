@@ -274,8 +274,9 @@ install with the defaults.
 - Defaults worth noting: `container.sh` is off by default (Docker or Podman in
   an LXC is advanced, and on a VM you opt in); the SSH port is a random high
   port; root password lock and the usb-storage blacklist are on; the Zabbix
-  server defaults to `zabbix:10051` and Loki to `loki:3100`. The SSH public key
-  is the one field with no default.
+  server defaults to `zabbix:10051` and Loki to `loki:3100`. The admin username
+  and the SSH public key are the two fields with no default — the hub marks
+  both with ⚠ until you enter them.
 
 > `init.sh` is TUI-only. It requires an interactive terminal and whiptail
 > (auto-installed if missing); there is no text-mode or unattended path. Run it
