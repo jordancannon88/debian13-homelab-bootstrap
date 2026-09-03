@@ -233,12 +233,17 @@ starting points.
 
 The PVE-host defaults exist because a hypervisor breaks differently than a
 guest: the root password lock is off (the web UI's `root@pam` login needs a
-working root password), the firewall is pre-seeded with 8006 (web UI) and 3128
-(SPICE console proxy), the SSH port defaults to 22 (inter-node ssh for
+working root password), the SSH port defaults to 22 (inter-node ssh for
 migration, replication and cluster joins assumes it — change it only
 fleet-wide), the usb-storage blacklist is off (passthrough and installer
 media), and the buzz repl/ha watches default on since their tooling lives
 there. Everything stays editable in the menu.
+
+Firewall ports are self-service: any step that installs a network listener
+opens its own port in the hardened ruleset — harden.sh force-allows 8006 and
+3128 on a PVE host, monitoring.sh opens 10050 for Zabbix passive checks, and
+container.sh opens the example app's port. The `tcpports`/`udpports` fields in
+the harden dialog are only for your own services and future container stacks.
 
 `init.sh` then opens a whiptail menu (TUI): a single hub that lists every step
 with its current state, pre-filled from those defaults. You don't answer a wall

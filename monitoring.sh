@@ -188,6 +188,26 @@ if [[ "$ASSUME_YES" != "1" && -r /dev/tty ]]; then INTERACTIVE=1; fi
 
 require_root() { if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then err "Run as root (e.g. sudo $0)."; exit 1; fi; }
 
+# open_firewall_port <tcp|udp> <port> <what> — self-service firewall opening:
+# a step that installs a network listener opens its own port in the hardened
+# nftables ruleset (idempotent; inserted above the input chain's final drop,
+# then reloaded). No-op when harden.sh's firewall isn't present — the host
+# then has no deny-by-default filter for us to open.
+open_firewall_port() {
+  local proto="$1" port="$2" what="${3:-service}"
+  local conf=/etc/nftables.conf
+  [[ -f "$conf" ]] && grep -q 'deny-by-default' "$conf" || return 0
+  if grep -qE "^[[:space:]]*${proto} dport ${port} ct state new accept" "$conf"; then
+    return 0
+  fi
+  sed -i "s/^\([[:space:]]*\)drop\$/\1${proto} dport ${port} ct state new accept\n\1drop/" "$conf"
+  if command -v nft >/dev/null 2>&1 && nft -c -f "$conf" 2>/dev/null; then
+    nft -f "$conf" 2>/dev/null || true
+  fi
+  log "Firewall: opened ${proto}/${port} for ${what} (persisted in ${conf})."
+}
+
+
 # resolve_template <local_src> <repo_relpath> — locate a config template. Sets
 # RESOLVED_TEMPLATE to a readable path: the local copy alongside this script if
 # present, otherwise a freshly downloaded temp copy fetched from the repo (for
@@ -634,6 +654,11 @@ else
     else
       note "cpuTemperature UserParameter key set to ${ZBX_HOSTNAME}.cpuTemperature (plugins.d drop-in)."
     fi
+
+    # The agent LISTENS on 10050 for passive checks — open it in the hardened
+    # firewall so the Zabbix server can poll this host. (ServerActive is
+    # outbound and needs no rule.)
+    open_firewall_port tcp 10050 "Zabbix agent 2 passive checks"
 
     systemctl enable zabbix-agent2 >/dev/null 2>&1 || true
     if systemctl restart zabbix-agent2 2>/dev/null; then

@@ -213,9 +213,8 @@ compute_defaults() {
   # replication, cluster join) assumes it — change it only fleet-wide.
   if [[ "$ENV_TYPE" == "pve" ]]; then
     SSH_PORT="${SSH_PORT:-22}"
-    # The PVE web UI (8006) and SPICE console proxy (3128) must stay reachable
-    # through the deny-by-default firewall.
-    [[ -z "$ALLOW_TCP_PORTS" ]] && ALLOW_TCP_PORTS="8006 3128"
+    # 8006/3128 are NOT pre-seeded here: harden.sh's own PVE pre-flight
+    # force-allows them, so the web UI stays reachable automatically.
   else
     SSH_PORT="${SSH_PORT:-$(( RANDOM % 22000 + 10000 ))}"
   fi
@@ -318,13 +317,8 @@ materialize_selection() {
       [[ "$A_DISABLE_ROOTFUL" == "Y" ]] && export DISABLE_ROOTFUL=1 || export DISABLE_ROOTFUL=0
     fi
     [[ "$A_EXAMPLE_APP" == "Y" ]] && export CREATE_EXAMPLE_APP=1 || export CREATE_EXAMPLE_APP=0
-    # Rootless published ports are subject to the deny-by-default input
-    # filter — open the example app's port so it works out of the box.
-    if [[ "$A_EXAMPLE_APP" == "Y" && "$A_HARDEN" == "Y" && "$A_HC_firewall" == "Y" ]] \
-       && ! grep -qw 8080 <<<"${ALLOW_TCP_PORTS//,/ }"; then
-      ALLOW_TCP_PORTS="${ALLOW_TCP_PORTS:+${ALLOW_TCP_PORTS} }8080"
-      export ALLOW_TCP_PORTS
-    fi
+    # (The example app's port is opened by container.sh itself — every step
+    # that installs a listener opens its own firewall port.)
     [[ "$A_JOURNALD"    == "Y" ]] && export DOCKER_JOURNALD_LOGS=1 || export DOCKER_JOURNALD_LOGS=0
   fi
   [[ "$A_MOTD" == "Y" ]] && export DOC_URL
@@ -654,7 +648,7 @@ options: toggles within those components — apt full-upgrade, locking the root 
 
 SSH port: where sshd listens. Keep 22 on a PVE host (cluster ssh assumes it); elsewhere a random high port cuts scan noise.
 
-extra TCP/UDP ports: opened through the deny-by-default firewall — published container ports need this.
+extra TCP/UDP ports: opened through the deny-by-default firewall — for YOUR OWN services and future container stacks. Ports needed by wizard-installed services (PVE web UI, Zabbix agent, the example app) are opened automatically by their own install steps.
 
 SSH sources: limit which source networks may reach SSH at all (blank = anywhere)." ;;
       cidrs)      ask "Setup › harden › SSH sources" "Restrict SSH to these source CIDRs\n(space-separated, blank = allow from anywhere):" "$ALLOW_SSH_CIDRS" ALLOW_SSH_CIDRS raw ;;
