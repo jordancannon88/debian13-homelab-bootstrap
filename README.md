@@ -224,7 +224,15 @@ sudo ./motd.sh        # 6. install the dynamic login banner (MOTD)
 ## VM, LXC or PVE host, and the setup menu
 
 When you run `init.sh`, the first question is what this host is: a VM, an LXC
-container, or a Proxmox VE host (the hypervisor itself). It autodetects and
+container, or a Proxmox VE host (the hypervisor itself). Right after that, a
+read-only system check inventories what the host already has — a hardened
+firewall (and its current SSH port), ufw/firewalld conflicts, Docker/Podman
+and running containers, an installed Zabbix agent or Alloy (with their
+configured servers), buzz watches and their relay, an existing MOTD banner.
+Its findings screen shows warnings up front, defaults are pre-filled from the
+detected values (a re-run proposes the host's current settings, never a fresh
+random SSH port), and installed services are marked `(installed)` in the
+menus. It autodetects and
 pre-selects the likely answer — `pveversion` on the system means PVE host. That
 choice sets the defaults for everything that follows. For example the QEMU
 guest agent defaults to yes on a VM and no elsewhere, where it has no use. Most

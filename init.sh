@@ -144,6 +144,73 @@ detect_env_default() {
   printf 'vm'
 }
 
+# sys_scan — read-only look at what is already installed/configured, run once
+# right after the environment question. Feeds three things: pre-filled values
+# (so a re-run proposes the host's CURRENT settings, not fresh defaults),
+# "(installed)" annotations on menu lines, and the findings screen with
+# warnings the operator should see before selecting anything.
+SYS_NOTES=()
+sys_scan() {
+  SYS_HARDENED=0; SYS_SSHPORT=""; SYS_UFW=0; SYS_FIREWALLD=0
+  SYS_DOCKER=0; SYS_DOCKER_RUNNING=0; SYS_PODMAN=0
+  SYS_ZABBIX=0; SYS_ZBX_SERVER=""; SYS_ALLOY=0; SYS_LOKI=""
+  SYS_BUZZKEY=0; SYS_BUZZ_TARGET=""; SYS_BUZZ_PORT=""; SYS_BUZZ_ALERTS=""
+  SYS_MOTD=0; SYS_DOCURL=""
+  SYS_NOTES=()
+
+  [[ -f /etc/nftables.conf ]] && grep -q 'deny-by-default' /etc/nftables.conf 2>/dev/null && SYS_HARDENED=1
+  SYS_SSHPORT="$(sshd -T 2>/dev/null | awk '$1=="port"{print $2; exit}')"
+  systemctl is-active --quiet ufw 2>/dev/null && SYS_UFW=1
+  systemctl is-active --quiet firewalld 2>/dev/null && SYS_FIREWALLD=1
+
+  command -v docker >/dev/null 2>&1 && SYS_DOCKER=1
+  (( SYS_DOCKER )) && SYS_DOCKER_RUNNING="$(docker ps -q 2>/dev/null | wc -l | tr -d ' ')"
+  command -v podman >/dev/null 2>&1 && SYS_PODMAN=1
+
+  dpkg-query -W -f='${Status}' zabbix-agent2 2>/dev/null | grep -q 'install ok installed' && SYS_ZABBIX=1
+  (( SYS_ZABBIX )) && SYS_ZBX_SERVER="$(awk -F= '/^ServerActive=/{print $2; exit}' /etc/zabbix/zabbix_agent2.conf 2>/dev/null)"
+  dpkg-query -W -f='${Status}' alloy 2>/dev/null | grep -q 'install ok installed' && SYS_ALLOY=1
+  (( SYS_ALLOY )) && SYS_LOKI="$(sed -n 's@.*url *= *"\(https\?://[^"]*\)/loki/api/v1/push".*@\1@p' /etc/alloy/config.alloy 2>/dev/null | head -n1)"
+
+  [[ -f /root/.ssh/buzz_report ]] && SYS_BUZZKEY=1
+  if [[ -f /usr/local/sbin/disk-health-report.sh ]]; then
+    read -r SYS_BUZZ_PORT SYS_BUZZ_TARGET < <(grep -oE '\-p [0-9]+ [A-Za-z0-9._-]+@[A-Za-z0-9._-]+' /usr/local/sbin/disk-health-report.sh 2>/dev/null | head -n1 | awk '{print $2, $3}') || true
+  fi
+  [[ -f /etc/cron.d/disk-health-report ]] && SYS_BUZZ_ALERTS+="disk "
+  [[ -f /etc/cron.d/repl-health-report ]] && SYS_BUZZ_ALERTS+="repl "
+  [[ -f /etc/cron.d/ha-event-report ]] && SYS_BUZZ_ALERTS+="ha "
+  [[ -f /etc/cron.d/tb-mesh-heal ]] && SYS_BUZZ_ALERTS+="tbmesh "
+  SYS_BUZZ_ALERTS="${SYS_BUZZ_ALERTS% }"
+
+  if [[ -f /etc/update-motd.d/20-homelab ]]; then
+    SYS_MOTD=1
+    SYS_DOCURL="$(sed -n "s/^DOC_URL='\(.*\)'\$/\1/p" /etc/update-motd.d/20-homelab 2>/dev/null | head -n1)"
+  fi
+
+  # Findings for the system-check screen (warnings first).
+  (( SYS_UFW ))       && SYS_NOTES+=("WARNING: ufw is active — it will filter alongside the hardened nftables ruleset; disable one of them.")
+  (( SYS_FIREWALLD )) && SYS_NOTES+=("WARNING: firewalld is active — same conflict as ufw; disable one of them.")
+  if (( SYS_DOCKER_RUNNING > 0 )); then
+    SYS_NOTES+=("WARNING: Docker is running ${SYS_DOCKER_RUNNING} container(s) — the container step's rootless-only option would stop them.")
+  fi
+  (( SYS_HARDENED ))  && SYS_NOTES+=("Hardened before: nftables deny-by-default present${SYS_SSHPORT:+ (sshd on port ${SYS_SSHPORT})} — this is a re-run; existing values are pre-filled.")
+  { (( SYS_DOCKER )) || (( SYS_PODMAN )); } && SYS_NOTES+=("Container runtime installed: $( (( SYS_DOCKER )) && printf docker )$( (( SYS_DOCKER && SYS_PODMAN )) && printf ' + ' )$( (( SYS_PODMAN )) && printf podman ).")
+  (( SYS_ZABBIX ))    && SYS_NOTES+=("zabbix-agent2 installed${SYS_ZBX_SERVER:+ (server: ${SYS_ZBX_SERVER})}.")
+  (( SYS_ALLOY ))     && SYS_NOTES+=("Grafana Alloy installed${SYS_LOKI:+ (Loki: ${SYS_LOKI})}.")
+  (( SYS_BUZZKEY ))   && SYS_NOTES+=("buzz alert key present${SYS_BUZZ_ALERTS:+ (watches: ${SYS_BUZZ_ALERTS})}${SYS_BUZZ_TARGET:+ → ${SYS_BUZZ_TARGET}}.")
+  (( SYS_MOTD ))      && SYS_NOTES+=("Dynamic MOTD banner installed${SYS_DOCURL:+ (docs: ${SYS_DOCURL})}.")
+}
+
+# sys_report — the system-check screen shown once before the hub.
+sys_report() {
+  (( ${#SYS_NOTES[@]} )) || return 0
+  whiptail --backtitle "$BACKTITLE" --title "System check" --scrolltext \
+    --msgbox "$(printf 'Found on this host (defaults below are adjusted to match):\n\n'; printf ' • %s\n' "${SYS_NOTES[@]}")" 20 76
+}
+
+# annot <flag> — render " (installed)" for menu lines
+annot() { [[ "$1" == "1" ]] && printf ' (installed)'; return 0; }
+
 # env-aware Y/N default: yn_def <vm-default> <lxc-default> [<pve-default>]
 # (the pve default falls back to the vm one when a call doesn't care)
 yn_def() {
@@ -192,6 +259,15 @@ compute_defaults() {
   # On a PVE host the Proxmox watches are worth having by default (their
   # tooling exists there); tbmesh stays opt-in (Thunderbolt-mesh nodes only).
   A_BUZZ_disk=Y; A_BUZZ_repl="$(yn_def N N Y)"; A_BUZZ_ha="$(yn_def N N Y)"; A_BUZZ_tbmesh=N
+  # Re-run: mirror the buzz watches already installed on this host.
+  if [[ -n "${SYS_BUZZ_ALERTS:-}" ]]; then
+    A_AGENT_buzz=Y
+    A_BUZZ_disk=N; A_BUZZ_repl=N; A_BUZZ_ha=N; A_BUZZ_tbmesh=N
+    local _w
+    for _w in ${SYS_BUZZ_ALERTS}; do
+      case "$_w" in disk) A_BUZZ_disk=Y;; repl) A_BUZZ_repl=Y;; ha) A_BUZZ_ha=Y;; tbmesh) A_BUZZ_tbmesh=Y;; esac
+    done
+  fi
   BUZZ_PORT="${BUZZ_PORT:-6523}"
   A_FISH_DEFAULT="$(yn_def Y Y)"
   # PVE host: root@pam web-UI login needs the root password UNLOCKED, and
@@ -208,18 +284,23 @@ compute_defaults() {
   # Podman.) DISABLE_ROOTFUL only applies if Docker is later chosen.
   A_DOCKER="N"; A_PODMAN="N"; A_DISABLE_ROOTFUL="$(yn_def Y Y)"
   A_EXAMPLE_APP="$(yn_def Y Y)"; A_JOURNALD="$(yn_def N N)"
-  # Default SSH port: a random high port (away from 22 and the ephemeral range).
-  # On a PVE host, default to 22 instead: inter-node ssh (migration,
-  # replication, cluster join) assumes it — change it only fleet-wide.
-  if [[ "$ENV_TYPE" == "pve" ]]; then
+  # Default SSH port: the host's CURRENT sshd port when it was hardened before
+  # (a re-run must not propose moving it), else 22 on PVE (inter-node ssh
+  # assumes it), else a random high port.
+  if [[ -z "$SSH_PORT" && "${SYS_HARDENED:-0}" == "1" && -n "${SYS_SSHPORT:-}" ]]; then
+    SSH_PORT="$SYS_SSHPORT"
+  elif [[ "$ENV_TYPE" == "pve" ]]; then
     SSH_PORT="${SSH_PORT:-22}"
     # 8006/3128 are NOT pre-seeded here: harden.sh's own PVE pre-flight
     # force-allows them, so the web UI stays reachable automatically.
   else
     SSH_PORT="${SSH_PORT:-$(( RANDOM % 22000 + 10000 ))}"
   fi
-  LOKI_URL="${LOKI_URL:-loki:3100}"
-  ZABBIX_SERVER_ACTIVE="${ZABBIX_SERVER_ACTIVE:-zabbix:10051}"
+  LOKI_URL="${LOKI_URL:-${SYS_LOKI:-loki:3100}}"
+  ZABBIX_SERVER_ACTIVE="${ZABBIX_SERVER_ACTIVE:-${SYS_ZBX_SERVER:-zabbix:10051}}"
+  DOC_URL="${DOC_URL:-${SYS_DOCURL:-}}"
+  BUZZ_TARGET="${BUZZ_TARGET:-${SYS_BUZZ_TARGET:-}}"
+  BUZZ_PORT="${BUZZ_PORT:-${SYS_BUZZ_PORT:-6523}}"
   # The admin username is deliberately NOT defaulted (no SUDO_USER guessing):
   # the operator must enter it, and the hub shows "needs admin user" until they
   # do. An explicit PRIMARY_USER=<name> environment override still works.
@@ -623,7 +704,10 @@ tui_harden_options() {
 tui_harden() {
   local sel
   while true; do
-    local items=("enabled" "[$(onoff3 "$A_HARDEN")]  run this step$([[ "$A_HARDEN" == Y ]] || echo ' — enable to configure')")
+    local items=("enabled" "[$(onoff3 "$A_HARDEN")]  run this step$([[ "$A_HARDEN" == Y ]] || echo ' — enable to configure')$( (( ${SYS_HARDENED:-0} )) && echo ' (re-run)' )")
+    if (( ${SYS_UFW:-0} )) || (( ${SYS_FIREWALLD:-0} )); then
+      items+=("fwconflict" "[ ⚠ ]  another firewall is active — press Enter for details")
+    fi
     if [[ "$A_HARDEN" == Y ]]; then
       items+=("components" "[ ✔ ]  hardening components: $(hc_count)/10 on")
       items+=("options"    "[ ✔ ]  extra options: $(opt_list)")
@@ -637,6 +721,9 @@ tui_harden() {
     sel=$(hubmenu "Setup › harden (security hardening)" $(( ${#items[@]} / 2 )) "${items[@]}") || break
     case "$sel" in
       enabled)    tgl A_HARDEN ;;
+      fwconflict) show_help "Setup › harden › firewall conflict" "$( (( ${SYS_UFW:-0} )) && printf 'ufw' || printf 'firewalld' ) is active on this host. It programs netfilter alongside the nftables ruleset this hardening installs, so BOTH filters apply to every packet and either one can drop it — rules will appear to fight each other.
+
+Pick one: disable the other firewall (systemctl disable --now ufw / firewalld) before hardening, or deselect the firewall component here and keep managing the firewall with your existing tool." ;;
       components) tui_harden_components ;;
       options)    tui_harden_options ;;
       sshport)    ask "Setup › harden › SSH port" "SSH port (a random high port is suggested;\non a PVE host keep 22 for cluster ssh):" "${SSH_PORT:-22}" SSH_PORT ;;
@@ -795,9 +882,9 @@ tui_monitoring() {
   local sel
   while true; do
     sel=$(hubmenu "Setup › monitoring (monitoring & alerts)" 5 \
-      "zabbix" "[$(stat3 "$A_AGENT_zabbix" "$(need_zabbix)")]  metrics agent" \
-      "alloy"  "[$(stat3 "$A_AGENT_alloy" "")]  log shipper" \
-      "buzz"   "[$(stat3 "$A_AGENT_buzz" "$(need_buzz)")]  alert relay" \
+      "zabbix" "[$(stat3 "$A_AGENT_zabbix" "$(need_zabbix)")]  metrics agent$(annot "${SYS_ZABBIX:-0}")" \
+      "alloy"  "[$(stat3 "$A_AGENT_alloy" "")]  log shipper$(annot "${SYS_ALLOY:-0}")" \
+      "buzz"   "[$(stat3 "$A_AGENT_buzz" "$(need_buzz)")]  alert relay$(annot "${SYS_BUZZKEY:-0}")" \
       " "        "────────────────────────────────────" \
       "help"     "[ ? ]  what does each setting do?" \
       ) || break
@@ -823,9 +910,9 @@ rt_list() {
 tui_container() {
   local sel t
   while true; do
-    local items=("enabled" "[$(onoff3 "$A_CONTAINER")]  run this step$([[ "$A_CONTAINER" == Y ]] || echo ' — enable to configure')")
+    local items=("enabled" "[$(onoff3 "$A_CONTAINER")]  run this step$([[ "$A_CONTAINER" == Y ]] || echo ' — enable to configure')$( (( ${SYS_DOCKER_RUNNING:-0} > 0 )) && echo " ⚠ ${SYS_DOCKER_RUNNING} containers running" )")
     if [[ "$A_CONTAINER" == Y ]]; then
-      items+=("runtimes" "[$(valic "$( [[ "$(rt_list)" != none ]] && echo x )" "$A_CONTAINER")]  runtimes: $(rt_list)")
+      items+=("runtimes" "[$(valic "$( [[ "$(rt_list)" != none ]] && echo x )" "$A_CONTAINER")]  runtimes: $(rt_list)$( (( ${SYS_DOCKER:-0} )) && echo ' (docker installed)' )")
       items+=("rootful"  "[$(onoff3 "$A_DISABLE_ROOTFUL")]  rootless only (no root Docker daemon)")
       items+=("example"  "[$(onoff3 "$A_EXAMPLE_APP")]  example app (traefik/whoami on :8080)")
       items+=("journald" "[$(onoff3 "$A_JOURNALD")]  container logs to the journal")
@@ -938,7 +1025,7 @@ docs: generates an HTML connection guide for this host." ;;
   done
 }
 
-tui_wizard() { tui_env; compute_defaults; tui_main; }
+tui_wizard() { tui_env; sys_scan; compute_defaults; sys_report; tui_main; }
 
 # run_wizard — this installer is whiptail-TUI only. It needs an interactive
 # terminal and whiptail (auto-installed if missing). No text fallback and no
