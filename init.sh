@@ -496,14 +496,15 @@ bs_key_icon() {
 tui_bootstrap() {
   local sel v
   while true; do
-    sel=$(hubmenu "Setup › user (admin user + SSH key)" 6 \
-      "enabled"  "[$(onoff3 "$A_BOOTSTRAP")]  run this step" \
-      "user"     "[$(valic "$PRIMARY_USER" Y)]  admin username: $(valp "$PRIMARY_USER")" \
-      "sshkey"   "[$(bs_key_icon)]  SSH public key: $(bs_key_state)" \
-      "password" "[$(onoff3 "$([[ -n "$ADMIN_PASSWORD" ]] && echo Y || echo N)")]  password: $([[ -n "$ADMIN_PASSWORD" ]] && echo set || echo 'SSH-key only')" \
-      " "        "────────────────────────────────────" \
-      "help"     "[ ? ]  what does each setting do?" \
-      ) || break
+    local items=("enabled" "[$(onoff3 "$A_BOOTSTRAP")]  run this step$([[ "$A_BOOTSTRAP" == Y ]] || echo ' — enable to configure')")
+    if [[ "$A_BOOTSTRAP" == Y ]]; then
+      items+=("user"     "[$(valic "$PRIMARY_USER" Y)]  admin username: $(valp "$PRIMARY_USER")")
+      items+=("sshkey"   "[$(bs_key_icon)]  SSH public key: $(bs_key_state)")
+      items+=("password" "[$(onoff3 "$([[ -n "$ADMIN_PASSWORD" ]] && echo Y || echo N)")]  password: $([[ -n "$ADMIN_PASSWORD" ]] && echo set || echo 'SSH-key only')")
+    fi
+    items+=(" " "────────────────────────────────────")
+    items+=("help" "[ ? ]  what does each setting do?")
+    sel=$(hubmenu "Setup › user (admin user + SSH key)" $(( ${#items[@]} / 2 )) "${items[@]}") || break
     case "$sel" in
       enabled)  tgl A_BOOTSTRAP ;;
       user)     ask "Setup › user › admin username" "Admin username (sudo + SSH login):" "$PRIMARY_USER" PRIMARY_USER ;;
@@ -612,17 +613,18 @@ tui_harden_options() {
 tui_harden() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › harden (security hardening)" 9 \
-      "enabled"    "[$(onoff3 "$A_HARDEN")]  run this step" \
-      "components" "[ ✔ ]  hardening components: $(hc_count)/10 on" \
-      "options"    "[ ✔ ]  extra options: $(opt_list)" \
-      "sshport"    "[$(valic "$SSH_PORT" N)]  SSH port: $(valp "$SSH_PORT")" \
-      "tcpports"   "[$(valic "$ALLOW_TCP_PORTS" N)]  extra TCP ports: $(valp "$ALLOW_TCP_PORTS")" \
-      "udpports"   "[$(valic "$ALLOW_UDP_PORTS" N)]  extra UDP ports: $(valp "$ALLOW_UDP_PORTS")" \
-      "cidrs"      "[ ✔ ]  SSH allowed from: ${ALLOW_SSH_CIDRS:-anywhere}" \
-      " "        "────────────────────────────────────" \
-      "help"     "[ ? ]  what does each setting do?" \
-      ) || break
+    local items=("enabled" "[$(onoff3 "$A_HARDEN")]  run this step$([[ "$A_HARDEN" == Y ]] || echo ' — enable to configure')")
+    if [[ "$A_HARDEN" == Y ]]; then
+      items+=("components" "[ ✔ ]  hardening components: $(hc_count)/10 on")
+      items+=("options"    "[ ✔ ]  extra options: $(opt_list)")
+      items+=("sshport"    "[$(valic "$SSH_PORT" N)]  SSH port: $(valp "$SSH_PORT")")
+      items+=("tcpports"   "[$(valic "$ALLOW_TCP_PORTS" N)]  extra TCP ports: $(valp "$ALLOW_TCP_PORTS")")
+      items+=("udpports"   "[$(valic "$ALLOW_UDP_PORTS" N)]  extra UDP ports: $(valp "$ALLOW_UDP_PORTS")")
+      items+=("cidrs"      "[ ✔ ]  SSH allowed from: ${ALLOW_SSH_CIDRS:-anywhere}")
+    fi
+    items+=(" " "────────────────────────────────────")
+    items+=("help" "[ ? ]  what does each setting do?")
+    sel=$(hubmenu "Setup › harden (security hardening)" $(( ${#items[@]} / 2 )) "${items[@]}") || break
     case "$sel" in
       enabled)    tgl A_HARDEN ;;
       components) tui_harden_components ;;
@@ -670,13 +672,14 @@ tui_ancillary_packages() {
 tui_ancillary() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › packages (extra packages)" 5 \
-      "enabled"  "[$(onoff3 "$A_ANCILLARY")]  run this step" \
-      "packages" "[$(valic "$( [[ "$(anc_list)" != none ]] && echo x )" "$A_ANCILLARY")]  packages: $(anc_list)" \
-      "fish"     "[$(onoff3 "$A_FISH_DEFAULT")]  fish as the default shell (if picked)" \
-      " "        "────────────────────────────────────" \
-      "help"     "[ ? ]  what does each setting do?" \
-      ) || break
+    local items=("enabled" "[$(onoff3 "$A_ANCILLARY")]  run this step$([[ "$A_ANCILLARY" == Y ]] || echo ' — enable to configure')")
+    if [[ "$A_ANCILLARY" == Y ]]; then
+      items+=("packages" "[$(valic "$( [[ "$(anc_list)" != none ]] && echo x )" "$A_ANCILLARY")]  packages: $(anc_list)")
+      items+=("fish"     "[$(onoff3 "$A_FISH_DEFAULT")]  fish as the default shell (if picked)")
+    fi
+    items+=(" " "────────────────────────────────────")
+    items+=("help" "[ ? ]  what does each setting do?")
+    sel=$(hubmenu "Setup › packages (extra packages)" $(( ${#items[@]} / 2 )) "${items[@]}") || break
     case "$sel" in
       enabled)  tgl A_ANCILLARY ;;
       packages) tui_ancillary_packages ;;
@@ -692,13 +695,14 @@ fish as the default shell: switches the admin user's login shell to fish once it
 tui_svc_zabbix() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › monitoring › zabbix (metrics agent)" 5 \
-      "enabled" "[$(onoff3 "$A_AGENT_zabbix")]  install this service" \
-      "server"  "[$(valic "$ZABBIX_SERVER_ACTIVE" "$A_AGENT_zabbix")]  Zabbix server: $(valp "$ZABBIX_SERVER_ACTIVE")" \
-      "docker"  "[$(onoff3 "$A_ZBX_DOCKER")]  monitor rootless Docker" \
-      " "        "────────────────────────────────────" \
-      "help"     "[ ? ]  what does each setting do?" \
-      ) || break
+    local items=("enabled" "[$(onoff3 "$A_AGENT_zabbix")]  install this service$([[ "$A_AGENT_zabbix" == Y ]] || echo ' — enable to configure')")
+    if [[ "$A_AGENT_zabbix" == Y ]]; then
+      items+=("server"  "[$(valic "$ZABBIX_SERVER_ACTIVE" "$A_AGENT_zabbix")]  Zabbix server: $(valp "$ZABBIX_SERVER_ACTIVE")")
+      items+=("docker"  "[$(onoff3 "$A_ZBX_DOCKER")]  monitor rootless Docker")
+    fi
+    items+=(" " "────────────────────────────────────")
+    items+=("help" "[ ? ]  what does each setting do?")
+    sel=$(hubmenu "Setup › monitoring › zabbix (metrics agent)" $(( ${#items[@]} / 2 )) "${items[@]}") || break
     case "$sel" in
       enabled) tgl A_AGENT_zabbix ;;
       server)  ask "Setup › monitoring › zabbix › server" "Zabbix server/proxy for active checks (host or host:port):" "${ZABBIX_SERVER_ACTIVE:-zabbix:10051}" ZABBIX_SERVER_ACTIVE ;;
@@ -714,13 +718,14 @@ monitor rootless Docker: rootless Docker's API socket lives in the owner's runti
 tui_svc_alloy() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › monitoring › alloy (log shipper)" 5 \
-      "enabled"    "[$(onoff3 "$A_AGENT_alloy")]  install this service" \
-      "loki"       "[$(valic "$LOKI_URL" "$A_AGENT_alloy")]  Loki URL: $(valp "$LOKI_URL")" \
-      "dockerlogs" "[$(onoff3 "$A_ALLOY_DOCKERLOGS")]  capture Docker container logs" \
-      " "        "────────────────────────────────────" \
-      "help"     "[ ? ]  what does each setting do?" \
-      ) || break
+    local items=("enabled" "[$(onoff3 "$A_AGENT_alloy")]  install this service$([[ "$A_AGENT_alloy" == Y ]] || echo ' — enable to configure')")
+    if [[ "$A_AGENT_alloy" == Y ]]; then
+      items+=("loki"       "[$(valic "$LOKI_URL" "$A_AGENT_alloy")]  Loki URL: $(valp "$LOKI_URL")")
+      items+=("dockerlogs" "[$(onoff3 "$A_ALLOY_DOCKERLOGS")]  capture Docker container logs")
+    fi
+    items+=(" " "────────────────────────────────────")
+    items+=("help" "[ ? ]  what does each setting do?")
+    sel=$(hubmenu "Setup › monitoring › alloy (log shipper)" $(( ${#items[@]} / 2 )) "${items[@]}") || break
     case "$sel" in
       enabled)    tgl A_AGENT_alloy ;;
       loki)       ask "Setup › monitoring › alloy › Loki URL" "Loki base URL for Alloy (host:port):" "${LOKI_URL:-loki:3100}" LOKI_URL ;;
@@ -737,13 +742,14 @@ tui_svc_buzz() {
   local sel t v cur
   while true; do
     cur="$BUZZ_TARGET"; [[ -n "$cur" && "${BUZZ_PORT:-6523}" != "6523" ]] && cur="${cur}:${BUZZ_PORT}"
-    sel=$(hubmenu "Setup › monitoring › buzz (alert relay)" 5 \
-      "enabled" "[$(onoff3 "$A_AGENT_buzz")]  install this service" \
-      "alerts"  "[$(valic "$( [[ "$(buzz_alert_list)" != none ]] && echo x )" "$A_AGENT_buzz")]  alerts: $(buzz_alert_list)" \
-      "relay"   "[$(valic "$BUZZ_TARGET" "$A_AGENT_buzz")]  relay address: $(valp "$cur")" \
-      " "        "────────────────────────────────────" \
-      "help"     "[ ? ]  what does each setting do?" \
-      ) || break
+    local items=("enabled" "[$(onoff3 "$A_AGENT_buzz")]  install this service$([[ "$A_AGENT_buzz" == Y ]] || echo ' — enable to configure')")
+    if [[ "$A_AGENT_buzz" == Y ]]; then
+      items+=("alerts"  "[$(valic "$( [[ "$(buzz_alert_list)" != none ]] && echo x )" "$A_AGENT_buzz")]  alerts: $(buzz_alert_list)")
+      items+=("relay"   "[$(valic "$BUZZ_TARGET" "$A_AGENT_buzz")]  relay address: $(valp "$cur")")
+    fi
+    items+=(" " "────────────────────────────────────")
+    items+=("help" "[ ? ]  what does each setting do?")
+    sel=$(hubmenu "Setup › monitoring › buzz (alert relay)" $(( ${#items[@]} / 2 )) "${items[@]}") || break
     case "$sel" in
       enabled) tgl A_AGENT_buzz ;;
       alerts)
@@ -807,15 +813,16 @@ rt_list() {
 tui_container() {
   local sel t
   while true; do
-    sel=$(hubmenu "Setup › container (Docker / Podman)" 7 \
-      "enabled"  "[$(onoff3 "$A_CONTAINER")]  run this step" \
-      "runtimes" "[$(valic "$( [[ "$(rt_list)" != none ]] && echo x )" "$A_CONTAINER")]  runtimes: $(rt_list)" \
-      "rootful"  "[$(onoff3 "$A_DISABLE_ROOTFUL")]  rootless only (no root Docker daemon)" \
-      "example"  "[$(onoff3 "$A_EXAMPLE_APP")]  example app (traefik/whoami on :8080)" \
-      "journald" "[$(onoff3 "$A_JOURNALD")]  container logs to the journal" \
-      " "        "────────────────────────────────────" \
-      "help"     "[ ? ]  what does each setting do?" \
-      ) || break
+    local items=("enabled" "[$(onoff3 "$A_CONTAINER")]  run this step$([[ "$A_CONTAINER" == Y ]] || echo ' — enable to configure')")
+    if [[ "$A_CONTAINER" == Y ]]; then
+      items+=("runtimes" "[$(valic "$( [[ "$(rt_list)" != none ]] && echo x )" "$A_CONTAINER")]  runtimes: $(rt_list)")
+      items+=("rootful"  "[$(onoff3 "$A_DISABLE_ROOTFUL")]  rootless only (no root Docker daemon)")
+      items+=("example"  "[$(onoff3 "$A_EXAMPLE_APP")]  example app (traefik/whoami on :8080)")
+      items+=("journald" "[$(onoff3 "$A_JOURNALD")]  container logs to the journal")
+    fi
+    items+=(" " "────────────────────────────────────")
+    items+=("help" "[ ? ]  what does each setting do?")
+    sel=$(hubmenu "Setup › container (Docker / Podman)" $(( ${#items[@]} / 2 )) "${items[@]}") || break
     case "$sel" in
       enabled)  tgl A_CONTAINER ;;
       runtimes)
@@ -845,12 +852,13 @@ container logs to the journal: sets the journald log-driver so container output 
 tui_motd() {
   local sel
   while true; do
-    sel=$(hubmenu "Setup › banner (login banner)" 4 \
-      "enabled" "[$(onoff3 "$A_MOTD")]  run this step" \
-      "docurl"  "[$(valic "$DOC_URL" N)]  wiki/docs link in the banner: $(valp "$DOC_URL")" \
-      " "        "────────────────────────────────────" \
-      "help"     "[ ? ]  what does each setting do?" \
-      ) || break
+    local items=("enabled" "[$(onoff3 "$A_MOTD")]  run this step$([[ "$A_MOTD" == Y ]] || echo ' — enable to configure')")
+    if [[ "$A_MOTD" == Y ]]; then
+      items+=("docurl"  "[$(valic "$DOC_URL" N)]  wiki/docs link in the banner: $(valp "$DOC_URL")")
+    fi
+    items+=(" " "────────────────────────────────────")
+    items+=("help" "[ ? ]  what does each setting do?")
+    sel=$(hubmenu "Setup › banner (login banner)" $(( ${#items[@]} / 2 )) "${items[@]}") || break
     case "$sel" in
       enabled) tgl A_MOTD ;;
       help) show_help "Setup › banner › help" "run this step: installs a dynamic login banner showing host, IP, uptime, OS/kernel, load, memory, disk and sessions on every SSH login.

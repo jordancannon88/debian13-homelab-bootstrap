@@ -280,6 +280,10 @@ its own line showing its current value:
         <Open>                              <Back>
 ```
 
+While a step's `enabled` toggle is off, its option lines are hidden — only
+`enabled` and `help` remain — so nothing inside a disabled step can be
+changed until it is switched back on.
+
 Toggle lines (`enabled`, yes/no settings) flip in place when you select them;
 value lines open an input screen; list lines open a checklist. Breadcrumb
 titles (`Setup › monitoring › buzz › relay address`) always show where you
