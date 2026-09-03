@@ -339,7 +339,15 @@ compute_defaults() {
   A_AGENT_buzz="$(yn_def N N)"
   # On a PVE host the Proxmox watches are worth having by default (their
   # tooling exists there); tbmesh stays opt-in (Thunderbolt-mesh nodes only).
-  A_BUZZ_disk=Y; A_BUZZ_repl="$(yn_def N N Y)"; A_BUZZ_ha="$(yn_def N N Y)"; A_BUZZ_backup="$(yn_def N N Y)"; A_BUZZ_tbmesh=N
+  # disk alert: SMART data only exists on real hardware — PVE hosts and bare
+  # metal (which uses the "vm" env type; tell them apart via detect-virt).
+  # Virtio disks in a VM and unprivileged LXCs have no SMART to watch.
+  local _bare=0
+  if [[ "$ENV_TYPE" == "pve" ]]; then _bare=1
+  elif command -v systemd-detect-virt >/dev/null 2>&1 && [[ "$(systemd-detect-virt 2>/dev/null || true)" == "none" ]]; then _bare=1
+  fi
+  if (( _bare )); then A_BUZZ_disk=Y; else A_BUZZ_disk=N; fi
+  A_BUZZ_repl="$(yn_def N N Y)"; A_BUZZ_ha="$(yn_def N N Y)"; A_BUZZ_backup="$(yn_def N N Y)"; A_BUZZ_tbmesh=N
   A_SINK_buzz=Y; A_SINK_ntfy=N
   # Re-run: mirror the buzz watches already installed on this host.
   if [[ -n "${SYS_BUZZ_ALERTS:-}" ]]; then
@@ -354,7 +362,9 @@ compute_defaults() {
   # PVE host: root@pam web-UI login needs the root password UNLOCKED, and
   # hypervisors routinely need USB (passthrough, installer media) — so both
   # hardening extras default OFF there.
-  A_UPGRADE="$(yn_def Y Y)"; A_LOCKROOT="$(yn_def Y Y N)"; A_USBBLACK="$(yn_def Y Y N)"
+  # usb-storage blacklist: off in an LXC (kernel modules are host-owned, the
+  # blacklist file would be a no-op) and off on PVE (passthrough/install media).
+  A_UPGRADE="$(yn_def Y Y)"; A_LOCKROOT="$(yn_def Y Y N)"; A_USBBLACK="$(yn_def Y N N)"
   A_SSH2FA=N; A_COMPILERS=Y; A_HTTP=N; A_HTTPS=N
   A_HC_unattended=Y; A_HC_journald=Y; A_HC_ssh=Y; A_HC_firewall=Y; A_HC_fail2ban=Y
   A_HC_apparmor=Y; A_HC_aide=Y; A_HC_sysctl=Y; A_HC_extra=Y; A_HC_lynis=Y
