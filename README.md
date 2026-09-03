@@ -320,6 +320,12 @@ that screen.
 - Accept validates required inputs, then the chosen scripts run
   non-interactively. A missing required value (the SSH key, say) pops a message
   so you can fix it before install.
+- Every run writes a full install log to
+  `/var/log/homelab-bootstrap/install-<timestamp>.log` (symlinked as
+  `install-latest.log`): the system-check findings, every chosen option, the
+  exact configuration each script received, each script's complete output, and
+  per-script results. Passwords and tokens are redacted. When something fails
+  or crashes, start there.
 - Defaults worth noting: `container.sh` is off by default (Docker or Podman in
   an LXC is advanced, and on a VM you opt in); the login banner is on for all
   host types; the SSH port is a random high port; root password lock and the

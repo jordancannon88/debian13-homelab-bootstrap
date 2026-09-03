@@ -53,8 +53,74 @@ SUMMARY_DIR="/var/lib/homelab-bootstrap/summaries"
 # printed in the final report. Lives outside the throwaway WORKDIR so it
 # survives the cleanup trap.
 LOG_DIR="/var/log/homelab-bootstrap"
-ERROR_LOG="${LOG_DIR}/install-errors-$(date +%Y%m%d-%H%M%S).log"
+_RUN_TS="$(date +%Y%m%d-%H%M%S)"
+ERROR_LOG="${LOG_DIR}/install-errors-${_RUN_TS}.log"
 ERROR_COUNT=0
+
+# Full install log: every chosen option and every script's complete output,
+# persisted for post-mortem debugging (the per-script logs otherwise live in a
+# throwaway tmp dir). Secrets (passwords, tokens) are redacted. All writes are
+# fail-soft — logging must never break an install.
+RUN_LOG="${LOG_DIR}/install-${_RUN_TS}.log"
+init_run_log() {
+  mkdir -p "$LOG_DIR" 2>/dev/null || true
+  {
+    echo "==== Debian 13 Homelab Bootstrap — install log ===="
+    echo "date    : $(date -Is 2>/dev/null || date)"
+    echo "host    : $(hostname -f 2>/dev/null || hostname)"
+    echo "kernel  : $(uname -r 2>/dev/null)"
+    echo "invoked : $0 (uid ${EUID:-?}, tty: $( [[ -r /dev/tty ]] && echo yes || echo no ))"
+  } >> "$RUN_LOG" 2>/dev/null || true
+  ln -sfn "$RUN_LOG" "${LOG_DIR}/install-latest.log" 2>/dev/null || true
+}
+
+# log_config — dump the system-check state and every chosen option after the
+# wizard is accepted. Secrets are redacted; everything else goes in verbatim.
+log_config() {
+  {
+    echo
+    echo "==== system check ===="
+    local n v
+    for n in "${SYS_NOTES[@]:-}"; do [[ -n "$n" ]] && echo "  note: $n"; done
+    for v in $(compgen -v SYS_ 2>/dev/null); do
+      [[ "$v" == "SYS_NOTES" ]] && continue
+      echo "  ${v}=${!v-}"
+    done
+    echo
+    echo "==== chosen configuration (secrets redacted) ===="
+    echo "  ENV_TYPE=${ENV_TYPE-}"
+    for v in $(compgen -v A_ 2>/dev/null); do
+      echo "  ${v}=${!v-}"
+    done
+    for v in PRIMARY_USER SSH_PORT ALLOW_TCP_PORTS ALLOW_UDP_PORTS ALLOW_SSH_CIDRS              ZABBIX_SERVER_ACTIVE LOKI_URL BUZZ_TARGET BUZZ_PORT NTFY_URL DOC_URL              DEFAULT_SHELL_CHOICE; do
+      echo "  ${v}=${!v-}"
+    done
+    echo "  PUBKEY=$( [[ -n "${PUBKEY:-}" ]] && echo '<provided>' || echo '<none>' )"
+    echo "  ADMIN_PASSWORD=$( [[ -n "${ADMIN_PASSWORD:-}" ]] && echo '<set — redacted>' || echo '<none>' )"
+    echo "  NTFY_TOKEN=$( [[ -n "${NTFY_TOKEN:-}" ]] && echo '<set — redacted>' || echo '<none>' )"
+    echo
+    echo "==== run plan ===="
+    echo "  scripts: ${SELECTED[*]:-none}"
+    echo "  ancillary packages: ${ANCILLARY_PICK[*]:-none}"
+    echo "  monitoring services: ${MONITORING_PICK[*]:-none}"
+  } >> "$RUN_LOG" 2>/dev/null || true
+}
+
+# log_script_run <script> <logfile> <result> — append one script's exported
+# configuration, full output and result to the install log.
+log_script_run() {
+  local script="$1" logf="$2" result="$3"
+  {
+    echo
+    echo "==== ${script} — $(date -Is 2>/dev/null || date) ===="
+    echo "-- exported configuration (secrets redacted) --"
+    env | grep -E '^(ADMIN_USERS|SSH_PORT|ALLOW_|HARDEN_|SKIP_|REBUILD_|DISABLE_|BLACKLIST_|ENABLE_|DOCKER_|MONITORING_|ZABBIX_|LOKI_|ALLOY_|BUZZ_|ALERTS_|NTFY_URL|SHELL_|DEFAULT_SHELL|ANCILLARY_|CONTAINER_|INSTALL_|USERNS_|CREATE_|EXAMPLE_|DOC_URL|OUT_FILE|CONN_|PUBKEY)=' 2>/dev/null \
+      | grep -vE 'PASSWORD|TOKEN|PUBKEY=' | sort | sed 's/^/  /'
+    echo "-- output --"
+    cat "$logf" 2>/dev/null || echo "  (no output captured)"
+    echo "-- result: ${result} --"
+  } >> "$RUN_LOG" 2>/dev/null || true
+}
 
 # Scripts offered, in order. bootstrap.sh runs FIRST (it creates the admin user
 # + SSH key that harden.sh relies on); documentation.sh is last: it documents
@@ -1256,6 +1322,7 @@ hr '─'
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then err "This script must be run as root (try: sudo $0)."; exit 1; fi
 command -v apt-get >/dev/null 2>&1 || { err "apt-get not found — this targets Debian/apt systems."; exit 1; }
 log "Running as root."
+init_run_log
 command -v curl >/dev/null 2>&1 || warn "curl not found — the download fallback for remote scripts won't work (local copies still will)."
 
 # ==============================================================================
@@ -1266,8 +1333,10 @@ step "Step 1 — Configure (whiptail menu)"
 run_wizard
 
 materialize_selection
+log_config
 if (( ${#SELECTED[@]} == 0 )); then warn "No scripts selected — nothing to do."; exit 0; fi
 log "Settings accepted — running the selected scripts now."
+note "Full install log: ${RUN_LOG}"
 
 # ==============================================================================
 step "Step 2 — Running scripts (no further prompts)"
@@ -1306,6 +1375,7 @@ for s in "${SELECTED[@]}"; do
     # /proc/<pid>/environ to the users they run as).
     [[ "$s" == "bootstrap.sh" && -n "${ADMIN_PASSWORD:-}" ]] && { unset ADMIN_PASSWORD; export -n ADMIN_PASSWORD 2>/dev/null || true; }
     STATUS[$s]="ran"; DETAIL[$s]="${srcdesc}; $(( $(date +%s) - s_start ))s"
+    log_script_run "$s" "$logf" "ran (exit 0) in $(( $(date +%s) - s_start ))s"
     [[ -s "${SUMMARY_DIR}/${s}" ]] && SUMM[$s]="$(head -n1 "${SUMMARY_DIR}/${s}")"
     # Succeeded overall, but flag any error lines the script emitted along the way.
     if grep -qF "$S_ERR" "$logf" 2>/dev/null; then
@@ -1316,6 +1386,7 @@ for s in "${SELECTED[@]}"; do
   else
     rc="${PIPESTATUS[0]}"; err "${s} exited with status ${rc} — stopping; later scripts were NOT run."
     STATUS[$s]="failed"; DETAIL[$s]="${srcdesc}; exit ${rc}"
+    log_script_run "$s" "$logf" "FAILED (exit ${rc}) in $(( $(date +%s) - s_start ))s"
     add_error "$s" "exited with status ${rc} — bootstrap stopped, later scripts not run"
     log_diagnostics "$s" "$logf"
     break
@@ -1390,6 +1461,20 @@ if [[ "$ERROR_COUNT" -gt 0 && -s "$ERROR_LOG" ]]; then
   printf '   %sReview it with: %sless %s%s\n' "$DIM" "$CYN" "$ERROR_LOG" "$RESET"
 fi
 
+# Close out the install log with the final status of every script.
+{
+  echo
+  echo "==== final review ===="
+  for s in "${SCRIPTS[@]}"; do
+    echo "  ${s}: ${STATUS[$s]:-skipped}${DETAIL[$s]:+ (${DETAIL[$s]})}${SUMM[$s]:+ — ${SUMM[$s]}}"
+  done
+  echo "  errors recorded: ${ERROR_COUNT}"
+  echo "  total: ${MM}m ${SS}s"
+  echo "==== end of run ===="
+} >> "$RUN_LOG" 2>/dev/null || true
+
+hr '─'
+printf '   %sFull install log (options + every script'"'"'s output): %s%s%s\n' "$DIM" "$BOLD" "$RUN_LOG" "$RESET"
 hr '═'
 if [[ -n "$fail" ]]; then
   printf '%s%s  Fix the issue above, then re-run — completed scripts are idempotent. 🔧%s\n' "$BOLD" "$YEL" "$RESET"
