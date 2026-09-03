@@ -168,6 +168,8 @@ A_BUZZ_disk=""; A_BUZZ_repl=""; A_BUZZ_ha=""; A_BUZZ_tbmesh=""
 BUZZ_TARGET="${BUZZ_TARGET:-}"; BUZZ_PORT="${BUZZ_PORT:-}"
 PRIMARY_USER="${PRIMARY_USER:-}"; PUBKEY="${PUBKEY:-}"; ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 SSH_PORT="${SSH_PORT:-}"; A_UPGRADE=""; A_LOCKROOT=""; A_USBBLACK=""; ALLOW_TCP_PORTS="${ALLOW_TCP_PORTS:-}"
+A_SSH2FA=""; A_COMPILERS=""; A_HTTP=""; A_HTTPS=""
+ALLOW_UDP_PORTS="${ALLOW_UDP_PORTS:-}"; ALLOW_SSH_CIDRS="${ALLOW_SSH_CIDRS:-}"
 A_FISH_DEFAULT=""
 ZABBIX_SERVER_ACTIVE="${ZABBIX_SERVER_ACTIVE:-}"; A_ZBX_DOCKER=""; LOKI_URL="${LOKI_URL:-}"; A_ALLOY_DOCKERLOGS=""
 A_DOCKER=""; A_PODMAN=""; A_DISABLE_ROOTFUL=""; A_EXAMPLE_APP=""; A_JOURNALD=""
@@ -178,7 +180,7 @@ DOC_URL="${DOC_URL:-}"
 # and are flagged by validate_tui before install.
 compute_defaults() {
   A_BOOTSTRAP="$(yn_def Y Y)"; A_HARDEN="$(yn_def Y Y)"; A_ANCILLARY="$(yn_def Y Y)"
-  A_MONITORING="$(yn_def Y Y)"; A_CONTAINER="$(yn_def N N)"; A_MOTD="$(yn_def N N)"; A_DOC="$(yn_def Y Y)"
+  A_MONITORING="$(yn_def Y Y)"; A_CONTAINER="$(yn_def N N)"; A_MOTD="$(yn_def Y Y)"; A_DOC="$(yn_def Y Y)"
   A_PKG_vim="$(yn_def Y Y)"; A_PKG_btop="$(yn_def Y Y)"; A_PKG_duf="$(yn_def Y Y)"
   A_PKG_fish="$(yn_def Y Y)"; A_PKG_rsync="$(yn_def Y Y)"; A_PKG_qemu="$(yn_def Y N N)"
   A_AGENT_zabbix="$(yn_def Y Y)"; A_AGENT_alloy="$(yn_def Y Y)"
@@ -194,6 +196,7 @@ compute_defaults() {
   # hypervisors routinely need USB (passthrough, installer media) — so both
   # hardening extras default OFF there.
   A_UPGRADE="$(yn_def Y Y)"; A_LOCKROOT="$(yn_def Y Y N)"; A_USBBLACK="$(yn_def Y Y N)"
+  A_SSH2FA=N; A_COMPILERS=Y; A_HTTP=N; A_HTTPS=N
   A_ZBX_DOCKER="$(yn_def N N)"; A_ALLOY_DOCKERLOGS="$(yn_def N N)"
   # Neither runtime is pre-selected: enabling the container step then opens the
   # runtime picker where you explicitly choose Docker and/or Podman. (Pre-ticking
@@ -257,7 +260,11 @@ materialize_selection() {
     [[ "$A_UPGRADE"  == "Y" ]] && export SKIP_UPGRADE=0        || export SKIP_UPGRADE=1
     [[ "$A_LOCKROOT" == "Y" ]] && export DISABLE_ROOT_LOGIN=1  || export DISABLE_ROOT_LOGIN=0
     [[ "$A_USBBLACK" == "Y" ]] && export BLACKLIST_USB_STORAGE=1 || export BLACKLIST_USB_STORAGE=0
-    export ALLOW_TCP_PORTS
+    [[ "$A_SSH2FA"   == "Y" ]] && export ENABLE_SSH_2FA=1      || export ENABLE_SSH_2FA=0
+    [[ "$A_COMPILERS" == "Y" ]] && export HARDEN_COMPILERS=1   || export HARDEN_COMPILERS=0
+    [[ "$A_HTTP"     == "Y" ]] && export ALLOW_HTTP=1          || export ALLOW_HTTP=0
+    [[ "$A_HTTPS"    == "Y" ]] && export ALLOW_HTTPS=1         || export ALLOW_HTTPS=0
+    export ALLOW_TCP_PORTS ALLOW_UDP_PORTS ALLOW_SSH_CIDRS
     export DOCKER_COMPAT=0
   fi
   if [[ "$A_ANCILLARY" == "Y" && ${#ANCILLARY_PICK[@]} -gt 0 ]]; then
@@ -308,12 +315,7 @@ materialize_selection() {
 BACKTITLE="Debian 13 Homelab Bootstrap"
 
 onoff() { [[ "$1" == "Y" ]] && printf 'ON' || printf 'OFF'; }    # checklist state
-pad3()  { [[ "$1" == "Y" ]] && printf 'yes' || printf 'no '; }   # aligned menu state
-# Short status summaries for the hub menu lines.
-anc_list() { local p=(); [[ "$A_PKG_vim" == Y ]] && p+=(vim); [[ "$A_PKG_btop" == Y ]] && p+=(btop); [[ "$A_PKG_duf" == Y ]] && p+=(duf); [[ "$A_PKG_fish" == Y ]] && p+=(fish); [[ "$A_PKG_rsync" == Y ]] && p+=(rsync); [[ "$A_PKG_qemu" == Y ]] && p+=(qemu); local IFS=,; printf '%s' "${p[*]:-none}"; }
-mon_list() { local p=(); [[ "$A_AGENT_zabbix" == Y ]] && p+=(zabbix); [[ "$A_AGENT_alloy" == Y ]] && p+=(alloy); [[ "$A_AGENT_buzz" == Y ]] && p+=(buzz); local IFS=,; printf '%s' "${p[*]:-none}"; }
 buzz_alert_list() { local p=(); [[ "$A_BUZZ_disk" == Y ]] && p+=(disk); [[ "$A_BUZZ_repl" == Y ]] && p+=(repl); [[ "$A_BUZZ_ha" == Y ]] && p+=(ha); [[ "$A_BUZZ_tbmesh" == Y ]] && p+=(tbmesh); printf '%s' "${p[*]:-none}"; }
-ct_list()  { [[ "$A_CONTAINER" != Y ]] && { printf 'off'; return; }; local p=(); [[ "$A_DOCKER" == Y ]] && p+=(docker); [[ "$A_PODMAN" == Y ]] && p+=(podman); local IFS=,; printf '%s' "${p[*]:-none}"; }
 
 # need_* — what a step still needs before Accept will pass (empty = ready).
 # These feed the ⚠ indicators on the hub menu so required configuration is
@@ -342,21 +344,32 @@ need_harden() {
     [[ -s "$akf" ]] || printf 'SSH key on file'
   fi
 }
-need_monitoring() {
-  [[ "$A_MONITORING" == Y ]] || return 0
+need_zabbix() {
+  [[ "$A_AGENT_zabbix" == Y && -z "${ZABBIX_SERVER_ACTIVE//[[:space:]]/}" ]] && printf 'server'
+  return 0
+}
+need_buzz() {
+  [[ "$A_AGENT_buzz" == Y ]] || return 0
   local n=()
-  [[ "$A_AGENT_zabbix" == Y && -z "${ZABBIX_SERVER_ACTIVE//[[:space:]]/}" ]] && n+=("Zabbix server")
-  [[ "$A_AGENT_buzz" == Y && -z "${BUZZ_TARGET//[[:space:]]/}" ]] && n+=("dev box")
-  [[ "$A_AGENT_buzz" == Y && "$(buzz_alert_list)" == "none" ]] && n+=("alert pick")
+  [[ -z "${BUZZ_TARGET//[[:space:]]/}" ]] && n+=("relay")
+  [[ "$(buzz_alert_list)" == "none" ]] && n+=("alerts")
   local IFS='+'; printf '%s' "${n[*]:-}"
 }
-# stat3 <Y/N> <needs> — the hub status bracket: "no " when the step is off,
-# " ⚠ " when it's on but still needs configuration, "yes" when ready. The
-# bracket IS the indicator; open the step to see and fill in what's missing.
+need_monitoring() {
+  [[ "$A_MONITORING" == Y ]] || return 0
+  local n=() z b
+  z="$(need_zabbix)"; b="$(need_buzz)"
+  [[ -n "$z" ]] && n+=("$z")
+  [[ -n "$b" ]] && n+=("$b")
+  local IFS='+'; printf '%s' "${n[*]:-}"
+}
+# stat3 <Y/N> <needs> — the hub status icon: ✗ off, ⚠ on but still needs
+# configuration, ✔ on and ready. The bracket IS the indicator; open the step
+# to see and fill in what's missing.
 stat3() {
-  if [[ "$1" != "Y" ]]; then printf 'no '
+  if [[ "$1" != "Y" ]]; then printf ' ✗ '
   elif [[ -n "$2" ]]; then printf ' ⚠ '
-  else printf 'yes'
+  else printf ' ✔ '
   fi
 }
 
@@ -449,18 +462,29 @@ tui_harden() {
       --yesno "Harden the system?\n\nSSH lockdown, nftables firewall, fail2ban, sysctl,\nAppArmor, AIDE, Lynis." 12 66; then A_HARDEN=Y; else A_HARDEN=N; return; fi
   local v sel t
   if v=$(whiptail --backtitle "$BACKTITLE" --title "SSH port" \
-      --inputbox "SSH port (a random high port is suggested):" 9 60 "${SSH_PORT:-22}" 3>&1 1>&2 2>&3); then SSH_PORT="${v//[[:space:]]/}"; fi
+      --inputbox "SSH port (a random high port is suggested;\non a PVE host keep 22 for cluster ssh):" 10 60 "${SSH_PORT:-22}" 3>&1 1>&2 2>&3); then SSH_PORT="${v//[[:space:]]/}"; fi
   if sel=$(whiptail --backtitle "$BACKTITLE" --title "Hardening options" \
-      --checklist "Space to toggle, Enter to confirm:" 13 76 3 \
-      "upgrade"  "Run apt full-upgrade"                        "$(onoff "$A_UPGRADE")" \
-      "lockroot" "Lock the root password (sudo still works)"   "$(onoff "$A_LOCKROOT")" \
-      "usbblock" "Blacklist usb-storage (disables USB drives)" "$(onoff "$A_USBBLACK")" \
+      --checklist "Pick the hardening options you want (Space to toggle):" 17 76 7 \
+      "upgrade"   "Run apt full-upgrade"                          "$(onoff "$A_UPGRADE")" \
+      "lockroot"  "Lock the root password (sudo still works)"     "$(onoff "$A_LOCKROOT")" \
+      "usbblock"  "Blacklist usb-storage (disables USB drives)"   "$(onoff "$A_USBBLACK")" \
+      "ssh2fa"    "Require TOTP 2FA for SSH logins"               "$(onoff "$A_SSH2FA")" \
+      "compilers" "Restrict compilers to root"                    "$(onoff "$A_COMPILERS")" \
+      "http"      "Open port 80 (HTTP)"                           "$(onoff "$A_HTTP")" \
+      "https"     "Open port 443 (HTTPS)"                         "$(onoff "$A_HTTPS")" \
       3>&1 1>&2 2>&3); then
-    A_UPGRADE=N; A_LOCKROOT=N; A_USBBLACK=N
-    for t in $sel; do t="${t//\"/}"; case "$t" in upgrade) A_UPGRADE=Y;; lockroot) A_LOCKROOT=Y;; usbblock) A_USBBLACK=Y;; esac; done
+    A_UPGRADE=N; A_LOCKROOT=N; A_USBBLACK=N; A_SSH2FA=N; A_COMPILERS=N; A_HTTP=N; A_HTTPS=N
+    for t in $sel; do t="${t//\"/}"; case "$t" in
+      upgrade) A_UPGRADE=Y;; lockroot) A_LOCKROOT=Y;; usbblock) A_USBBLACK=Y;;
+      ssh2fa) A_SSH2FA=Y;; compilers) A_COMPILERS=Y;; http) A_HTTP=Y;; https) A_HTTPS=Y;;
+    esac; done
   fi
-  if v=$(whiptail --backtitle "$BACKTITLE" --title "Firewall ports" \
+  if v=$(whiptail --backtitle "$BACKTITLE" --title "Firewall — extra TCP ports" \
       --inputbox "Extra TCP ports to open (space-separated, blank for none):" 9 76 "$ALLOW_TCP_PORTS" 3>&1 1>&2 2>&3); then ALLOW_TCP_PORTS="$v"; fi
+  if v=$(whiptail --backtitle "$BACKTITLE" --title "Firewall — extra UDP ports" \
+      --inputbox "Extra UDP ports to open (space-separated, blank for none):" 9 76 "$ALLOW_UDP_PORTS" 3>&1 1>&2 2>&3); then ALLOW_UDP_PORTS="$v"; fi
+  if v=$(whiptail --backtitle "$BACKTITLE" --title "SSH source ranges" \
+      --inputbox "Restrict SSH to these source CIDRs\n(space-separated, blank = allow from anywhere):" 10 76 "$ALLOW_SSH_CIDRS" 3>&1 1>&2 2>&3); then ALLOW_SSH_CIDRS="$v"; fi
 }
 
 tui_ancillary() {
@@ -483,43 +507,72 @@ tui_ancillary() {
   fi
 }
 
+# Monitoring is a service hub: each service opens its own small wizard with
+# exactly the inputs that service needs.
 tui_monitoring() {
-  local sel t v
-  if sel=$(whiptail --backtitle "$BACKTITLE" --title "monitoring.sh — agents" \
-      --checklist "Monitoring agents (Space to toggle):" 12 76 3 \
-      "zabbix" "Zabbix agent 2 (needs a Zabbix server)" "$(onoff "$A_AGENT_zabbix")" \
-      "alloy"  "Grafana Alloy log shipper (needs Loki)" "$(onoff "$A_AGENT_alloy")" \
-      "buzz"   "buzz relay alerting (needs the dev box)" "$(onoff "$A_AGENT_buzz")" \
+  local sel
+  while true; do
+    sel=$(whiptail --backtitle "$BACKTITLE" --title "monitoring.sh — services" \
+      --ok-button "Open" --cancel-button "Back" \
+      --menu "Pick a service to enable and configure.\n✔ on · ✗ off · ⚠ needs configuration" 14 66 3 \
+      "zabbix" "[$(stat3 "$A_AGENT_zabbix" "$(need_zabbix)")]  metrics agent" \
+      "alloy"  "[$(stat3 "$A_AGENT_alloy" "")]  log shipper" \
+      "buzz"   "[$(stat3 "$A_AGENT_buzz" "$(need_buzz)")]  alert relay" \
+      3>&1 1>&2 2>&3) || break
+    case "$sel" in
+      zabbix) tui_svc_zabbix ;;
+      alloy)  tui_svc_alloy ;;
+      buzz)   tui_svc_buzz ;;
+    esac
+  done
+  [[ "$A_AGENT_zabbix" == Y || "$A_AGENT_alloy" == Y || "$A_AGENT_buzz" == Y ]] && A_MONITORING=Y || A_MONITORING=N
+}
+
+tui_svc_zabbix() {
+  local v
+  if whiptail --backtitle "$BACKTITLE" --title "Zabbix agent 2" \
+      --yesno "Install the Zabbix agent 2 (metrics)?\n\nNeeds a Zabbix server to report to." 10 62; then A_AGENT_zabbix=Y; else A_AGENT_zabbix=N; return; fi
+  if v=$(whiptail --backtitle "$BACKTITLE" --title "Zabbix server" \
+      --inputbox "Zabbix server/proxy for active checks (host or host:port):" 9 72 "${ZABBIX_SERVER_ACTIVE:-zabbix:10051}" 3>&1 1>&2 2>&3); then ZABBIX_SERVER_ACTIVE="${v//[[:space:]]/}"; fi
+  if whiptail --backtitle "$BACKTITLE" --title "Zabbix" --defaultno --yesno "Set the agent up to monitor rootless Docker?" 8 64; then A_ZBX_DOCKER=Y; else A_ZBX_DOCKER=N; fi
+}
+
+tui_svc_alloy() {
+  local v
+  if whiptail --backtitle "$BACKTITLE" --title "Grafana Alloy" \
+      --yesno "Install Grafana Alloy (journal-first log shipper)?\n\nNeeds a Loki server to push to." 10 62; then A_AGENT_alloy=Y; else A_AGENT_alloy=N; return; fi
+  if v=$(whiptail --backtitle "$BACKTITLE" --title "Loki URL" \
+      --inputbox "Loki base URL for Alloy (host:port):" 9 64 "${LOKI_URL:-loki:3100}" 3>&1 1>&2 2>&3); then LOKI_URL="${v//[[:space:]]/}"; fi
+  if whiptail --backtitle "$BACKTITLE" --title "Alloy" --defaultno --yesno "Also capture Docker container logs (journald log-driver)?" 9 68; then A_ALLOY_DOCKERLOGS=Y; else A_ALLOY_DOCKERLOGS=N; fi
+}
+
+tui_svc_buzz() {
+  local sel t v cur
+  if ! whiptail --backtitle "$BACKTITLE" --title "buzz alert relay" \
+      --yesno "Send alerts to a buzz relay dev box (forced-command ssh)?\n\nA dedicated key is generated on this node; after install you\nregister its public key on the dev box (shown in NEXT STEPS).\nAlerts start flowing once that's done." 13 68; then
+    A_AGENT_buzz=N; return
+  fi
+  A_AGENT_buzz=Y
+  if sel=$(whiptail --backtitle "$BACKTITLE" --title "buzz — alerts to send" \
+      --checklist "Which alerts should this node send? (Space to toggle)\nrepl/ha/tbmesh install only where their tooling exists." 14 76 4 \
+      "disk"   "Disk health: SMART + zpool errors (daily)"       "$(onoff "$A_BUZZ_disk")" \
+      "repl"   "Proxmox replication failures (every 30 min)"     "$(onoff "$A_BUZZ_repl")" \
+      "ha"     "Proxmox HA recover/migrate events (every 5 min)" "$(onoff "$A_BUZZ_ha")" \
+      "tbmesh" "Thunderbolt mesh auto-heal actions (every min)"  "$(onoff "$A_BUZZ_tbmesh")" \
       3>&1 1>&2 2>&3); then
-    A_AGENT_zabbix=N; A_AGENT_alloy=N; A_AGENT_buzz=N
-    for t in $sel; do t="${t//\"/}"; case "$t" in zabbix) A_AGENT_zabbix=Y;; alloy) A_AGENT_alloy=Y;; buzz) A_AGENT_buzz=Y;; esac; done
-    [[ "$A_AGENT_zabbix" == Y || "$A_AGENT_alloy" == Y || "$A_AGENT_buzz" == Y ]] && A_MONITORING=Y || A_MONITORING=N
+    A_BUZZ_disk=N; A_BUZZ_repl=N; A_BUZZ_ha=N; A_BUZZ_tbmesh=N
+    for t in $sel; do t="${t//\"/}"; case "$t" in disk) A_BUZZ_disk=Y;; repl) A_BUZZ_repl=Y;; ha) A_BUZZ_ha=Y;; tbmesh) A_BUZZ_tbmesh=Y;; esac; done
   fi
-  if [[ "$A_AGENT_zabbix" == Y ]]; then
-    if v=$(whiptail --backtitle "$BACKTITLE" --title "Zabbix server" \
-        --inputbox "Zabbix server/proxy for active checks (host or host:port):" 9 72 "${ZABBIX_SERVER_ACTIVE:-zabbix:10051}" 3>&1 1>&2 2>&3); then ZABBIX_SERVER_ACTIVE="${v//[[:space:]]/}"; fi
-    if whiptail --backtitle "$BACKTITLE" --title "Zabbix" --defaultno --yesno "Set the agent up to monitor rootless Docker?" 8 64; then A_ZBX_DOCKER=Y; else A_ZBX_DOCKER=N; fi
-  fi
-  if [[ "$A_AGENT_alloy" == Y ]]; then
-    if v=$(whiptail --backtitle "$BACKTITLE" --title "Loki URL" \
-        --inputbox "Loki base URL for Alloy (host:port):" 9 64 "${LOKI_URL:-loki:3100}" 3>&1 1>&2 2>&3); then LOKI_URL="${v//[[:space:]]/}"; fi
-    if whiptail --backtitle "$BACKTITLE" --title "Alloy" --defaultno --yesno "Also capture Docker container logs (journald log-driver)?" 9 68; then A_ALLOY_DOCKERLOGS=Y; else A_ALLOY_DOCKERLOGS=N; fi
-  fi
-  if [[ "$A_AGENT_buzz" == Y ]]; then
-    if sel=$(whiptail --backtitle "$BACKTITLE" --title "buzz — alerts to send" \
-        --checklist "Which alerts should this node send? (Space to toggle)\nrepl/ha/tbmesh install only where their tooling exists." 14 76 4 \
-        "disk"   "Disk health: SMART + zpool errors (daily)"       "$(onoff "$A_BUZZ_disk")" \
-        "repl"   "Proxmox replication failures (every 30 min)"     "$(onoff "$A_BUZZ_repl")" \
-        "ha"     "Proxmox HA recover/migrate events (every 5 min)" "$(onoff "$A_BUZZ_ha")" \
-        "tbmesh" "Thunderbolt mesh auto-heal actions (every min)"  "$(onoff "$A_BUZZ_tbmesh")" \
-        3>&1 1>&2 2>&3); then
-      A_BUZZ_disk=N; A_BUZZ_repl=N; A_BUZZ_ha=N; A_BUZZ_tbmesh=N
-      for t in $sel; do t="${t//\"/}"; case "$t" in disk) A_BUZZ_disk=Y;; repl) A_BUZZ_repl=Y;; ha) A_BUZZ_ha=Y;; tbmesh) A_BUZZ_tbmesh=Y;; esac; done
+  # One input for the whole relay address; a :port suffix overrides BUZZ_PORT.
+  cur="$BUZZ_TARGET"; [[ -n "$cur" && "${BUZZ_PORT:-6523}" != "6523" ]] && cur="${cur}:${BUZZ_PORT}"
+  if v=$(whiptail --backtitle "$BACKTITLE" --title "buzz relay address" \
+      --inputbox "Where do the watches ssh their alerts to?\n\nuser@host, or user@host:port (port defaults to 6523).\nExample: jordan@192.168.16.100:6523" 12 68 "$cur" 3>&1 1>&2 2>&3); then
+    v="${v//[[:space:]]/}"
+    if [[ "$v" =~ ^([^:]+@[^:]+):([0-9]+)$ ]]; then
+      BUZZ_TARGET="${BASH_REMATCH[1]}"; BUZZ_PORT="${BASH_REMATCH[2]}"
+    else
+      BUZZ_TARGET="$v"; BUZZ_PORT="${BUZZ_PORT:-6523}"
     fi
-    if v=$(whiptail --backtitle "$BACKTITLE" --title "buzz dev box" \
-        --inputbox "Dev box the watches ssh to (user@host):" 9 64 "$BUZZ_TARGET" 3>&1 1>&2 2>&3); then BUZZ_TARGET="${v//[[:space:]]/}"; fi
-    if v=$(whiptail --backtitle "$BACKTITLE" --title "buzz dev box port" \
-        --inputbox "ssh port on the dev box:" 9 50 "${BUZZ_PORT:-6523}" 3>&1 1>&2 2>&3); then BUZZ_PORT="${v//[[:space:]]/}"; fi
   fi
 }
 
@@ -575,14 +628,14 @@ tui_main() {
   while true; do
     sel=$(whiptail --backtitle "$BACKTITLE" --title "Review & customise  —  [${ENV_TYPE^^}]" \
       --ok-button "Open" --cancel-button "Quit" \
-      --menu "Select a step to change its options, then choose Accept.\nThe defaults are already set — just Accept to use them as-is.\n[ ⚠ ] = needs configuration — open the step to fill it in." 21 78 11 \
-      "bootstrap"  "[$(stat3 "$A_BOOTSTRAP" "$(need_bootstrap)")]  admin user + SSH key" \
-      "harden"     "[$(stat3 "$A_HARDEN" "$(need_harden)")]  hardening — SSH port ${SSH_PORT:-22}" \
-      "ancillary"  "[$(pad3 "$A_ANCILLARY")]  packages: $(anc_list)" \
-      "monitoring" "[$(stat3 "$A_MONITORING" "$(need_monitoring)")]  agents: $(mon_list)" \
-      "container"  "[$(pad3 "$A_CONTAINER")]  runtime: $(ct_list)" \
-      "motd"       "[$(pad3 "$A_MOTD")]  dynamic login banner" \
-      "docs"       "[$(pad3 "$A_DOC")]  SSH connection doc" \
+      --menu "Select a step to change its options, then choose Accept.\nThe defaults are already set — just Accept to use them as-is.\n✔ on · ✗ off · ⚠ needs configuration (open the step)" 21 78 11 \
+      "bootstrap"  "[$(stat3 "$A_BOOTSTRAP" "$(need_bootstrap)")]  user config" \
+      "harden"     "[$(stat3 "$A_HARDEN" "$(need_harden)")]  hardening" \
+      "ancillary"  "[$(stat3 "$A_ANCILLARY" "")]  extra packages" \
+      "monitoring" "[$(stat3 "$A_MONITORING" "$(need_monitoring)")]  monitoring services" \
+      "container"  "[$(stat3 "$A_CONTAINER" "")]  container runtime" \
+      "motd"       "[$(stat3 "$A_MOTD" "")]  login banner" \
+      "docs"       "[$(stat3 "$A_DOC" "")]  connection doc" \
       "sep"        "────────────────────────────────────" \
       "ACCEPT"     "✓  Accept these settings and install" \
       3>&1 1>&2 2>&3) || { if whiptail --backtitle "$BACKTITLE" --yesno "Quit without installing?" 8 50; then clear; info "Cancelled — nothing was changed."; exit 0; fi; continue; }

@@ -248,35 +248,41 @@ install with the defaults.
 ```text
         Review & customise  —  [VM]
   ┌────────────────────────────────────────────────────┐
-  │  bootstrap    [yes]  admin user + SSH key           │
-  │  harden       [yes]  hardening — SSH port 24917     │
-  │  ancillary    [yes]  packages: vim,btop,duf,fish…   │
-  │  monitoring   [yes]  agents: zabbix,alloy           │
-  │  container    [no ]  runtime: off                   │
-  │  motd         [yes]  dynamic login banner           │
-  │  docs         [yes]  SSH connection doc             │
+  │  bootstrap    [ ⚠ ]  user config                    │
+  │  harden       [ ✔ ]  hardening                      │
+  │  ancillary    [ ✔ ]  extra packages                 │
+  │  monitoring   [ ✔ ]  monitoring services            │
+  │  container    [ ✗ ]  container runtime              │
+  │  motd         [ ✔ ]  login banner                   │
+  │  docs         [ ✔ ]  connection doc                 │
   │  ────────────────────────────────────────────────  │
   │  ✓  Accept these settings and install               │
   └────────────────────────────────────────────────────┘
         <Open>                              <Quit>
 ```
 
-- Opening a step shows a dialog for it: a checklist of its packages and toggles,
-  and input boxes for any text (user, SSH key, ports, URLs). Close it to return
-  to the hub with the new state shown.
-- A step that still needs input shows `[ ⚠ ]` in place of `[yes]` in its status
-  bracket (the admin user and SSH key on a fresh host, a missing Zabbix server
-  or buzz dev box). Open the step to fill it in; the bracket flips to `[yes]`
-  as soon as it has what it needs.
+Each line is one step with a three-state icon: ✔ on and ready, ✗ off,
+⚠ on but still needing configuration. Open the step to fill in whatever
+the ⚠ is about.
+
+- Opening a step shows a dialog for it. Monitoring is a hub of its own: a list
+  of services (zabbix, alloy, buzz) with the same three-state icons, and
+  opening a service starts a small wizard with exactly that service's inputs —
+  the Zabbix server address, the Loki URL, or for buzz the alert types and the
+  relay address as one `user@host:port` field.
+- The hardening dialog lets you pick the options you want: apt full-upgrade,
+  root password lock, usb-storage blacklist, SSH TOTP 2FA, compiler
+  restriction, opening 80/443, extra TCP/UDP ports, and SSH source CIDRs.
 - Accept validates required inputs, then the chosen scripts run
   non-interactively. A missing required value (the SSH key, say) pops a message
   so you can fix it before install.
 - Defaults worth noting: `container.sh` is off by default (Docker or Podman in
-  an LXC is advanced, and on a VM you opt in); the SSH port is a random high
-  port; root password lock and the usb-storage blacklist are on; the Zabbix
-  server defaults to `zabbix:10051` and Loki to `loki:3100`. The admin username
-  and the SSH public key are the two fields with no default — the hub marks
-  both with ⚠ until you enter them.
+  an LXC is advanced, and on a VM you opt in); the login banner is on for all
+  host types; the SSH port is a random high port; root password lock and the
+  usb-storage blacklist are on; the Zabbix server defaults to `zabbix:10051`
+  and Loki to `loki:3100`. The admin username and the SSH public key are the
+  two fields with no default — the hub marks bootstrap with ⚠ until you enter
+  them.
 
 > `init.sh` is TUI-only. It requires an interactive terminal and whiptail
 > (auto-installed if missing); there is no text-mode or unattended path. Run it
