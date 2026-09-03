@@ -595,14 +595,26 @@ if [[ "$ALLOW_SSH_PORT_22" != "1" && "$SSH_PORT" != "22" ]]; then
   fi
 fi
 
-# 2) Lockout guard — require explicit acknowledgement, or abort.
-if [[ "$key_login_ok" -eq 0 ]]; then
+# 2) Lockout guard — require explicit acknowledgement, or abort. Only relevant
+#    when the SSH component actually runs (it is what disables password auth).
+#    ASSUME_YES must NOT be able to wave this through: a non-interactive run
+#    with no key needs the explicit ACCEPT_LOCKOUT_RISK=1 opt-in.
+if [[ "$HARDEN_SSH" == "1" && "$key_login_ok" -eq 0 ]]; then
   warn "No usable SSH key for any admin user (${ADMIN_USER_LIST[*]})."
-  if ! confirm "Continue anyway with password auth DISABLED (high lockout risk)?" N; then
-    err "Aborting. Run bootstrap.sh to install an SSH key first, then re-run."
+  if [[ "$INTERACTIVE" -ne 1 && "${ACCEPT_LOCKOUT_RISK:-0}" != "1" ]]; then
+    err "Refusing to disable SSH password auth with no SSH key in a non-interactive run."
+    err "Fix one of: install a key first (bootstrap.sh), skip the SSH component (HARDEN_SSH=0),"
+    err "or accept the risk explicitly (ACCEPT_LOCKOUT_RISK=1)."
     exit 1
   fi
-  warn "Proceeding without a key — you accepted the lockout risk."
+  if [[ "${ACCEPT_LOCKOUT_RISK:-0}" == "1" ]]; then
+    warn "ACCEPT_LOCKOUT_RISK=1 set — proceeding without a key."
+  elif ! confirm "Continue anyway with password auth DISABLED (high lockout risk)?" N; then
+    err "Aborting. Run bootstrap.sh to install an SSH key first, then re-run."
+    exit 1
+  else
+    warn "Proceeding without a key — you accepted the lockout risk."
+  fi
 fi
 
 # 3) Upgrade choice.
