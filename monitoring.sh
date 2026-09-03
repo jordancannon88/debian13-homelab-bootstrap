@@ -93,9 +93,9 @@ START_TS="$(date +%s)"
 declare -A PKG_DESC=(
   [zabbix-agent2]="Zabbix agent 2 monitoring (needs a Zabbix server)"
   [alloy]="Grafana Alloy log shipper (needs a Loki server)"
-  [buzz]="buzz relay alerting over forced-command ssh (needs the dev box)"
+  [alerts]="health & event alerts, delivered via buzz relay or ntfy"
 )
-ALL_PKGS=(zabbix-agent2 alloy buzz)
+ALL_PKGS=(zabbix-agent2 alloy alerts)
 
 # Zabbix agent 2 specifics (its own repo + custom config; see the step below).
 ZBX_VERSION="7.4"
@@ -127,13 +127,19 @@ ALLOY_SET_DOCKER_DRIVER="${ALLOY_SET_DOCKER_DRIVER:-}"
 DOCKER_LOG_LABELS="${DOCKER_LOG_LABELS:-com.docker.compose.project,com.docker.compose.service}"
 DOCKER_DRIVER_SET=0   # set to 1 once we've configured Docker's journald driver
 
-# buzz relay alerting specifics. The watches ssh a "v3 ..." payload to the dev
-# box's forced-command dispatcher using a dedicated per-node key; the dev box
-# decides what is worth posting to the chat relay. BUZZ_TARGET is required when
-# buzz is selected (asked interactively if unset). BUZZ_ALERTS picks the watch
-# scripts; watches whose tooling is absent on this host are skipped.
+# Health & event alerts. BUZZ_ALERTS picks the watch scripts (watches whose
+# tooling is absent on this host are skipped); ALERTS_SINK picks how alerts
+# leave the host:
+#   buzz  -> forced-command ssh to a relay dev box (dedicated per-node key;
+#            the dev box renders/pretties and posts). Needs BUZZ_TARGET.
+#   ntfy  -> HTTP push to an ntfy topic (https://ntfy.sh/<topic> or a
+#            self-hosted server). Needs NTFY_URL; NTFY_TOKEN optional.
+#            Messages carry the raw v3 payload text (terse but complete).
+ALERTS_SINK="${ALERTS_SINK:-buzz}"
 BUZZ_TARGET="${BUZZ_TARGET:-}"
 BUZZ_PORT="${BUZZ_PORT:-6523}"
+NTFY_URL="${NTFY_URL:-}"
+NTFY_TOKEN="${NTFY_TOKEN:-}"
 BUZZ_ALERTS="${BUZZ_ALERTS:-disk}"
 BUZZ_KEY="/root/.ssh/buzz_report"
 
@@ -149,6 +155,8 @@ if [[ "${MONITORING_PKGS+x}" == "x" ]]; then
 else
   SELECTED_PKGS=("${ALL_PKGS[@]}")
 fi
+# Legacy name: "buzz" used to be the slug for the alerts feature.
+for _i in "${!SELECTED_PKGS[@]}"; do [[ "${SELECTED_PKGS[$_i]}" == "buzz" ]] && SELECTED_PKGS[$_i]="alerts"; done
 pkg_selected() { local p; for p in "${SELECTED_PKGS[@]}"; do [[ "$p" == "$1" ]] && return 0; done; return 1; }
 
 # ==============================================================================
@@ -168,7 +176,7 @@ STEP_NO=0
 TOTAL_STEPS=0
 pkg_selected zabbix-agent2 && TOTAL_STEPS=$((TOTAL_STEPS + 1))
 pkg_selected alloy         && TOTAL_STEPS=$((TOTAL_STEPS + 1))
-pkg_selected buzz          && TOTAL_STEPS=$((TOTAL_STEPS + 1))
+pkg_selected alerts        && TOTAL_STEPS=$((TOTAL_STEPS + 1))
 SUMMARY=()
 record() { SUMMARY+=("$1"$'\t'"$2"); }
 
@@ -546,17 +554,39 @@ configure_docker_journald() {
   fi
 }
 
-# write_buzz_script <template-name> <target-path> — render a buzz watch script
-# from buzz/<template-name>, substituting @@BUZZ_TARGET@@ and @@BUZZ_PORT@@,
-# and install it 0755. Returns non-zero if the template can't be found.
-write_buzz_script() {
+# write_watch_script <template-name> <target-path> — render a watch script
+# from buzz/<template-name>, injecting the chosen alert sink (a send_alert
+# shell function) at the @@SEND_ALERT@@ marker, and install it 0755.
+# Returns non-zero if the template can't be found.
+write_watch_script() {
   local tpl="$1" target="$2"
   resolve_template "${SCRIPT_DIR}/buzz/${tpl}" "buzz/${tpl}" || return 1
-  local tmp; tmp="$(mktemp)"
-  awk -v t="$BUZZ_TARGET" -v p="$BUZZ_PORT" \
-    '{ gsub(/@@BUZZ_TARGET@@/, t); gsub(/@@BUZZ_PORT@@/, p); print }' \
-    "$RESOLVED_TEMPLATE" > "$tmp"
+  local tmp sink; tmp="$(mktemp)"; sink="$(mktemp)"
+  if [[ "$ALERTS_SINK" == "ntfy" ]]; then
+    # Build the optional auth flag as DATA so its quotes survive the heredoc
+    # (quote removal inside \${:+} would strip them from the generated script).
+    local _auth=""
+    [[ -n "$NTFY_TOKEN" ]] && _auth=' -H "Authorization: Bearer '"$NTFY_TOKEN"'"'
+    cat > "$sink" <<EOF
+send_alert() {
+  curl -fsS -m 10 -H "Title: \$(hostname) homelab alert"${_auth} \\
+    -d "\$1" "${NTFY_URL}" >/dev/null 2>&1
+}
+EOF
+  else
+    cat > "$sink" <<EOF
+send_alert() {
+  ssh -i /root/.ssh/buzz_report -o BatchMode=yes -o ConnectTimeout=10 \\
+    -o StrictHostKeyChecking=accept-new -p ${BUZZ_PORT} ${BUZZ_TARGET} "v3 \$1" >/dev/null 2>&1
+}
+EOF
+  fi
+  awk -v sinkfile="$sink" '
+    /@@SEND_ALERT@@/ { while ((getline l < sinkfile) > 0) print l; close(sinkfile); next }
+    { print }
+  ' "$RESOLVED_TEMPLATE" > "$tmp"
   [[ "$RESOLVED_TEMPLATE_IS_TMP" == "1" ]] && rm -f "$RESOLVED_TEMPLATE"
+  rm -f "$sink"
   install -m 0755 "$tmp" "$target"
   rm -f "$tmp"
   return 0
@@ -827,39 +857,61 @@ fi
 fi   # end: pkg_selected alloy
 
 # ==============================================================================
-if pkg_selected buzz; then
-banner "Installing buzz relay alerting (forced-command ssh watches)"
+if pkg_selected alerts; then
+banner "Installing health & event alerts (${ALERTS_SINK} delivery)"
 # ==============================================================================
-# Generates a dedicated per-node ssh key, then installs the chosen watch
-# scripts + crons. Each watch sends a "v3 ..." payload to the dev box's
-# forced-command dispatcher, which renders and posts to the chat relay only
-# when something is actionable — steady state is silent. Alerts flow only
-# after the public key (printed in NEXT STEPS) is registered on the dev box.
+# Installs the chosen watch scripts + crons; each watch hands its payload to
+# the injected send_alert sink. buzz: forced-command ssh to the relay dev box
+# (dedicated key; alerts flow only after the printed public key is registered
+# there). ntfy: HTTP push to a topic — works immediately, messages carry the
+# raw v3 payload text.
 
-# Resolve the dev box target — required, no default.
-if [[ -z "$BUZZ_TARGET" ]]; then
-  if [[ "$INTERACTIVE" -eq 1 ]]; then
-    printf '%s%s buzz relay dev box the watches ssh to (user@host): %s' \
-      "$YEL" "$S_INFO" "$RESET" > /dev/tty
-    read -r BUZZ_TARGET < /dev/tty || BUZZ_TARGET=""
-    BUZZ_TARGET="${BUZZ_TARGET//[[:space:]]/}"
-  fi
-fi
+_sink_ok=1
+case "$ALERTS_SINK" in
+  ntfy)
+    if [[ -z "$NTFY_URL" && "$INTERACTIVE" -eq 1 ]]; then
+      printf '%s%s ntfy topic URL to push alerts to (e.g. https://ntfy.sh/my-topic): %s' \
+        "$YEL" "$S_INFO" "$RESET" > /dev/tty
+      read -r NTFY_URL < /dev/tty || NTFY_URL=""
+      NTFY_URL="${NTFY_URL//[[:space:]]/}"
+    fi
+    if [[ -z "$NTFY_URL" ]]; then
+      warn "No ntfy topic URL provided (set NTFY_URL=https://host/topic) — skipping alerts."
+      record "alerts" "skipped (no NTFY_URL)"
+      _sink_ok=0
+    else
+      command -v curl >/dev/null 2>&1 || apt-get install -y curl >/dev/null
+    fi
+    ;;
+  *)
+    ALERTS_SINK=buzz
+    if [[ -z "$BUZZ_TARGET" && "$INTERACTIVE" -eq 1 ]]; then
+      printf '%s%s buzz relay dev box the watches ssh to (user@host): %s' \
+        "$YEL" "$S_INFO" "$RESET" > /dev/tty
+      read -r BUZZ_TARGET < /dev/tty || BUZZ_TARGET=""
+      BUZZ_TARGET="${BUZZ_TARGET//[[:space:]]/}"
+    fi
+    if [[ -z "$BUZZ_TARGET" ]]; then
+      warn "No dev box target provided (set BUZZ_TARGET=user@host) — skipping alerts."
+      record "alerts" "skipped (no BUZZ_TARGET)"
+      _sink_ok=0
+    fi
+    ;;
+esac
 
-if [[ -z "$BUZZ_TARGET" ]]; then
-  warn "No dev box target provided (set BUZZ_TARGET=user@host) — skipping buzz alerting."
-  record "buzz alerting" "skipped (no BUZZ_TARGET)"
-else
+if [[ "$_sink_ok" == "1" ]]; then
   # Normalise the alert list ("none" or blank = nothing to install).
   [[ "${BUZZ_ALERTS,,}" == "none" ]] && BUZZ_ALERTS=""
   read -ra _buzz_sel <<< "$BUZZ_ALERTS"
   alert_selected() { local a; for a in "${_buzz_sel[@]:-}"; do [[ "$a" == "$1" ]] && return 0; done; return 1; }
 
-  if [[ ! -f "$BUZZ_KEY" ]]; then
-    ssh-keygen -t ed25519 -N '' -C "$(hostname)-buzz-report" -f "$BUZZ_KEY" >/dev/null
-    log "Generated ${BUZZ_KEY} (dedicated alert key for this node)."
-  else
-    info "Using the existing key at ${BUZZ_KEY}."
+  if [[ "$ALERTS_SINK" == "buzz" ]]; then
+    if [[ ! -f "$BUZZ_KEY" ]]; then
+      ssh-keygen -t ed25519 -N '' -C "$(hostname)-buzz-report" -f "$BUZZ_KEY" >/dev/null
+      log "Generated ${BUZZ_KEY} (dedicated alert key for this node)."
+    else
+      info "Using the existing key at ${BUZZ_KEY}."
+    fi
   fi
 
   _buzz_installed=()
@@ -868,7 +920,7 @@ else
   if alert_selected disk; then
     info "Installing the disk-health watch (SMART + zpool, daily)..."
     apt-get install -y smartmontools >/dev/null
-    if write_buzz_script disk-health-report.sh /usr/local/sbin/disk-health-report.sh; then
+    if write_watch_script disk-health-report.sh /usr/local/sbin/disk-health-report.sh; then
       # Stagger the daily run by the trailing digit of the hostname so a fleet
       # doesn't post at the same second (pve3 -> 09:03, no digit -> 09:00).
       _m="$(hostname | grep -o '[0-9]*$' || true)"; _m="${_m:-0}"; _m=$(( _m % 60 ))
@@ -882,7 +934,7 @@ else
   if alert_selected repl; then
     if command -v pvesr >/dev/null 2>&1; then
       info "Installing the replication watch (pvesr failures, every 30 min)..."
-      if write_buzz_script repl-health-report.sh /usr/local/sbin/repl-health-report.sh; then
+      if write_watch_script repl-health-report.sh /usr/local/sbin/repl-health-report.sh; then
         install_buzz_cron repl-health-report "*/30 * * * *" /usr/local/sbin/repl-health-report.sh
         _buzz_installed+=("repl (*/30)")
       else
@@ -897,7 +949,7 @@ else
   if alert_selected ha; then
     if systemctl list-unit-files pve-ha-crm.service --no-legend 2>/dev/null | grep -q pve-ha-crm; then
       info "Installing the HA event watch (recover/migrate/relocate, every 5 min)..."
-      if write_buzz_script ha-event-report.sh /usr/local/sbin/ha-event-report.sh; then
+      if write_watch_script ha-event-report.sh /usr/local/sbin/ha-event-report.sh; then
         install_buzz_cron ha-event-report "*/5 * * * *" /usr/local/sbin/ha-event-report.sh
         # Prime the journal cursor now so the first cron run never replays history.
         /usr/local/sbin/ha-event-report.sh || true
@@ -914,7 +966,7 @@ else
   if alert_selected tbmesh; then
     if [[ -x /usr/local/bin/pve-en02-disconnect-bug-fix.sh ]]; then
       info "Installing the TB3 mesh auto-heal watch (every minute)..."
-      if write_buzz_script tb-mesh-heal.sh /usr/local/sbin/tb-mesh-heal.sh; then
+      if write_watch_script tb-mesh-heal.sh /usr/local/sbin/tb-mesh-heal.sh; then
         install_buzz_cron tb-mesh-heal "* * * * *" /usr/local/sbin/tb-mesh-heal.sh
         _buzz_installed+=("tbmesh (every minute)")
       else
@@ -926,15 +978,16 @@ else
     fi
   fi
 
+  if [[ "$ALERTS_SINK" == "buzz" ]]; then _sink_desc="buzz ${BUZZ_TARGET}:${BUZZ_PORT}"; else _sink_desc="ntfy ${NTFY_URL}"; fi
   if (( ${#_buzz_installed[@]} )); then
-    log "buzz watches installed: ${_buzz_installed[*]}"
-    record "buzz alerting" "watches: ${_buzz_installed[*]}; target ${BUZZ_TARGET}:${BUZZ_PORT}${_buzz_skipped[*]:+; skipped: ${_buzz_skipped[*]}}"
+    log "alert watches installed: ${_buzz_installed[*]} (via ${ALERTS_SINK})"
+    record "alerts" "watches: ${_buzz_installed[*]}; sink ${_sink_desc}${_buzz_skipped[*]:+; skipped: ${_buzz_skipped[*]}}"
   else
-    warn "No buzz watches ended up installed${_buzz_skipped[*]:+ (${_buzz_skipped[*]})}."
-    record "buzz alerting" "key ready; no watches installed${_buzz_skipped[*]:+ (${_buzz_skipped[*]})}"
+    warn "No alert watches ended up installed${_buzz_skipped[*]:+ (${_buzz_skipped[*]})}."
+    record "alerts" "no watches installed${_buzz_skipped[*]:+ (${_buzz_skipped[*]})}"
   fi
 fi
-fi   # end: pkg_selected buzz
+fi   # end: pkg_selected alerts
 
 # ==============================================================================
 #  Recap
@@ -976,7 +1029,12 @@ if pkg_selected alloy; then
     fi
   fi
 fi
-if pkg_selected buzz && [[ -n "${BUZZ_TARGET:-}" && -f "${BUZZ_KEY}.pub" ]]; then
+if pkg_selected alerts && [[ "$ALERTS_SINK" == "ntfy" && -n "${NTFY_URL:-}" ]]; then
+  printf '   %s•%s  Alerts push to %s%s%s — subscribe to that topic in the ntfy app/web UI.\n' "$BOLD" "$RESET" "$BOLD" "$NTFY_URL" "$RESET"
+  printf '       Test now: %scurl -d "test alert" %s%s\n' "$DIM" "$NTFY_URL" "$RESET"
+  _had_step=1
+fi
+if pkg_selected alerts && [[ "$ALERTS_SINK" == "buzz" && -n "${BUZZ_TARGET:-}" && -f "${BUZZ_KEY}.pub" ]]; then
   printf '   %s•%s  Register this node on the dev box (%s) or no alert will ever arrive:\n' "$BOLD" "$RESET" "$BUZZ_TARGET"
   printf '       append to the dev box user'"'"'s ~/.ssh/authorized_keys (forced-command dispatcher, one line):\n'
   printf '       %scommand="/path/to/pve-dispatch.sh %s",restrict %s%s\n' "$DIM" "$(hostname)" "$(cat "${BUZZ_KEY}.pub")" "$RESET"

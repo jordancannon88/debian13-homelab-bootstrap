@@ -4,10 +4,15 @@
 # event. Only the CRM master logs these lines, so exactly one node posts per
 # event; install on every cluster node because the master role moves.
 # Silent when nothing happened. PVE cluster hosts only.
-# Installed by monitoring.sh (debian13-homelab-bootstrap); tokens substituted
-# at install time: @@BUZZ_TARGET@@ (user@host), @@BUZZ_PORT@@.
+# Installed by monitoring.sh (debian13-homelab-bootstrap); the send_alert
+# sink function is injected at install time (@@SEND_ALERT@@).
 set -u
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# The alert sink (how a payload leaves this host) is injected at install time
+# by monitoring.sh — buzz relay (forced-command ssh) or ntfy (HTTP push):
+@@SEND_ALERT@@
+
 STATE=/var/lib/ha-event; mkdir -p "$STATE"
 CUR="$STATE/cursor"
 
@@ -25,9 +30,7 @@ n=0
 add(){ SEGS="${SEGS:+$SEGS ; }$1"; n=$((n+1)); }
 flush(){
   [ -n "$SEGS" ] || return 0
-  ssh -i /root/.ssh/buzz_report -o BatchMode=yes -o ConnectTimeout=10 \
-    -o StrictHostKeyChecking=accept-new -p @@BUZZ_PORT@@ @@BUZZ_TARGET@@ \
-    "v3 $SEGS" >/dev/null 2>&1 || logger -t ha-event "buzz post failed"
+  send_alert "$SEGS" || logger -t ha-event "alert post failed"
   SEGS=""; n=0
 }
 

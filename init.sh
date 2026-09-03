@@ -173,7 +173,15 @@ sys_scan() {
   (( SYS_ALLOY )) && SYS_LOKI="$(sed -n 's@.*url *= *"\(https\?://[^"]*\)/loki/api/v1/push".*@\1@p' /etc/alloy/config.alloy 2>/dev/null | head -n1)"
 
   [[ -f /root/.ssh/buzz_report ]] && SYS_BUZZKEY=1
+  SYS_ALERT_SINK=""
+  SYS_NTFY_URL=""
   if [[ -f /usr/local/sbin/disk-health-report.sh ]]; then
+    if grep -q 'curl -fsS' /usr/local/sbin/disk-health-report.sh 2>/dev/null; then
+      SYS_ALERT_SINK="ntfy"
+      SYS_NTFY_URL="$(sed -n 's@.*-d "\$1" "\(https\?://[^"]*\)".*@\1@p' /usr/local/sbin/disk-health-report.sh 2>/dev/null | head -n1)"
+    else
+      SYS_ALERT_SINK="buzz"
+    fi
     read -r SYS_BUZZ_PORT SYS_BUZZ_TARGET < <(grep -oE '\-p [0-9]+ [A-Za-z0-9._-]+@[A-Za-z0-9._-]+' /usr/local/sbin/disk-health-report.sh 2>/dev/null | head -n1 | awk '{print $2, $3}') || true
   fi
   [[ -f /etc/cron.d/disk-health-report ]] && SYS_BUZZ_ALERTS+="disk "
@@ -199,6 +207,7 @@ sys_scan() {
   (( SYS_ALLOY ))     && SYS_NOTES+=("Grafana Alloy installed${SYS_LOKI:+ (Loki: ${SYS_LOKI})}.")
   (( SYS_BUZZKEY ))   && SYS_NOTES+=("buzz alert key present${SYS_BUZZ_ALERTS:+ (watches: ${SYS_BUZZ_ALERTS})}${SYS_BUZZ_TARGET:+ → ${SYS_BUZZ_TARGET}}.")
   (( SYS_MOTD ))      && SYS_NOTES+=("Dynamic MOTD banner installed${SYS_DOCURL:+ (docs: ${SYS_DOCURL})}.")
+  return 0
 }
 
 # sys_report — the system-check screen shown once before the hub.
@@ -232,7 +241,9 @@ A_BOOTSTRAP=""; A_HARDEN=""; A_ANCILLARY=""; A_MONITORING=""; A_CONTAINER=""; A_
 A_PKG_vim=""; A_PKG_btop=""; A_PKG_duf=""; A_PKG_fish=""; A_PKG_rsync=""; A_PKG_qemu=""
 A_AGENT_zabbix=""; A_AGENT_alloy=""; A_AGENT_buzz=""
 A_BUZZ_disk=""; A_BUZZ_repl=""; A_BUZZ_ha=""; A_BUZZ_tbmesh=""
+A_ALERT_SINK=""
 BUZZ_TARGET="${BUZZ_TARGET:-}"; BUZZ_PORT="${BUZZ_PORT:-}"
+NTFY_URL="${NTFY_URL:-}"; NTFY_TOKEN="${NTFY_TOKEN:-}"
 PRIMARY_USER="${PRIMARY_USER:-}"; PUBKEY="${PUBKEY:-}"; ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 SSH_PORT="${SSH_PORT:-}"; A_UPGRADE=""; A_LOCKROOT=""; A_USBBLACK=""; ALLOW_TCP_PORTS="${ALLOW_TCP_PORTS:-}"
 A_SSH2FA=""; A_COMPILERS=""; A_HTTP=""; A_HTTPS=""
@@ -301,6 +312,8 @@ compute_defaults() {
   DOC_URL="${DOC_URL:-${SYS_DOCURL:-}}"
   BUZZ_TARGET="${BUZZ_TARGET:-${SYS_BUZZ_TARGET:-}}"
   BUZZ_PORT="${BUZZ_PORT:-${SYS_BUZZ_PORT:-6523}}"
+  A_ALERT_SINK="${A_ALERT_SINK:-${SYS_ALERT_SINK:-buzz}}"
+  NTFY_URL="${NTFY_URL:-${SYS_NTFY_URL:-}}"
   # The admin username is deliberately NOT defaulted (no SUDO_USER guessing):
   # the operator must enter it, and the hub shows "needs admin user" until they
   # do. An explicit PRIMARY_USER=<name> environment override still works.
@@ -325,7 +338,7 @@ materialize_selection() {
 
   [[ "$A_AGENT_zabbix" == "Y" ]] && MONITORING_PICK+=(zabbix-agent2)
   [[ "$A_AGENT_alloy"  == "Y" ]] && MONITORING_PICK+=(alloy)
-  [[ "$A_AGENT_buzz"   == "Y" ]] && MONITORING_PICK+=(buzz)
+  [[ "$A_AGENT_buzz"   == "Y" ]] && MONITORING_PICK+=(alerts)
   if [[ "$A_MONITORING" == "Y" && ${#MONITORING_PICK[@]} -gt 0 ]]; then SELECTED+=(monitoring.sh); else skip_script monitoring.sh; fi
 
   [[ "$A_CONTAINER" == "Y" ]] && SELECTED+=(container.sh)     || skip_script container.sh
@@ -383,9 +396,15 @@ materialize_selection() {
       [[ "$A_ALLOY_DOCKERLOGS" == "Y" ]] && export ALLOY_DOCKER_LOGS=1 || export ALLOY_DOCKER_LOGS=0
     fi
     if [[ "$A_AGENT_buzz" == "Y" ]]; then
-      export BUZZ_TARGET
-      export BUZZ_PORT="${BUZZ_PORT:-6523}"
+      export ALERTS_SINK="${A_ALERT_SINK:-buzz}"
       export BUZZ_ALERTS="$(buzz_alert_list)"
+      if [[ "$A_ALERT_SINK" == "ntfy" ]]; then
+        export NTFY_URL
+        [[ -n "$NTFY_TOKEN" ]] && export NTFY_TOKEN
+      else
+        export BUZZ_TARGET
+        export BUZZ_PORT="${BUZZ_PORT:-6523}"
+      fi
     fi
   fi
   if [[ "$A_CONTAINER" == "Y" ]]; then
@@ -431,7 +450,10 @@ need_bootstrap() {
   if [[ "$A_BOOTSTRAP" == Y || "$A_HARDEN" == Y || "$A_CONTAINER" == Y || "$A_ANCILLARY" == Y ]]; then
     { [[ -z "$PRIMARY_USER" ]] || ! valid_user "$PRIMARY_USER"; } && n+=("admin user")
   fi
-  if [[ "$A_BOOTSTRAP" == Y && "$A_HARDEN" == Y && "$A_HC_ssh" == Y && -n "$PRIMARY_USER" ]] && valid_user "$PRIMARY_USER"; then
+  local _key_required=0
+  [[ "$A_HARDEN" == Y && "$A_HC_ssh" == Y ]] && _key_required=1
+  [[ "$ENV_TYPE" == "pve" ]] && _key_required=1
+  if [[ "$A_BOOTSTRAP" == Y && "$_key_required" == 1 && -n "$PRIMARY_USER" ]] && valid_user "$PRIMARY_USER"; then
     akf="$(getent passwd "$PRIMARY_USER" 2>/dev/null | cut -d: -f6)/.ssh/authorized_keys"
     if [[ -z "$PUBKEY" ]] && ! { id "$PRIMARY_USER" &>/dev/null && [[ -s "$akf" ]]; }; then
       n+=("SSH key")
@@ -456,8 +478,12 @@ need_zabbix() {
 need_buzz() {
   [[ "$A_AGENT_buzz" == Y ]] || return 0
   local n=()
-  [[ -z "${BUZZ_TARGET//[[:space:]]/}" ]] && n+=("relay")
   [[ "$(buzz_alert_list)" == "none" ]] && n+=("alerts")
+  if [[ "$A_ALERT_SINK" == "ntfy" ]]; then
+    [[ -z "${NTFY_URL//[[:space:]]/}" ]] && n+=("ntfy URL")
+  else
+    [[ -z "${BUZZ_TARGET//[[:space:]]/}" ]] && n+=("relay")
+  fi
   local IFS='+'; printf '%s' "${n[*]:-}"
 }
 need_monitoring() {
@@ -493,7 +519,7 @@ validate_tui() {
   if [[ "$A_BOOTSTRAP" == Y || "$A_HARDEN" == Y || "$A_CONTAINER" == Y || "$A_ANCILLARY" == Y ]]; then
     { [[ -z "$PRIMARY_USER" ]] || ! valid_user "$PRIMARY_USER"; } && m+=("Set a valid admin username (in bootstrap.sh).")
   fi
-  if [[ "$A_HARDEN" == Y && "$A_HC_ssh" == Y && -n "$PRIMARY_USER" ]]; then
+  if [[ -n "$PRIMARY_USER" ]] && { [[ "$ENV_TYPE" == "pve" ]] || [[ "$A_HARDEN" == Y && "$A_HC_ssh" == Y ]]; }; then
     akf="$(getent passwd "$PRIMARY_USER" 2>/dev/null | cut -d: -f6)/.ssh/authorized_keys"
     if [[ "$A_BOOTSTRAP" == Y ]]; then
       if [[ -z "$PUBKEY" ]] && ! { id "$PRIMARY_USER" &>/dev/null && [[ -s "$akf" ]]; }; then
@@ -505,8 +531,9 @@ validate_tui() {
     fi
   fi
   [[ "$A_MONITORING" == Y && "$A_AGENT_zabbix" == Y && -z "${ZABBIX_SERVER_ACTIVE//[[:space:]]/}" ]] && m+=("zabbix-agent2 needs a server address.")
-  [[ "$A_MONITORING" == Y && "$A_AGENT_buzz" == Y && -z "${BUZZ_TARGET//[[:space:]]/}" ]] && m+=("buzz alerting needs the dev box target (user@host).")
-  [[ "$A_MONITORING" == Y && "$A_AGENT_buzz" == Y && "$(buzz_alert_list)" == "none" ]] && m+=("buzz alerting: pick at least one alert type (disk/repl/ha/tbmesh).")
+  [[ "$A_MONITORING" == Y && "$A_AGENT_buzz" == Y && "$(buzz_alert_list)" == "none" ]] && m+=("alerts: pick at least one alert type (disk/repl/ha/tbmesh).")
+  [[ "$A_MONITORING" == Y && "$A_AGENT_buzz" == Y && "$A_ALERT_SINK" != "ntfy" && -z "${BUZZ_TARGET//[[:space:]]/}" ]] && m+=("alerts via buzz need the relay target (user@host).")
+  [[ "$A_MONITORING" == Y && "$A_AGENT_buzz" == Y && "$A_ALERT_SINK" == "ntfy" && -z "${NTFY_URL//[[:space:]]/}" ]] && m+=("alerts via ntfy need the topic URL (https://host/topic).")
   [[ "$A_ANCILLARY" == Y && "$(anc_list)" == "none" ]] && m+=("extra packages is enabled but no packages are picked.")
   [[ "$A_CONTAINER" == Y && "$A_DOCKER" != Y && "$A_PODMAN" != Y ]] && m+=("container runtime is enabled but no runtime (Docker/Podman) is picked.")
   [[ "$A_BOOTSTRAP$A_HARDEN$A_ANCILLARY$A_MONITORING$A_CONTAINER$A_MOTD$A_DOC" != *Y* ]] && m+=("Select at least one step to run.")
@@ -581,7 +608,7 @@ bs_key_state() {
 bs_key_icon() {
   local st; st="$(bs_key_state)"
   if [[ "$st" != "(not set)" ]]; then printf ' ✔ '
-  elif [[ "$A_HARDEN" == Y && "$A_HC_ssh" == Y ]]; then printf ' ⚠ '
+  elif [[ "$ENV_TYPE" == "pve" || ( "$A_HARDEN" == Y && "$A_HC_ssh" == Y ) ]]; then printf ' ⚠ '
   else printf ' ✗ '; fi
 }
 tui_bootstrap() {
@@ -842,15 +869,32 @@ tui_svc_buzz() {
     local items=("enabled" "[$(onoff3 "$A_AGENT_buzz")]  install this service$([[ "$A_AGENT_buzz" == Y ]] || echo ' — enable to configure')")
     if [[ "$A_AGENT_buzz" == Y ]]; then
       items+=("alerts"  "[$(valic "$( [[ "$(buzz_alert_list)" != none ]] && echo x )" "$A_AGENT_buzz")]  alerts: $(buzz_alert_list)")
-      items+=("relay"   "[$(valic "$BUZZ_TARGET" "$A_AGENT_buzz")]  relay address: $(valp "$cur")")
+      items+=("sink"    "[ ✔ ]  send via: ${A_ALERT_SINK}")
+      if [[ "$A_ALERT_SINK" == "ntfy" ]]; then
+        items+=("ntfyurl"   "[$(valic "$NTFY_URL" "$A_AGENT_buzz")]  ntfy topic URL: $(valp "$NTFY_URL")")
+        items+=("ntfytoken" "[$(valic "$NTFY_TOKEN" N)]  ntfy access token: $([[ -n "$NTFY_TOKEN" ]] && echo set || echo '(none — public topic)')")
+      else
+        items+=("relay"   "[$(valic "$BUZZ_TARGET" "$A_AGENT_buzz")]  relay address: $(valp "$cur")")
+      fi
     fi
     items+=(" " "────────────────────────────────────")
     items+=("help" "[ ? ]  what does each setting do?")
-    sel=$(hubmenu "Setup › monitoring › buzz (alert relay)" $(( ${#items[@]} / 2 )) "${items[@]}") || break
+    sel=$(hubmenu "Setup › monitoring › alerts (health & events)" $(( ${#items[@]} / 2 )) "${items[@]}") || break
     case "$sel" in
       enabled) tgl A_AGENT_buzz ;;
+      sink)
+        if v=$(whiptail --backtitle "$BACKTITLE" --title "Setup › monitoring › alerts › delivery" \
+            --default-item "$A_ALERT_SINK" \
+            --menu "Where should this host's alerts be sent?" 12 72 2 \
+            "buzz" "buzz relay dev box (forced-command ssh, pretty rendering)" \
+            "ntfy" "ntfy topic (HTTP push, works with the ntfy app; raw text)" \
+            3>&1 1>&2 2>&3); then A_ALERT_SINK="$v"; fi ;;
+      ntfyurl)
+        ask "Setup › monitoring › alerts › ntfy topic" "ntfy topic URL to push alerts to\n(e.g. https://ntfy.sh/my-topic, or your self-hosted server):" "$NTFY_URL" NTFY_URL ;;
+      ntfytoken)
+        ask "Setup › monitoring › alerts › ntfy token" "ntfy access token (blank for a public/unauthenticated topic):" "$NTFY_TOKEN" NTFY_TOKEN ;;
       alerts)
-        if sel=$(whiptail --backtitle "$BACKTITLE" --title "Setup › monitoring › buzz › alerts" \
+        if sel=$(whiptail --backtitle "$BACKTITLE" --title "Setup › monitoring › alerts › types" \
             --checklist "Which alerts should this node send? (Space to toggle)\nrepl/ha/tbmesh install only where their tooling exists." 14 76 4 \
             "disk"   "Disk health: SMART + zpool errors (daily)"       "$(onoff "$A_BUZZ_disk")" \
             "repl"   "Proxmox replication failures (every 30 min)"     "$(onoff "$A_BUZZ_repl")" \
@@ -861,7 +905,7 @@ tui_svc_buzz() {
           for t in $sel; do t="${t//\"/}"; case "$t" in disk) A_BUZZ_disk=Y;; repl) A_BUZZ_repl=Y;; ha) A_BUZZ_ha=Y;; tbmesh) A_BUZZ_tbmesh=Y;; esac; done
         fi ;;
       relay)
-        if v=$(whiptail --backtitle "$BACKTITLE" --title "Setup › monitoring › buzz › relay address" \
+        if v=$(whiptail --backtitle "$BACKTITLE" --title "Setup › monitoring › alerts › buzz relay address" \
             --inputbox "Where do the watches ssh their alerts to?\n\nuser@host, or user@host:port (port defaults to 6523).\nExample: jordan@192.168.16.100:6523\n\nA dedicated key is generated on this node; register its\npublic key on the relay afterward (shown in NEXT STEPS).\n\n(Cancel keeps the current value.)" 17 68 "$cur" 3>&1 1>&2 2>&3); then
           v="${v//[[:space:]]/}"
           if [[ "$v" =~ ^([^:]+@[^:]+):([0-9]+)$ ]]; then
@@ -870,11 +914,13 @@ tui_svc_buzz() {
             BUZZ_TARGET="$v"; BUZZ_PORT="${BUZZ_PORT:-6523}"
           fi
         fi ;;
-      help) show_help "Setup › monitoring › buzz › help" "install this service: generates a dedicated ssh key (/root/.ssh/buzz_report) and installs the selected watch scripts with their crons. Alerts only start flowing after you register the printed public key on the relay (shown in NEXT STEPS).
+      help) show_help "Setup › monitoring › alerts › help" "install this service: installs the selected watch scripts with their crons, delivering through the sink you pick.
 
 alerts: disk = SMART + zpool health, daily, any host. repl = Proxmox replication failures, every 30 min. ha = Proxmox HA recover/migrate events, every 5 min. tbmesh = Thunderbolt mesh auto-heal actions, every minute. The Proxmox and mesh watches install only where their tooling exists, so over-selecting is harmless.
 
-relay address: the dev box the watches ssh their alerts to, as user@host or user@host:port (default port 6523)." ;;
+send via: buzz = a relay dev box reached over forced-command ssh — a dedicated key is generated and its public half must be registered on the relay (shown in NEXT STEPS) before alerts flow; messages are rendered nicely there. ntfy = HTTP push to an ntfy topic (https://ntfy.sh/<topic> or self-hosted) — works immediately in the ntfy app, messages carry the raw alert text; an access token is only needed for protected topics.
+
+relay address (buzz): user@host or user@host:port, default port 6523. ntfy topic URL: the full topic URL alerts are POSTed to." ;;
     esac
   done
 }
@@ -884,7 +930,7 @@ tui_monitoring() {
     sel=$(hubmenu "Setup › monitoring (monitoring & alerts)" 5 \
       "zabbix" "[$(stat3 "$A_AGENT_zabbix" "$(need_zabbix)")]  metrics agent$(annot "${SYS_ZABBIX:-0}")" \
       "alloy"  "[$(stat3 "$A_AGENT_alloy" "")]  log shipper$(annot "${SYS_ALLOY:-0}")" \
-      "buzz"   "[$(stat3 "$A_AGENT_buzz" "$(need_buzz)")]  alert relay$(annot "${SYS_BUZZKEY:-0}")" \
+      "buzz"   "[$(stat3 "$A_AGENT_buzz" "$(need_buzz)")]  health & event alerts$(annot "$( [[ -n "${SYS_ALERT_SINK:-}" ]] && echo 1 || echo 0 )")" \
       " "        "────────────────────────────────────" \
       "help"     "[ ? ]  what does each setting do?" \
       ) || break
@@ -895,7 +941,7 @@ tui_monitoring() {
 
 alloy: installs Grafana Alloy, which ships this host's logs (systemd journal first) to a Loki server so they are searchable in Grafana.
 
-buzz: sets this host up to send alerts (disk health, Proxmox replication/HA, Thunderbolt mesh) to a buzz relay over forced-command ssh. Needs its key registered on the relay afterward." ;;
+alerts: sets this host up to send health & event alerts (disk health, Proxmox replication/HA, Thunderbolt mesh). Pick the alert types first, then where to send them: a buzz relay (forced-command ssh; pretty rendering; needs its key registered on the relay) or an ntfy topic (HTTP push to the ntfy app; works immediately; raw text messages)." ;;
       buzz)   tui_svc_buzz ;;
     esac
   done

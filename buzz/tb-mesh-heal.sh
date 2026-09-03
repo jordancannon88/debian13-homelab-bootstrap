@@ -7,19 +7,22 @@
 # Escalation when a controller falls off the PCI bus entirely:
 # 3 bus rescans 2 min apart, then (zero running guests only) auto-reboot
 # up to 3 times, then page for manual intervention.
-# Installed by monitoring.sh (debian13-homelab-bootstrap); tokens substituted
-# at install time: @@BUZZ_TARGET@@ (user@host), @@BUZZ_PORT@@.
+# Installed by monitoring.sh (debian13-homelab-bootstrap); the send_alert
+# sink function is injected at install time (@@SEND_ALERT@@).
 set -u
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# The alert sink (how a payload leaves this host) is injected at install time
+# by monitoring.sh — buzz relay (forced-command ssh) or ntfy (HTTP push):
+@@SEND_ALERT@@
+
 STATE=/var/lib/tb-mesh-heal; mkdir -p "$STATE"
 FAIL_THRESHOLD=3   # consecutive minutes without adjacency before reset
 COOLDOWN=600       # seconds between resets per interface
 
 log(){ logger -t tb-mesh-heal "$*"; }
 post(){
-  ssh -i /root/.ssh/buzz_report -o BatchMode=yes -o ConnectTimeout=10 \
-    -o StrictHostKeyChecking=accept-new -p @@BUZZ_PORT@@ @@BUZZ_TARGET@@ \
-    "v3 $1" >/dev/null 2>&1 || log "buzz alert post failed"
+  send_alert "$1" || log "alert post failed"
 }
 
 reset_iface(){

@@ -3,10 +3,15 @@
 # (v3 "repl" segments). Posts on transition to failing, re-posts at most every
 # 24h while failing, posts once on recovery. Silent otherwise. Nodes without
 # replication jobs never post. PVE hosts only (needs pvesr).
-# Installed by monitoring.sh (debian13-homelab-bootstrap); tokens substituted
-# at install time: @@BUZZ_TARGET@@ (user@host), @@BUZZ_PORT@@.
+# Installed by monitoring.sh (debian13-homelab-bootstrap); the send_alert
+# sink function is injected at install time (@@SEND_ALERT@@).
 set -euo pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# The alert sink (how a payload leaves this host) is injected at install time
+# by monitoring.sh — buzz relay (forced-command ssh) or ntfy (HTTP push):
+@@SEND_ALERT@@
+
 STATE_DIR=/var/lib/repl-health; mkdir -p "$STATE_DIR"
 SEGS=""
 add(){ SEGS="${SEGS:+$SEGS ; }$1"; }
@@ -29,5 +34,4 @@ while read -r job _enabled target _last _next _dur fails _state; do
   fi
 done < <(pvesr status 2>/dev/null | tail -n +2)
 [ -n "$SEGS" ] || exit 0
-exec ssh -i /root/.ssh/buzz_report -o BatchMode=yes -o ConnectTimeout=10 \
-  -o StrictHostKeyChecking=accept-new -p @@BUZZ_PORT@@ @@BUZZ_TARGET@@ "v3 $SEGS"
+send_alert "$SEGS"
