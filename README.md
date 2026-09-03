@@ -328,11 +328,17 @@ that screen.
   or crashes, start there.
 - Defaults worth noting: `container.sh` is off by default (Docker or Podman in
   an LXC is advanced, and on a VM you opt in); the login banner is on for all
-  host types; the SSH port is a random high port; root password lock and the
-  usb-storage blacklist are on; the Zabbix server defaults to `zabbix:10051`
-  and Loki to `loki:3100`. The admin username and the SSH public key are the
-  two fields with no default — the hub marks bootstrap with ⚠ until you enter
-  them.
+  host types; the SSH port is a random high port (22 on PVE, and a re-run keeps
+  the current port); the root password lock is on for guests; the Zabbix server
+  defaults to `zabbix:10051` and Loki to `loki:3100`. The admin username and
+  the SSH public key are the two fields with no default — the hub marks
+  bootstrap with ⚠ until you enter them.
+- Per-environment tuning: the usb-storage blacklist defaults on only in a VM
+  (in an LXC the kernel modules are host-owned, so the blacklist would be a
+  no-op; PVE hosts need USB for passthrough and install media); the disk alert
+  defaults on only where SMART data actually exists (PVE hosts and bare metal
+  — virtio disks and containers have none); the QEMU guest agent is on only in
+  VMs; the Proxmox repl/ha/backup alerts are on only on PVE hosts.
 
 > `init.sh` is TUI-only. It requires an interactive terminal and whiptail
 > (auto-installed if missing); there is no text-mode or unattended path. Run it
