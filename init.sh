@@ -238,7 +238,8 @@ skip_script() { STATUS[$1]="skipped"; DETAIL[$1]="you chose not to run it"; }
 # whiptail menu (tui_*) reads and updates them as the user customises.
 ENV_TYPE="${ENV_TYPE:-}"
 A_BOOTSTRAP=""; A_HARDEN=""; A_ANCILLARY=""; A_MONITORING=""; A_CONTAINER=""; A_MOTD=""; A_DOC=""
-A_PKG_vim=""; A_PKG_btop=""; A_PKG_duf=""; A_PKG_fish=""; A_PKG_rsync=""; A_PKG_qemu=""
+A_PKG_vim=""; A_PKG_btop=""; A_PKG_duf=""; A_PKG_rsync=""; A_PKG_qemu=""
+A_SHELL=""; A_SH_fish=""; A_SH_zsh=""; A_SH_tcsh=""; DEFAULT_SHELL_CHOICE=""
 A_AGENT_zabbix=""; A_AGENT_alloy=""; A_AGENT_buzz=""
 A_BUZZ_disk=""; A_BUZZ_repl=""; A_BUZZ_ha=""; A_BUZZ_tbmesh=""
 A_ALERT_SINK=""
@@ -250,7 +251,7 @@ A_SSH2FA=""; A_COMPILERS=""; A_HTTP=""; A_HTTPS=""
 A_HC_unattended=""; A_HC_journald=""; A_HC_ssh=""; A_HC_firewall=""; A_HC_fail2ban=""
 A_HC_apparmor=""; A_HC_aide=""; A_HC_sysctl=""; A_HC_extra=""; A_HC_lynis=""
 ALLOW_UDP_PORTS="${ALLOW_UDP_PORTS:-}"; ALLOW_SSH_CIDRS="${ALLOW_SSH_CIDRS:-}"
-A_FISH_DEFAULT=""
+
 ZABBIX_SERVER_ACTIVE="${ZABBIX_SERVER_ACTIVE:-}"; A_ZBX_DOCKER=""; LOKI_URL="${LOKI_URL:-}"; A_ALLOY_DOCKERLOGS=""
 A_DOCKER=""; A_PODMAN=""; A_DISABLE_ROOTFUL=""; A_EXAMPLE_APP=""; A_JOURNALD=""
 DOC_URL="${DOC_URL:-}"
@@ -262,7 +263,10 @@ compute_defaults() {
   A_BOOTSTRAP="$(yn_def Y Y)"; A_HARDEN="$(yn_def Y Y)"; A_ANCILLARY="$(yn_def Y Y)"
   A_MONITORING="$(yn_def Y Y)"; A_CONTAINER="$(yn_def N N)"; A_MOTD="$(yn_def Y Y)"; A_DOC="$(yn_def Y Y)"
   A_PKG_vim="$(yn_def Y Y)"; A_PKG_btop="$(yn_def Y Y)"; A_PKG_duf="$(yn_def Y Y)"
-  A_PKG_fish="$(yn_def Y Y)"; A_PKG_rsync="$(yn_def Y Y)"; A_PKG_qemu="$(yn_def Y N N)"
+  A_PKG_rsync="$(yn_def Y Y)"; A_PKG_qemu="$(yn_def Y N N)"
+  # Shell section: fish installed + set as the default (the historical
+  # behaviour), zsh/tcsh opt-in.
+  A_SHELL=Y; A_SH_fish=Y; A_SH_zsh=N; A_SH_tcsh=N; DEFAULT_SHELL_CHOICE="fish"
   A_AGENT_zabbix="$(yn_def Y Y)"; A_AGENT_alloy="$(yn_def Y Y)"
   # buzz is off by default: it needs a dev box running the forced-command
   # dispatcher, and its key must be registered there before alerts flow.
@@ -280,7 +284,6 @@ compute_defaults() {
     done
   fi
   BUZZ_PORT="${BUZZ_PORT:-6523}"
-  A_FISH_DEFAULT="$(yn_def Y Y)"
   # PVE host: root@pam web-UI login needs the root password UNLOCKED, and
   # hypervisors routinely need USB (passthrough, installer media) — so both
   # hardening extras default OFF there.
@@ -331,10 +334,18 @@ materialize_selection() {
   [[ "$A_PKG_vim"   == "Y" ]] && ANCILLARY_PICK+=(vim)
   [[ "$A_PKG_btop"  == "Y" ]] && ANCILLARY_PICK+=(btop)
   [[ "$A_PKG_duf"   == "Y" ]] && ANCILLARY_PICK+=(duf)
-  [[ "$A_PKG_fish"  == "Y" ]] && ANCILLARY_PICK+=(fish)
   [[ "$A_PKG_rsync" == "Y" ]] && ANCILLARY_PICK+=(rsync)
   [[ "$A_PKG_qemu"  == "Y" ]] && ANCILLARY_PICK+=(qemu-guest-agent)
-  if [[ "$A_ANCILLARY" == "Y" && ${#ANCILLARY_PICK[@]} -gt 0 ]]; then SELECTED+=(ancillary.sh); else skip_script ancillary.sh; fi
+  _shell_work=0
+  if [[ "$A_SHELL" == "Y" ]]; then
+    [[ "$A_SH_fish" == Y || "$A_SH_zsh" == Y || "$A_SH_tcsh" == Y ]] && _shell_work=1
+    [[ "$DEFAULT_SHELL_CHOICE" != "keep" ]] && _shell_work=1
+  fi
+  if [[ "$A_ANCILLARY" == "Y" && ${#ANCILLARY_PICK[@]} -gt 0 ]] || [[ "$_shell_work" == "1" ]]; then
+    SELECTED+=(ancillary.sh)
+  else
+    skip_script ancillary.sh
+  fi
 
   [[ "$A_AGENT_zabbix" == "Y" ]] && MONITORING_PICK+=(zabbix-agent2)
   [[ "$A_AGENT_alloy"  == "Y" ]] && MONITORING_PICK+=(alloy)
@@ -383,7 +394,24 @@ materialize_selection() {
   fi
   if [[ "$A_ANCILLARY" == "Y" && ${#ANCILLARY_PICK[@]} -gt 0 ]]; then
     export ANCILLARY_PKGS="${ANCILLARY_PICK[*]}"
-    if [[ "$A_PKG_fish" == "Y" && "$A_FISH_DEFAULT" == "Y" ]]; then export FISH_USERS="$PRIMARY_USER"; else export FISH_USERS="none"; fi
+  elif [[ "$_shell_work" == "1" ]]; then
+    export ANCILLARY_PKGS="none"
+  fi
+  if [[ "$_shell_work" == "1" ]]; then
+    _shells=""
+    [[ "$A_SH_fish" == Y ]] && _shells+="fish "
+    [[ "$A_SH_zsh"  == Y ]] && _shells+="zsh "
+    [[ "$A_SH_tcsh" == Y ]] && _shells+="tcsh "
+    export SHELL_PKGS="${_shells% }"
+    export DEFAULT_SHELL="$DEFAULT_SHELL_CHOICE"
+    if [[ "$DEFAULT_SHELL_CHOICE" != "keep" && -n "$PRIMARY_USER" ]]; then
+      export SHELL_USERS="$PRIMARY_USER"
+    else
+      export SHELL_USERS="none"
+    fi
+  else
+    export SHELL_PKGS=""
+    export DEFAULT_SHELL="keep"
   fi
   if [[ "$A_MONITORING" == "Y" && ${#MONITORING_PICK[@]} -gt 0 ]]; then
     export MONITORING_PKGS="${MONITORING_PICK[*]}"
@@ -535,6 +563,7 @@ validate_tui() {
   [[ "$A_MONITORING" == Y && "$A_AGENT_buzz" == Y && "$A_ALERT_SINK" != "ntfy" && -z "${BUZZ_TARGET//[[:space:]]/}" ]] && m+=("alerts via buzz need the relay target (user@host).")
   [[ "$A_MONITORING" == Y && "$A_AGENT_buzz" == Y && "$A_ALERT_SINK" == "ntfy" && -z "${NTFY_URL//[[:space:]]/}" ]] && m+=("alerts via ntfy need the topic URL (https://host/topic).")
   [[ "$A_ANCILLARY" == Y && "$(anc_list)" == "none" ]] && m+=("extra packages is enabled but no packages are picked.")
+  [[ -n "$(need_shell)" ]] && m+=("shell: the default shell '${DEFAULT_SHELL_CHOICE}' is neither installed nor selected for install.")
   [[ "$A_CONTAINER" == Y && "$A_DOCKER" != Y && "$A_PODMAN" != Y ]] && m+=("container runtime is enabled but no runtime (Docker/Podman) is picked.")
   [[ "$A_BOOTSTRAP$A_HARDEN$A_ANCILLARY$A_MONITORING$A_CONTAINER$A_MOTD$A_DOC" != *Y* ]] && m+=("Select at least one step to run.")
   if ((${#m[@]})); then
@@ -774,23 +803,36 @@ SSH sources: limit which source networks may reach SSH at all (blank = anywhere)
 anc_list() {
   local p=()
   [[ "$A_PKG_vim" == Y ]] && p+=(vim); [[ "$A_PKG_btop" == Y ]] && p+=(btop)
-  [[ "$A_PKG_duf" == Y ]] && p+=(duf); [[ "$A_PKG_fish" == Y ]] && p+=(fish)
+  [[ "$A_PKG_duf" == Y ]] && p+=(duf)
   [[ "$A_PKG_rsync" == Y ]] && p+=(rsync); [[ "$A_PKG_qemu" == Y ]] && p+=(qemu)
   local IFS=,; printf '%s' "${p[*]:-none}"
+}
+shell_list() {
+  local p=()
+  [[ "$A_SH_fish" == Y ]] && p+=(fish); [[ "$A_SH_zsh" == Y ]] && p+=(zsh); [[ "$A_SH_tcsh" == Y ]] && p+=(tcsh)
+  local IFS=,; printf '%s' "${p[*]:-none}"
+}
+need_shell() {
+  [[ "$A_SHELL" == Y ]] || return 0
+  case "$DEFAULT_SHELL_CHOICE" in
+    fish)  [[ "$A_SH_fish" == Y ]] || command -v fish >/dev/null 2>&1 || printf 'install fish' ;;
+    zsh)   [[ "$A_SH_zsh"  == Y ]] || command -v zsh  >/dev/null 2>&1 || printf 'install zsh' ;;
+    tcsh)  [[ "$A_SH_tcsh" == Y ]] || command -v tcsh >/dev/null 2>&1 || printf 'install tcsh' ;;
+  esac
+  return 0
 }
 tui_ancillary_packages() {
   local sel t
   if sel=$(whiptail --backtitle "$BACKTITLE" --title "Setup › packages › selection" \
-      --checklist "Packages to install (Space to toggle):" 16 72 6 \
+      --checklist "Packages to install (Space to toggle):" 15 72 5 \
       "vim"   "Vim text editor"              "$(onoff "$A_PKG_vim")" \
       "btop"  "Resource monitor (htop-like)" "$(onoff "$A_PKG_btop")" \
       "duf"   "Disk usage viewer"            "$(onoff "$A_PKG_duf")" \
-      "fish"  "Friendly interactive shell"   "$(onoff "$A_PKG_fish")" \
       "rsync" "Fast file copy / sync"        "$(onoff "$A_PKG_rsync")" \
       "qemu"  "QEMU guest agent (VM only)"   "$(onoff "$A_PKG_qemu")" \
       3>&1 1>&2 2>&3); then
-    A_PKG_vim=N; A_PKG_btop=N; A_PKG_duf=N; A_PKG_fish=N; A_PKG_rsync=N; A_PKG_qemu=N
-    for t in $sel; do t="${t//\"/}"; case "$t" in vim) A_PKG_vim=Y;; btop) A_PKG_btop=Y;; duf) A_PKG_duf=Y;; fish) A_PKG_fish=Y;; rsync) A_PKG_rsync=Y;; qemu) A_PKG_qemu=Y;; esac; done
+    A_PKG_vim=N; A_PKG_btop=N; A_PKG_duf=N; A_PKG_rsync=N; A_PKG_qemu=N
+    for t in $sel; do t="${t//\"/}"; case "$t" in vim) A_PKG_vim=Y;; btop) A_PKG_btop=Y;; duf) A_PKG_duf=Y;; rsync) A_PKG_rsync=Y;; qemu) A_PKG_qemu=Y;; esac; done
   fi
 }
 tui_ancillary() {
@@ -799,7 +841,6 @@ tui_ancillary() {
     local items=("enabled" "[$(onoff3 "$A_ANCILLARY")]  run this step$([[ "$A_ANCILLARY" == Y ]] || echo ' — enable to configure')")
     if [[ "$A_ANCILLARY" == Y ]]; then
       items+=("packages" "[$(valic "$( [[ "$(anc_list)" != none ]] && echo x )" "$A_ANCILLARY")]  packages: $(anc_list)")
-      items+=("fish"     "[$(onoff3 "$A_FISH_DEFAULT")]  fish as the default shell (if picked)")
     fi
     items+=(" " "────────────────────────────────────")
     items+=("help" "[ ? ]  what does each setting do?")
@@ -807,10 +848,49 @@ tui_ancillary() {
     case "$sel" in
       enabled)  tgl A_ANCILLARY ;;
       packages) tui_ancillary_packages ;;
-      help) show_help "Setup › packages › help" "packages: quality-of-life tools — vim, btop (resource monitor), duf (disk usage), fish (shell), rsync, and the QEMU guest agent (useful only inside a VM: enables clean shutdown, IP reporting and snapshots from the host).
+      help) show_help "Setup › packages › help" "packages: quality-of-life tools — vim, btop (resource monitor), duf (disk usage), rsync, and the QEMU guest agent (useful only inside a VM: enables clean shutdown, IP reporting and snapshots from the host). Shells moved to the shell step." ;;
+    esac
+  done
+}
 
-fish as the default shell: switches the admin user's login shell to fish once it is installed." ;;
-      fish)     tgl A_FISH_DEFAULT ;;
+# --- shell --------------------------------------------------------------------
+tui_shell() {
+  local sel t v
+  while true; do
+    local items=("enabled" "[$(onoff3 "$A_SHELL")]  run this step$([[ "$A_SHELL" == Y ]] || echo ' — enable to configure')")
+    if [[ "$A_SHELL" == Y ]]; then
+      items+=("install" "[ ✔ ]  shells to install: $(shell_list)")
+      items+=("default" "[ ✔ ]  default login shell: ${DEFAULT_SHELL_CHOICE}$( [[ "$DEFAULT_SHELL_CHOICE" == keep ]] && echo ' (unchanged)' )")
+    fi
+    items+=(" " "────────────────────────────────────")
+    items+=("help" "[ ? ]  what does each setting do?")
+    sel=$(hubmenu "Setup › shell (login shell)" $(( ${#items[@]} / 2 )) "${items[@]}") || break
+    case "$sel" in
+      enabled) tgl A_SHELL ;;
+      install)
+        if t=$(whiptail --backtitle "$BACKTITLE" --title "Setup › shell › install" \
+            --checklist "Extra shells to install (Space to toggle).\nbash and sh are always present on Debian." 12 70 3 \
+            "fish" "Friendly interactive shell"        "$(onoff "$A_SH_fish")" \
+            "zsh"  "Z shell (oh-my-zsh compatible)"    "$(onoff "$A_SH_zsh")" \
+            "tcsh" "TENEX C shell"                     "$(onoff "$A_SH_tcsh")" \
+            3>&1 1>&2 2>&3); then
+          A_SH_fish=N; A_SH_zsh=N; A_SH_tcsh=N
+          local x; for x in $t; do x="${x//\"/}"; case "$x" in fish) A_SH_fish=Y;; zsh) A_SH_zsh=Y;; tcsh) A_SH_tcsh=Y;; esac; done
+        fi ;;
+      default)
+        if v=$(whiptail --backtitle "$BACKTITLE" --title "Setup › shell › default shell" \
+            --default-item "$DEFAULT_SHELL_CHOICE" \
+            --menu "Default LOGIN shell for the admin user.\nThe shell is verified before any change — a broken login\nshell would be an SSH lockout once password auth is off." 16 70 6 \
+            "keep" "keep the current shell (no change)" \
+            "bash" "GNU bash (Debian default)" \
+            "sh"   "POSIX sh (dash)" \
+            "fish" "fish" \
+            "zsh"  "zsh" \
+            "tcsh" "tcsh" \
+            3>&1 1>&2 2>&3); then DEFAULT_SHELL_CHOICE="$v"; fi ;;
+      help) show_help "Setup › shell › help" "shells to install: extra shells added via apt — fish (friendly, great defaults), zsh (popular, oh-my-zsh ecosystem), tcsh (C-shell syntax). bash and sh always exist on Debian and need no install.
+
+default login shell: which shell the admin user lands in at login. 'keep' changes nothing. Any other choice is applied to the admin user (or the users bootstrap created), and only after the shell binary passes a smoke test — a broken login shell would lock you out of SSH once password auth is disabled. If you pick a shell that isn't installed and isn't selected above, the hub shows a warning." ;;
     esac
   done
 }
@@ -1032,10 +1112,11 @@ tui_main() {
   while true; do
     sel=$(whiptail --backtitle "$BACKTITLE" --title "Setup  —  [${ENV_TYPE^^}]" \
       --ok-button "Open" --cancel-button "Quit" \
-      --menu "${MENU_HINT}"$'\n'"Defaults are pre-set — choose Accept to install as-is." 21 78 11 \
+      --menu "${MENU_HINT}"$'\n'"Defaults are pre-set — choose Accept to install as-is." 22 78 12 \
       "user"       "[$(stat3 "$A_BOOTSTRAP" "$(need_bootstrap)")]  admin user + SSH key" \
       "harden"     "[$(stat3 "$A_HARDEN" "$(need_harden)")]  security hardening" \
       "packages"   "[$(stat3 "$A_ANCILLARY" "$(need_ancillary)")]  extra packages" \
+      "shell"      "[$(stat3 "$A_SHELL" "$(need_shell)")]  login shell" \
       "monitoring" "[$(stat3 "$A_MONITORING" "$(need_monitoring)")]  monitoring & alerts" \
       "container"  "[$(stat3 "$A_CONTAINER" "$(need_container)")]  Docker / Podman" \
       "banner"     "[$(stat3 "$A_MOTD" "")]  login banner (MOTD)" \
@@ -1049,6 +1130,7 @@ tui_main() {
       user)       tui_bootstrap ;;
       harden)     tui_harden ;;
       packages)   tui_ancillary ;;
+      shell)      tui_shell ;;
       monitoring) tui_monitoring ;;
       container)  tui_container ;;
       banner)     tui_motd ;;
@@ -1057,7 +1139,9 @@ tui_main() {
 
 harden: security hardening — SSH lockdown, deny-by-default firewall, fail2ban, automatic updates, AppArmor, AIDE, sysctl, Lynis. Components and options are pickable inside.
 
-packages: quality-of-life tools (vim, btop, duf, fish, rsync, guest agent).
+packages: quality-of-life tools (vim, btop, duf, rsync, guest agent).
+
+shell: install extra shells (fish, zsh, tcsh) and pick the admin user's default login shell.
 
 monitoring: Zabbix metrics agent, Grafana Alloy log shipper, and buzz relay alerting — each configured in its own screen.
 

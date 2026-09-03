@@ -10,17 +10,25 @@
 #    (Monitoring agents — Zabbix, Grafana Alloy — moved to monitoring.sh.)
 #  - qemu-guest-agent (if selected) is started only when run inside a QEMU/KVM
 #    guest with the guest-agent channel; otherwise it's left inactive.
-#  - fish shell (if selected): if bootstrap.sh NEWLY created user(s) this run, fish
-#    is made their default shell automatically. Otherwise it asks which current
-#    users should get fish as their default shell. Affected users get it as their
-#    DEFAULT login shell.
+#  - Shells: SHELL_PKGS picks extra shells to install (fish, zsh, tcsh), and
+#    DEFAULT_SHELL sets the login shell (keep|bash|sh|fish|zsh|tcsh) for the
+#    target users: SHELL_USERS if given, else the users bootstrap.sh newly
+#    created this run, else an interactive per-user ask. The shell is verified
+#    (present + smoke test) before any chsh — a broken login shell is an SSH
+#    lockout once password auth is off.
 #
 #  Run as root, e.g.  sudo ./ancillary.sh
 #
 #  Environment overrides:
 #    ANCILLARY_PKGS="btop rsync ..." -> install exactly these (or "none" for
 #                                       nothing); unset = the full default set
-#    FISH_USERS="u1 u2 ..." -> set fish for exactly these users (skips prompts)
+#                                       ("fish" here is a legacy alias that maps
+#                                       to SHELL_PKGS=fish + DEFAULT_SHELL=fish)
+#    SHELL_PKGS="fish zsh tcsh" -> extra shells to install (subset; unset = none)
+#    DEFAULT_SHELL=keep|bash|sh|fish|zsh|tcsh -> login shell to set (default keep)
+#    SHELL_USERS="u1 u2 ..." -> set the shell for exactly these users (skips
+#                                       prompts; "none" = change nobody).
+#                                       FISH_USERS is accepted as a legacy alias
 #    ASSUME_YES=1           -> answer "yes" to every prompt (automation)
 # ==============================================================================
 
@@ -30,7 +38,9 @@ set -euo pipefail
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
 
 ASSUME_YES="${ASSUME_YES:-0}"
-FISH_USERS="${FISH_USERS:-}"
+SHELL_USERS="${SHELL_USERS:-${FISH_USERS:-}}"
+SHELL_PKGS="${SHELL_PKGS:-}"
+DEFAULT_SHELL="${DEFAULT_SHELL:-}"
 
 START_TS="$(date +%s)"
 
@@ -39,11 +49,10 @@ declare -A PKG_DESC=(
   [vim]="Vim text editor"
   [btop]="resource monitor (htop-like)"
   [duf]="disk usage/free utility (df-like, friendlier)"
-  [fish]="friendly interactive shell"
   [rsync]="fast file copy / sync"
   [qemu-guest-agent]="QEMU/KVM guest integration (VMs only)"
 )
-ALL_PKGS=(vim btop duf fish rsync qemu-guest-agent)
+ALL_PKGS=(vim btop duf rsync qemu-guest-agent)
 
 # Which packages to install. ANCILLARY_PKGS (space-separated list, or "none")
 # overrides the selection — init.sh sets it from the wizard's package picker.
@@ -57,7 +66,26 @@ if [[ "${ANCILLARY_PKGS+x}" == "x" ]]; then
 else
   SELECTED_PKGS=("${ALL_PKGS[@]}")
 fi
+# Legacy: "fish" used to live in ANCILLARY_PKGS — map it to the shell section.
+_newsel=()
+for _p in "${SELECTED_PKGS[@]:-}"; do
+  if [[ "$_p" == "fish" ]]; then
+    [[ " $SHELL_PKGS " == *" fish "* ]] || SHELL_PKGS="${SHELL_PKGS:+${SHELL_PKGS} }fish"
+    [[ -z "$DEFAULT_SHELL" ]] && DEFAULT_SHELL=fish
+  elif [[ -n "$_p" ]]; then
+    _newsel+=("$_p")
+  fi
+done
+SELECTED_PKGS=("${_newsel[@]:-}")
+DEFAULT_SHELL="${DEFAULT_SHELL:-keep}"
+# Only real, installable shells may appear in SHELL_PKGS.
+_shellsel=()
+for _p in ${SHELL_PKGS}; do
+  case "$_p" in fish|zsh|tcsh) _shellsel+=("$_p");; *) ;; esac
+done
+SHELL_PKG_LIST=("${_shellsel[@]:-}")
 pkg_selected() { local p; for p in "${SELECTED_PKGS[@]}"; do [[ "$p" == "$1" ]] && return 0; done; return 1; }
+shell_selected() { local p; for p in "${SHELL_PKG_LIST[@]:-}"; do [[ "$p" == "$1" ]] && return 0; done; return 1; }
 
 # State written by bootstrap.sh: users it NEWLY created this round.
 CREATED_USERS_FILE="/var/lib/homelab-bootstrap/created-users"
@@ -112,34 +140,38 @@ confirm() {
 
 require_root() { if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then err "Run as root (e.g. sudo $0)."; exit 1; fi; }
 
-# set_fish_default <user> — ensure fish is in /etc/shells, then chsh the user.
-set_fish_default() {
-  local user="$1" fish_path
-  fish_path="$(command -v fish 2>/dev/null || echo /usr/bin/fish)"
-  # A login shell that doesn't exist or doesn't run is an SSH lockout once
-  # harden.sh has disabled password auth — verify before touching anything.
-  if [[ ! -x "$fish_path" ]]; then
-    warn "fish not found at ${fish_path} — NOT changing ${user}'s shell."
-    record "fish:${user}" "skipped (fish not installed)"
+# set_default_shell <user> <shell-name> — resolve the shell's path, verify it
+# actually runs (a broken login shell is an SSH lockout once password auth is
+# off), ensure /etc/shells lists it, then chsh the user.
+set_default_shell() {
+  local user="$1" name="$2" path
+  case "$name" in
+    bash) path="/bin/bash" ;;
+    sh)   path="/bin/sh" ;;
+    *)    path="$(command -v "$name" 2>/dev/null || echo "/usr/bin/${name}")" ;;
+  esac
+  if [[ ! -x "$path" ]]; then
+    warn "${name} not found at ${path} — NOT changing ${user}'s shell."
+    record "shell:${user}" "skipped (${name} not installed)"
     return 0
   fi
-  if ! "$fish_path" -c 'exit 0' >/dev/null 2>&1; then
-    warn "fish at ${fish_path} failed a smoke test — NOT changing ${user}'s shell."
-    record "fish:${user}" "skipped (fish smoke test failed)"
+  if ! "$path" -c 'exit 0' >/dev/null 2>&1; then
+    warn "${name} at ${path} failed a smoke test — NOT changing ${user}'s shell."
+    record "shell:${user}" "skipped (${name} smoke test failed)"
     return 0
   fi
-  if ! grep -qxF "$fish_path" /etc/shells 2>/dev/null; then
-    printf '%s\n' "$fish_path" >> /etc/shells
-    log "Added ${fish_path} to /etc/shells."
+  if ! grep -qxF "$path" /etc/shells 2>/dev/null; then
+    printf '%s\n' "$path" >> /etc/shells
+    log "Added ${path} to /etc/shells."
   fi
   local cur; cur="$(getent passwd "$user" | cut -d: -f7)"
-  if [[ "$cur" == "$fish_path" ]]; then
-    log "${user}'s default shell is already fish."
-    record "fish:${user}" "already default (${fish_path})"
+  if [[ "$cur" == "$path" ]]; then
+    log "${user}'s default shell is already ${name}."
+    record "shell:${user}" "already ${name} (${path})"
   else
-    chsh -s "$fish_path" "$user"
-    log "Set ${user}'s default shell to ${fish_path}."
-    record "fish:${user}" "default shell set to ${fish_path}"
+    chsh -s "$path" "$user"
+    log "Set ${user}'s default shell to ${name} (${path})."
+    record "shell:${user}" "default shell set to ${name} (${path})"
   fi
 }
 
@@ -159,54 +191,56 @@ info "Packages to install: ${BOLD}${SELECTED_PKGS[*]:-<none>}${RESET}"
 hr '─'
 
 # ==============================================================================
-#  Decide which users get fish (before installing, so the recap is accurate)
+#  Decide which users get the default shell (before installing, for the recap)
 # ==============================================================================
-FISH_TARGETS=()
+SHELL_TARGETS=()
 
-if ! pkg_selected fish; then
-  info "fish not selected — no default-shell changes."
-elif [[ "${FISH_USERS,,}" == "none" ]]; then
+if [[ "$DEFAULT_SHELL" == "keep" ]]; then
+  info "Default shell: keeping every user's current shell."
+elif [[ "${SHELL_USERS,,}" == "none" ]]; then
   # Explicit opt-out — change no shells.
-  info "fish default-shell change disabled (FISH_USERS=none)."
-elif [[ -n "$FISH_USERS" ]]; then
+  info "Default-shell change disabled (SHELL_USERS=none)."
+elif [[ -n "$SHELL_USERS" ]]; then
   # Explicit override.
-  read -ra FISH_TARGETS <<< "$FISH_USERS"
-  info "fish users from FISH_USERS: ${BOLD}${FISH_TARGETS[*]}${RESET}"
+  read -ra SHELL_TARGETS <<< "$SHELL_USERS"
+  info "Default shell ${BOLD}${DEFAULT_SHELL}${RESET} for (SHELL_USERS): ${BOLD}${SHELL_TARGETS[*]}${RESET}"
 elif [[ -s "$CREATED_USERS_FILE" ]]; then
-  # bootstrap.sh created user(s) this round → fish for them automatically.
-  mapfile -t FISH_TARGETS < <(awk 'NF' "$CREATED_USERS_FILE" | sort -u)
-  info "bootstrap.sh newly created: ${BOLD}${FISH_TARGETS[*]:-<none>}${RESET}"
-  note "fish will be installed and set as the default shell for the above user(s)."
+  # bootstrap.sh created user(s) this round → set their shell automatically.
+  mapfile -t SHELL_TARGETS < <(awk 'NF' "$CREATED_USERS_FILE" | sort -u)
+  info "bootstrap.sh newly created: ${BOLD}${SHELL_TARGETS[*]:-<none>}${RESET}"
+  note "${DEFAULT_SHELL} will be set as the default shell for the above user(s)."
 else
-  # No newly-created users recorded → ask which current users want fish.
+  # No newly-created users recorded → ask which current users to change.
   info "No newly-created users were recorded by bootstrap.sh (${CREATED_USERS_FILE})."
   mapfile -t HUMAN_USERS < <(awk -F: '$3>=1000 && $3<65534 && $7 !~ /(nologin|false)$/ {print $1}' /etc/passwd | sort)
   if (( ${#HUMAN_USERS[@]} == 0 )); then
-    warn "No regular (human) user accounts found to offer fish to."
+    warn "No regular (human) user accounts found to offer ${DEFAULT_SHELL} to."
   elif [[ "$INTERACTIVE" -eq 1 ]]; then
-    # Interactive-only: under ASSUME_YES this used to auto-answer YES for
-    # EVERY human account and chsh them all to fish. Automation must name
-    # its targets via FISH_USERS.
-    info "Choose which existing users should get fish as their default shell:"
+    # Interactive-only: automation must name its targets via SHELL_USERS.
+    info "Choose which existing users should get ${DEFAULT_SHELL} as their default shell:"
     for u in "${HUMAN_USERS[@]}"; do
-      confirm "Set fish as the default shell for '${u}'?" N && FISH_TARGETS+=("$u")
+      confirm "Set ${DEFAULT_SHELL} as the default shell for '${u}'?" N && SHELL_TARGETS+=("$u")
     done
   else
-    note "Non-interactive with no FISH_USERS set — skipping fish shell changes."
+    note "Non-interactive with no SHELL_USERS set — skipping shell changes."
   fi
 fi
 
-# qemu-guest-agent has its own step below; install the rest here.
+# qemu-guest-agent has its own step below; install the rest here, plus any
+# shells picked in the shell section (fish/zsh/tcsh are plain Debian packages).
 APT_PKGS=()
 for p in "${SELECTED_PKGS[@]}"; do
   case "$p" in qemu-guest-agent) ;; *) APT_PKGS+=("$p");; esac
+done
+for p in "${SHELL_PKG_LIST[@]:-}"; do
+  [[ -n "$p" ]] && APT_PKGS+=("$p")
 done
 
 # ==============================================================================
 banner "Installing extra packages"
 # ==============================================================================
 export DEBIAN_FRONTEND=noninteractive
-if (( ${#SELECTED_PKGS[@]} == 0 )); then
+if (( ${#SELECTED_PKGS[@]} == 0 && ${#APT_PKGS[@]} == 0 )); then
   note "No packages selected — nothing to install."
   record "Packages" "none selected"
 elif (( ${#APT_PKGS[@]} == 0 )); then
@@ -258,22 +292,22 @@ fi
 fi   # end: pkg_selected qemu-guest-agent
 
 # ==============================================================================
-if pkg_selected fish; then
-banner "Configuring fish shell"
+if [[ "$DEFAULT_SHELL" != "keep" ]]; then
+banner "Configuring the login shell (${DEFAULT_SHELL})"
 # ==============================================================================
-if (( ${#FISH_TARGETS[@]} > 0 )); then
-  for u in "${FISH_TARGETS[@]}"; do
+if (( ${#SHELL_TARGETS[@]} > 0 )); then
+  for u in "${SHELL_TARGETS[@]}"; do
     if ! id "$u" >/dev/null 2>&1; then
       warn "User '$u' does not exist — skipping."
       continue
     fi
-    set_fish_default "$u"
+    set_default_shell "$u" "$DEFAULT_SHELL"
   done
 else
-  note "No users selected for fish — leaving default shells unchanged."
-  record "fish" "no users changed"
+  note "No users selected — leaving default shells unchanged."
+  record "shell" "no users changed"
 fi
-fi   # end: pkg_selected fish
+fi   # end: default shell
 
 # ==============================================================================
 #  Recap
@@ -292,8 +326,8 @@ done
 hr '─'
 printf '%s%s  ⏭ NEXT STEPS%s\n' "$BOLD" "$MAG" "$RESET"
 _had_step=0
-if (( ${#FISH_TARGETS[@]} > 0 )); then
-  printf '   %s•%s  Affected users get fish on their NEXT login. Try it now: %sexec fish%s\n' "$BOLD" "$RESET" "$DIM" "$RESET"; _had_step=1
+if [[ "$DEFAULT_SHELL" != "keep" ]] && (( ${#SHELL_TARGETS[@]} > 0 )); then
+  printf '   %s•%s  Affected users get %s on their NEXT login. Try it now: %sexec %s%s\n' "$BOLD" "$RESET" "$DEFAULT_SHELL" "$DIM" "$DEFAULT_SHELL" "$RESET"; _had_step=1
 fi
 if pkg_selected btop; then
   printf '   %s•%s  Launch the resource monitor with: %sbtop%s\n' "$BOLD" "$RESET" "$DIM" "$RESET"; _had_step=1
@@ -309,10 +343,11 @@ fi
 printf '%s%s  Done. 🐟%s\n\n' "$BOLD" "$GRN" "$RESET"
 
 # One-line summary for init.sh's bootstrap report.
-if (( ${#FISH_TARGETS[@]} > 0 )); then _fish="fish default for: ${FISH_TARGETS[*]}"
-elif pkg_selected fish; then _fish="fish: no users changed"
-else _fish="fish: not selected"; fi
-if (( ${#SELECTED_PKGS[@]} > 0 )); then _pkgs="installed ${SELECTED_PKGS[*]}"; else _pkgs="no packages selected"; fi
+if [[ "$DEFAULT_SHELL" != "keep" ]] && (( ${#SHELL_TARGETS[@]} > 0 )); then _fish="${DEFAULT_SHELL} default for: ${SHELL_TARGETS[*]}"
+elif [[ "$DEFAULT_SHELL" != "keep" ]]; then _fish="${DEFAULT_SHELL}: no users changed"
+else _fish="shells: current kept"; fi
+_allpkgs=("${SELECTED_PKGS[@]:-}" "${SHELL_PKG_LIST[@]:-}")
+if (( ${#_allpkgs[@]} > 0 )) && [[ -n "${_allpkgs[0]}" || ${#_allpkgs[@]} -gt 1 ]]; then _pkgs="installed ${_allpkgs[*]}"; else _pkgs="no packages selected"; fi
 mkdir -p /var/lib/homelab-bootstrap/summaries 2>/dev/null || true
 printf '%s; %s\n' "$_pkgs" "$_fish" \
   > /var/lib/homelab-bootstrap/summaries/ancillary.sh 2>/dev/null || true

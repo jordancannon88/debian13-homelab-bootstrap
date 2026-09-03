@@ -26,7 +26,7 @@ one consolidated report: a review of what ran plus a single next-steps list.
 | `init.sh` | Orchestrator. Root check, then runs the scripts below (local copy or download) one at a time, with a single consolidated review and next-steps report at the end. |
 | `bootstrap.sh` | Runs first. Creates the admin user (or updates an existing one), adds it to `sudo`, and installs its SSH public key into `~/.ssh/authorized_keys`. Optional password for newly created accounts (blank means SSH-key only). `harden.sh` relies on this account and key existing, since hardening disables password login. |
 | `harden.sh` | System hardening. Verifies the admin users from `bootstrap.sh` (key + sudo), then SSH lockdown, nftables firewall (deny by default), fail2ban, unattended-upgrades, persistent journald, sysctl and kernel hardening, AppArmor, AIDE, auditd, extra fixes that clear common Lynis findings, and a Lynis audit at the end. Detects VM vs LXC and skips host-managed steps (AppArmor, auditd) inside containers. |
-| `ancillary.sh` | Pick-and-install extras. Choose any of `vim`, `btop`, `duf`, `fish`, `rsync`, `qemu-guest-agent`, plus fish set as the default shell for users `bootstrap.sh` created (or current users you pick). |
+| `ancillary.sh` | Pick-and-install extras. Choose any of `vim`, `btop`, `duf`, `rsync`, `qemu-guest-agent`. It also owns the shell section: installs extra shells (`fish`, `zsh`, `tcsh`) and can set the default login shell (keep/bash/sh/fish/zsh/tcsh) for the users `bootstrap.sh` created (or users you pick) — the shell binary is smoke-tested before any `chsh`. |
 | `monitoring.sh` | Pick-and-install monitoring agents from their vendor repos. `zabbix-agent2` adds Zabbix's official repo, installs the agent, and writes a config with this host's name and the Zabbix server address you provide. When a rootless Docker daemon is detected, it offers to set the agent up to monitor it (socket path, lingering, running the agent as that user). `alloy` adds Grafana's official repo and installs Grafana Alloy, a journal-first log shipper pointed at the Loki URL you provide, with an optional prompt to also capture Docker container logs via Docker's `journald` log driver, which works for both rootful and rootless Docker. `alerts` installs health & event watches — disk health (SMART + zpool, daily), Proxmox replication failures (30 min), Proxmox HA recover/migrate events (5 min), Thunderbolt mesh auto-heal (1 min); the Proxmox and mesh watches install only where their tooling exists. You pick the alert types first, then the delivery: a buzz relay dev box (forced-command ssh; a dedicated key is generated and alerting starts once you register its public half there) or an ntfy topic (HTTP push; works immediately in the ntfy app, messages carry the raw alert text). |
 | `container.sh` | Container runtimes. Installs Docker and/or Podman (you're asked for each) for a chosen user, rootless. Docker brings Engine, Compose, and rootless Docker; Podman is daemonless and rootless with `podman-compose`, set up to coexist with Docker (the `podman-docker` shim that would hijack the `docker` command is never installed). Both share the rootless plumbing (uidmap, subuid/subgid, userns AppArmor). Creates the `/opt/docker` layout (always) with an optional example app, and optionally sets the `journald` log driver so container logs flow to the journal and on to Loki via Alloy, tagging Docker lines with the Compose project and service for grouping by stack. |
 | `motd.sh` | Dynamic login banner (MOTD) showing live host, IP, uptime, OS/kernel, load, memory, disk and sessions, plus a link to your homelab documentation. |
@@ -264,6 +264,7 @@ install with the defaults.
   │  user         [ ⚠ ]  admin user + SSH key           │
   │  harden       [ ✔ ]  security hardening             │
   │  packages     [ ✔ ]  extra packages                 │
+  │  shell        [ ✔ ]  login shell                    │
   │  monitoring   [ ✔ ]  monitoring & alerts            │
   │  container    [ ✗ ]  Docker / Podman                │
   │  banner       [ ✔ ]  login banner (MOTD)            │
@@ -491,8 +492,10 @@ folder.
 
 | Variable | Effect |
 | --- | --- |
-| `ANCILLARY_PKGS="vim btop duf rsync"` | Install exactly these packages (any of `vim btop duf fish rsync qemu-guest-agent`), or `none` for nothing; unset installs the full default set |
-| `FISH_USERS="u1 u2"` | Set fish as the default shell for exactly these users (skips prompts) |
+| `ANCILLARY_PKGS="vim btop duf rsync"` | Install exactly these packages (any of `vim btop duf rsync qemu-guest-agent`; `fish` here is a legacy alias for the shell options), or `none` for nothing; unset installs the full default set |
+| `SHELL_PKGS="fish zsh tcsh"` | Extra shells to install (any subset; unset = none) |
+| `DEFAULT_SHELL=keep\|bash\|sh\|fish\|zsh\|tcsh` | Login shell to set for the target users (default `keep`); the shell is verified before any `chsh` |
+| `SHELL_USERS="u1 u2"` | Set the shell for exactly these users (skips prompts; `none` = change nobody). `FISH_USERS` is accepted as a legacy alias |
 
 </details>
 
