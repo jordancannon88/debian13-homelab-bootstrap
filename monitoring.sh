@@ -66,7 +66,7 @@
 #                                       (required when buzz is selected; asked
 #                                       interactively if unset)
 #    BUZZ_PORT=6523          -> ssh port on the dev box (default 6523)
-#    BUZZ_ALERTS="disk repl ha tbmesh" -> which watches to install (any subset,
+#    BUZZ_ALERTS="disk repl ha backup tbmesh" -> which watches to install (subset,
 #                                       or "none"); unset = "disk"
 #    ASSUME_YES=1           -> answer "yes" to every prompt (automation)
 # ==============================================================================
@@ -135,7 +135,9 @@ DOCKER_DRIVER_SET=0   # set to 1 once we've configured Docker's journald driver
 #   ntfy  -> HTTP push to an ntfy topic (https://ntfy.sh/<topic> or a
 #            self-hosted server). Needs NTFY_URL; NTFY_TOKEN optional.
 #            Messages carry the raw v3 payload text (terse but complete).
-ALERTS_SINK="${ALERTS_SINK:-buzz}"
+# ALERTS_SINKS may list BOTH ("buzz ntfy") — every alert then goes to both.
+# ALERTS_SINK (singular) is accepted as a legacy alias.
+ALERTS_SINKS="${ALERTS_SINKS:-${ALERTS_SINK:-buzz}}"
 BUZZ_TARGET="${BUZZ_TARGET:-}"
 BUZZ_PORT="${BUZZ_PORT:-6523}"
 NTFY_URL="${NTFY_URL:-}"
@@ -158,6 +160,11 @@ fi
 # Legacy name: "buzz" used to be the slug for the alerts feature.
 for _i in "${!SELECTED_PKGS[@]}"; do [[ "${SELECTED_PKGS[$_i]}" == "buzz" ]] && SELECTED_PKGS[$_i]="alerts"; done
 pkg_selected() { local p; for p in "${SELECTED_PKGS[@]}"; do [[ "$p" == "$1" ]] && return 0; done; return 1; }
+# Normalise ALERTS_SINKS to a validated list; at least the tokens buzz/ntfy.
+_sinks=()
+for _t in ${ALERTS_SINKS}; do case "$_t" in buzz|ntfy) _sinks+=("$_t");; esac; done
+ALERTS_SINKS="${_sinks[*]:-buzz}"
+sink_enabled() { [[ " ${ALERTS_SINKS} " == *" $1 "* ]]; }
 
 # ==============================================================================
 #  Output helpers
@@ -562,25 +569,22 @@ write_watch_script() {
   local tpl="$1" target="$2"
   resolve_template "${SCRIPT_DIR}/buzz/${tpl}" "buzz/${tpl}" || return 1
   local tmp sink; tmp="$(mktemp)"; sink="$(mktemp)"
-  if [[ "$ALERTS_SINK" == "ntfy" ]]; then
-    # Build the optional auth flag as DATA so its quotes survive the heredoc
-    # (quote removal inside \${:+} would strip them from the generated script).
-    local _auth=""
-    [[ -n "$NTFY_TOKEN" ]] && _auth=' -H "Authorization: Bearer '"$NTFY_TOKEN"'"'
-    cat > "$sink" <<EOF
-send_alert() {
-  curl -fsS -m 10 -H "Title: \$(hostname) homelab alert"${_auth} \\
-    -d "\$1" "${NTFY_URL}" >/dev/null 2>&1
-}
-EOF
-  else
-    cat > "$sink" <<EOF
-send_alert() {
-  ssh -i /root/.ssh/buzz_report -o BatchMode=yes -o ConnectTimeout=10 \\
-    -o StrictHostKeyChecking=accept-new -p ${BUZZ_PORT} ${BUZZ_TARGET} "v3 \$1" >/dev/null 2>&1
-}
-EOF
-  fi
+  # Compose send_alert from every enabled sink — with both enabled, every
+  # alert goes to both (each delivery individually fail-soft).
+  {
+    printf 'send_alert() {\n'
+    if sink_enabled buzz && [[ -n "$BUZZ_TARGET" ]]; then
+      printf '  ssh -i /root/.ssh/buzz_report -o BatchMode=yes -o ConnectTimeout=10 \\\n'
+      printf '    -o StrictHostKeyChecking=accept-new -p %s %s "v3 $1" >/dev/null 2>&1 || true\n' "$BUZZ_PORT" "$BUZZ_TARGET"
+    fi
+    if sink_enabled ntfy && [[ -n "$NTFY_URL" ]]; then
+      local _auth=""
+      [[ -n "$NTFY_TOKEN" ]] && _auth=' -H "Authorization: Bearer '"$NTFY_TOKEN"'"'
+      printf '  curl -fsS -m 10 -H "Title: $(hostname) homelab alert"%s \\\n' "$_auth"
+      printf '    -d "$1" "%s" >/dev/null 2>&1 || true\n' "$NTFY_URL"
+    fi
+    printf '  return 0\n}\n'
+  } > "$sink"
   awk -v sinkfile="$sink" '
     /@@SEND_ALERT@@/ { while ((getline l < sinkfile) > 0) print l; close(sinkfile); next }
     { print }
@@ -866,46 +870,48 @@ banner "Installing health & event alerts (${ALERTS_SINK} delivery)"
 # there). ntfy: HTTP push to a topic — works immediately, messages carry the
 # raw v3 payload text.
 
-_sink_ok=1
-case "$ALERTS_SINK" in
-  ntfy)
-    if [[ -z "$NTFY_URL" && "$INTERACTIVE" -eq 1 ]]; then
-      printf '%s%s ntfy topic URL to push alerts to (e.g. https://ntfy.sh/my-topic): %s' \
-        "$YEL" "$S_INFO" "$RESET" > /dev/tty
-      read -r NTFY_URL < /dev/tty || NTFY_URL=""
-      NTFY_URL="${NTFY_URL//[[:space:]]/}"
-    fi
-    if [[ -z "$NTFY_URL" ]]; then
-      warn "No ntfy topic URL provided (set NTFY_URL=https://host/topic) — skipping alerts."
-      record "alerts" "skipped (no NTFY_URL)"
-      _sink_ok=0
-    else
-      command -v curl >/dev/null 2>&1 || apt-get install -y curl >/dev/null
-    fi
-    ;;
-  *)
-    ALERTS_SINK=buzz
-    if [[ -z "$BUZZ_TARGET" && "$INTERACTIVE" -eq 1 ]]; then
-      printf '%s%s buzz relay dev box the watches ssh to (user@host): %s' \
-        "$YEL" "$S_INFO" "$RESET" > /dev/tty
-      read -r BUZZ_TARGET < /dev/tty || BUZZ_TARGET=""
-      BUZZ_TARGET="${BUZZ_TARGET//[[:space:]]/}"
-    fi
-    if [[ -z "$BUZZ_TARGET" ]]; then
-      warn "No dev box target provided (set BUZZ_TARGET=user@host) — skipping alerts."
-      record "alerts" "skipped (no BUZZ_TARGET)"
-      _sink_ok=0
-    fi
-    ;;
-esac
+# Resolve each enabled sink's config; an unconfigured sink is dropped with a
+# warning, and alerts are skipped only when NO sink remains usable.
+_active_sinks=()
+if sink_enabled buzz; then
+  if [[ -z "$BUZZ_TARGET" && "$INTERACTIVE" -eq 1 ]]; then
+    printf '%s%s buzz relay dev box the watches ssh to (user@host): %s' \
+      "$YEL" "$S_INFO" "$RESET" > /dev/tty
+    read -r BUZZ_TARGET < /dev/tty || BUZZ_TARGET=""
+    BUZZ_TARGET="${BUZZ_TARGET//[[:space:]]/}"
+  fi
+  if [[ -n "$BUZZ_TARGET" ]]; then
+    _active_sinks+=(buzz)
+  else
+    warn "buzz delivery enabled but no relay target (BUZZ_TARGET=user@host) — dropping the buzz sink."
+  fi
+fi
+if sink_enabled ntfy; then
+  if [[ -z "$NTFY_URL" && "$INTERACTIVE" -eq 1 ]]; then
+    printf '%s%s ntfy topic URL to push alerts to (e.g. https://ntfy.sh/my-topic): %s' \
+      "$YEL" "$S_INFO" "$RESET" > /dev/tty
+    read -r NTFY_URL < /dev/tty || NTFY_URL=""
+    NTFY_URL="${NTFY_URL//[[:space:]]/}"
+  fi
+  if [[ -n "$NTFY_URL" ]]; then
+    command -v curl >/dev/null 2>&1 || apt-get install -y curl >/dev/null
+    _active_sinks+=(ntfy)
+  else
+    warn "ntfy delivery enabled but no topic URL (NTFY_URL=https://host/topic) — dropping the ntfy sink."
+  fi
+fi
+ALERTS_SINKS="${_active_sinks[*]:-}"
 
-if [[ "$_sink_ok" == "1" ]]; then
+if [[ -z "$ALERTS_SINKS" ]]; then
+  warn "No usable alert delivery configured — skipping alerts."
+  record "alerts" "skipped (no configured sink)"
+else
   # Normalise the alert list ("none" or blank = nothing to install).
   [[ "${BUZZ_ALERTS,,}" == "none" ]] && BUZZ_ALERTS=""
   read -ra _buzz_sel <<< "$BUZZ_ALERTS"
   alert_selected() { local a; for a in "${_buzz_sel[@]:-}"; do [[ "$a" == "$1" ]] && return 0; done; return 1; }
 
-  if [[ "$ALERTS_SINK" == "buzz" ]]; then
+  if sink_enabled buzz; then
     if [[ ! -f "$BUZZ_KEY" ]]; then
       ssh-keygen -t ed25519 -N '' -C "$(hostname)-buzz-report" -f "$BUZZ_KEY" >/dev/null
       log "Generated ${BUZZ_KEY} (dedicated alert key for this node)."
@@ -963,6 +969,23 @@ if [[ "$_sink_ok" == "1" ]]; then
     fi
   fi
 
+  if alert_selected backup; then
+    if [[ -r /var/log/pve/tasks/index ]]; then
+      info "Installing the backup-failure watch (vzdump/PBS tasks, every 30 min)..."
+      if write_watch_script backup-health-report.sh /usr/local/sbin/backup-health-report.sh; then
+        install_buzz_cron backup-health-report "*/30 * * * *" /usr/local/sbin/backup-health-report.sh
+        # Prime the task cursor now so the first cron run never replays history.
+        /usr/local/sbin/backup-health-report.sh || true
+        _buzz_installed+=("backup (*/30, cursor primed)")
+      else
+        _buzz_skipped+=("backup (template missing)")
+      fi
+    else
+      note "backup watch skipped — no PVE task index here (Proxmox VE hosts only)."
+      _buzz_skipped+=("backup (no PVE task index)")
+    fi
+  fi
+
   if alert_selected tbmesh; then
     if [[ -x /usr/local/bin/pve-en02-disconnect-bug-fix.sh ]]; then
       info "Installing the TB3 mesh auto-heal watch (every minute)..."
@@ -978,9 +1001,11 @@ if [[ "$_sink_ok" == "1" ]]; then
     fi
   fi
 
-  if [[ "$ALERTS_SINK" == "buzz" ]]; then _sink_desc="buzz ${BUZZ_TARGET}:${BUZZ_PORT}"; else _sink_desc="ntfy ${NTFY_URL}"; fi
+  _sink_desc=""
+  sink_enabled buzz && _sink_desc="buzz ${BUZZ_TARGET}:${BUZZ_PORT}"
+  sink_enabled ntfy && _sink_desc="${_sink_desc:+${_sink_desc} + }ntfy ${NTFY_URL}"
   if (( ${#_buzz_installed[@]} )); then
-    log "alert watches installed: ${_buzz_installed[*]} (via ${ALERTS_SINK})"
+    log "alert watches installed: ${_buzz_installed[*]} (via ${ALERTS_SINKS})"
     record "alerts" "watches: ${_buzz_installed[*]}; sink ${_sink_desc}${_buzz_skipped[*]:+; skipped: ${_buzz_skipped[*]}}"
   else
     warn "No alert watches ended up installed${_buzz_skipped[*]:+ (${_buzz_skipped[*]})}."
@@ -1029,12 +1054,12 @@ if pkg_selected alloy; then
     fi
   fi
 fi
-if pkg_selected alerts && [[ "$ALERTS_SINK" == "ntfy" && -n "${NTFY_URL:-}" ]]; then
+if pkg_selected alerts && sink_enabled ntfy && [[ -n "${NTFY_URL:-}" ]]; then
   printf '   %s•%s  Alerts push to %s%s%s — subscribe to that topic in the ntfy app/web UI.\n' "$BOLD" "$RESET" "$BOLD" "$NTFY_URL" "$RESET"
   printf '       Test now: %scurl -d "test alert" %s%s\n' "$DIM" "$NTFY_URL" "$RESET"
   _had_step=1
 fi
-if pkg_selected alerts && [[ "$ALERTS_SINK" == "buzz" && -n "${BUZZ_TARGET:-}" && -f "${BUZZ_KEY}.pub" ]]; then
+if pkg_selected alerts && sink_enabled buzz && [[ -n "${BUZZ_TARGET:-}" && -f "${BUZZ_KEY}.pub" ]]; then
   printf '   %s•%s  Register this node on the dev box (%s) or no alert will ever arrive:\n' "$BOLD" "$RESET" "$BUZZ_TARGET"
   printf '       append to the dev box user'"'"'s ~/.ssh/authorized_keys (forced-command dispatcher, one line):\n'
   printf '       %scommand="/path/to/pve-dispatch.sh %s",restrict %s%s\n' "$DIM" "$(hostname)" "$(cat "${BUZZ_KEY}.pub")" "$RESET"
