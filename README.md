@@ -262,22 +262,39 @@ install with the defaults.
 ```
 
 Each line is one step with a three-state icon: ✔ on and ready, ✗ off,
-⚠ on but still needing configuration. Open the step to fill in whatever
-the ⚠ is about.
+⚠ on but still needing configuration. The whole wizard follows one pattern at
+every depth — hub, sub-hub, input screen — so every menu looks and behaves the
+same. Opening a step shows the same kind of menu again, with each setting on
+its own line showing its current value:
 
-- Opening a step shows a dialog for it. Monitoring is a hub of its own: a list
-  of services (zabbix, alloy, buzz) with the same three-state icons, and
-  opening a service starts a small wizard with exactly that service's inputs —
-  the Zabbix server address, the Loki URL, or for buzz the alert types and the
-  relay address as one `user@host:port` field.
-- The hardening dialog first asks which components to run — SSH lockdown,
-  firewall, fail2ban, automatic updates, persistent journald, AppArmor, AIDE,
-  sysctl, the extra Lynis fixes, and the closing audit are each toggleable
-  (all on by default) — then the options within them: apt full-upgrade, root
-  password lock, usb-storage blacklist, SSH TOTP 2FA, compiler restriction,
-  opening 80/443, extra TCP/UDP ports, and SSH source CIDRs. Deselecting the
-  SSH component also lifts the SSH-key requirement, since password login stays
-  enabled without it.
+```text
+        Setup › bootstrap (user config)
+  ┌────────────────────────────────────────────────────┐
+  │  enabled     [ ✔ ]  run this step                   │
+  │  user        [ ⚠ ]  admin username: (not set)       │
+  │  sshkey      [ ⚠ ]  SSH public key: (not set)       │
+  │  password    [ ✗ ]  password: SSH-key only          │
+  └────────────────────────────────────────────────────┘
+        <Open>                              <Back>
+```
+
+Toggle lines (`enabled`, yes/no settings) flip in place when you select them;
+value lines open an input screen; list lines open a checklist. Breadcrumb
+titles (`Setup › monitoring › buzz › relay address`) always show where you
+are, and Cancel/Back never loses anything.
+
+- Monitoring is a hub of services (zabbix, alloy, buzz), each opening its own
+  sub-hub with exactly that service's settings — the Zabbix server address, the
+  Loki URL, or for buzz the alert types and the relay address as one
+  `user@host:port` field.
+- The harden sub-hub has a `components` checklist — SSH lockdown, firewall,
+  fail2ban, automatic updates, persistent journald, AppArmor, AIDE, sysctl,
+  the extra Lynis fixes, and the closing audit, each toggleable (all on by
+  default) — an `options` checklist (apt full-upgrade, root password lock,
+  usb-storage blacklist, SSH TOTP 2FA, compiler restriction, 80/443), and
+  value lines for the SSH port, extra TCP/UDP ports, and SSH source CIDRs.
+  Deselecting the SSH component also lifts the SSH-key requirement, since
+  password login stays enabled without it.
 - Accept validates required inputs, then the chosen scripts run
   non-interactively. A missing required value (the SSH key, say) pops a message
   so you can fix it before install.
