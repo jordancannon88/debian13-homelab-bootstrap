@@ -92,9 +92,20 @@ det_fqdn="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo localhost)"
 det_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
 [[ -z "$det_ip" ]] && det_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
 [[ -z "$det_ip" ]] && det_ip="n/a"
-det_port="$(awk 'tolower($1)=="port"{print $2; exit}' /etc/ssh/sshd_config 2>/dev/null)"
+# sshd -T resolves Includes/drop-ins (Debian 13 ships an Include at the top of
+# sshd_config, so reading the file raw can miss the real port). Needs root;
+# fall back to the raw file otherwise.
+det_port="$(sshd -T 2>/dev/null | awk '$1=="port"{print $2; exit}')"
+[[ -z "$det_port" ]] && det_port="$(awk 'tolower($1)=="port"{print $2; exit}' /etc/ssh/sshd_config 2>/dev/null)"
 [[ -z "$det_port" ]] && det_port="22"
 det_user="${SUDO_USER:-$(logname 2>/dev/null || echo "${USER:-user}")}"
+# root is never the right login to document (harden.sh disables root SSH):
+# prefer the account bootstrap.sh created, else the first human sudo member.
+if [[ "$det_user" == "root" ]]; then
+  _alt="$(awk 'NF{print; exit}' /var/lib/homelab-bootstrap/created-users 2>/dev/null)"
+  [[ -z "$_alt" ]] && _alt="$(getent group sudo | cut -d: -f4 | tr ',' '\n' | awk 'NF{print; exit}')"
+  [[ -n "$_alt" ]] && det_user="$_alt"
+fi
 det_alias="${det_fqdn%%.*}"
 det_os="$( . /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-Linux}" )"
 
@@ -244,6 +255,12 @@ EOF
 )"
 
 mkdir -p "$(dirname "$OUT_FILE")"
+# Never write through a symlink: with a predictable path in a world-writable
+# directory, a planted link would let root truncate an arbitrary file.
+if [[ -L "$OUT_FILE" ]]; then
+  err "${OUT_FILE} is a symlink ($(readlink "$OUT_FILE" 2>/dev/null)) — refusing to write through it."
+  exit 1
+fi
 printf '%s\n' "$HTML" > "$OUT_FILE"
 log "Wrote ${BOLD}${OUT_FILE}${RESET} ($(wc -l < "$OUT_FILE") lines)."
 record "Output" "$OUT_FILE"

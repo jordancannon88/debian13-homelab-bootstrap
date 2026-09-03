@@ -443,7 +443,8 @@ write_journald_daemon_json() {
 run_as_user_docker() {
   local u="$1"; shift
   local uid; uid="$(id -u "$u" 2>/dev/null)" || return 1
-  runuser -l "$u" -c \
+  # /bin/sh, never the account's login shell — POSIX 'export' breaks in fish.
+  runuser -u "$u" -- /bin/sh -c \
     "export XDG_RUNTIME_DIR=/run/user/${uid} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus PATH=/usr/bin:/usr/sbin:/sbin:\$PATH; $*"
 }
 

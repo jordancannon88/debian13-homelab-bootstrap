@@ -275,6 +275,12 @@ if (( ${#ADMIN_USER_LIST[@]} == 0 )); then
   err "No admin user specified. Set ADMIN_USERS=\"name\" or run interactively — at least one is required."
   exit 1
 fi
+
+# created-users records accounts created by THIS run (later scripts read it to
+# target only new users). Truncate at run start so it never accumulates every
+# account ever created on the host.
+mkdir -p "$STATE_DIR" 2>/dev/null || true
+: > "$CREATED_USERS_FILE" 2>/dev/null || true
 info "Admin users: ${BOLD}${ADMIN_USER_LIST[*]}${RESET}"
 
 # ==============================================================================
@@ -286,6 +292,16 @@ info "Admin users: ${BOLD}${ADMIN_USER_LIST[*]}${RESET}"
 EFFECTIVE_USERS=()
 for u in "${ADMIN_USER_LIST[@]}"; do
   if id "$u" >/dev/null 2>&1; then
+    # Safeguard for env/wizard-supplied names too (the interactive prompt has
+    # its own): refuse to promote a SYSTEM account (uid<1000 or nologin/false
+    # shell) to sudo + SSH unless ALLOW_SYSTEM_ADMIN=1 is set explicitly.
+    _uid="$(id -u "$u" 2>/dev/null || echo 0)"
+    _shell="$(getent passwd "$u" | cut -d: -f7)"
+    if { (( _uid < 1000 )) || [[ "$_shell" == */nologin || "$_shell" == */false ]]; }        && [[ "${ALLOW_SYSTEM_ADMIN:-0}" != "1" ]] && [[ "${WANT_CREATE[$u]:-0}" != "1" ]]; then
+      err "'$u' is a SYSTEM account (uid ${_uid}, shell ${_shell:-?}) — refusing to grant it sudo + SSH."
+      err "If this is genuinely intended, set ALLOW_SYSTEM_ADMIN=1."
+      exit 1
+    fi
     EFFECTIVE_USERS+=("$u"); continue            # exists → always update
   fi
   cvar="CREATE_${u}"
@@ -386,9 +402,13 @@ setup_admin_user() {
     # Set the password collected for this new account (if any); otherwise the
     # account stays passwordless (SSH-key only).
     if [[ -n "${USER_PASSWORD[$user]:-}" ]]; then
-      printf '%s:%s\n' "$user" "${USER_PASSWORD[$user]}" | chpasswd
-      log "Created '$user' (password set) and added to the sudo group."
-      record "User:$user" "created (password set) + sudo"
+      if printf '%s:%s\n' "$user" "${USER_PASSWORD[$user]}" | chpasswd; then
+        log "Created '$user' (password set) and added to the sudo group."
+        record "User:$user" "created (password set) + sudo"
+      else
+        warn "Password for '$user' was rejected (PAM policy?) — account created passwordless; set it manually with: passwd $user"
+        record "User:$user" "created (password REJECTED; passwordless) + sudo"
+      fi
     else
       log "Created '$user' and added to the sudo group."
       record "User:$user" "created (disabled-password) + sudo"
@@ -415,9 +435,13 @@ setup_admin_user() {
       record "Key:$user" "skipped (no valid home)"
       return 1
     fi
-    install -d -m 700 -o "$user" -g "$user" "$home/.ssh"
+    # Use the account's REAL primary group — adopted accounts (USERGROUPS=no,
+    # cloud images, LDAP) often have no group named after the user, and a bare
+    # "-g $user" would abort the whole run under set -e.
+    local grp; grp="$(id -gn "$user")"
+    install -d -m 700 -o "$user" -g "$grp" "$home/.ssh"
     auth="$home/.ssh/authorized_keys"
-    touch "$auth"; chown "$user:$user" "$auth"; chmod 600 "$auth"
+    touch "$auth"; chown "$user:$grp" "$auth"; chmod 600 "$auth"
     # Whole-line match so a key that is a substring of an existing line isn't
     # falsely treated as already present.
     if ! grep -qxF "$key" "$auth"; then
@@ -468,7 +492,7 @@ _keyed=(); _unkeyed=()
 for u in "${ADMIN_USER_LIST[@]}"; do
   if [[ -n "${USER_PUBKEY[$u]:-}" || "${USER_HASKEY[$u]:-0}" == "1" ]]; then _keyed+=("$u"); else _unkeyed+=("$u"); fi
 done
-mkdir -p /var/lib/homelab-bootstrap/summaries
+mkdir -p /var/lib/homelab-bootstrap/summaries 2>/dev/null || true
 printf 'admins: %s (sudo); keys: %s%s\n' \
   "${ADMIN_USER_LIST[*]}" "${_keyed[*]:-none}" "${_unkeyed[*]:+; NO key: ${_unkeyed[*]}}" \
-  > /var/lib/homelab-bootstrap/summaries/bootstrap.sh
+  > /var/lib/homelab-bootstrap/summaries/bootstrap.sh 2>/dev/null || true

@@ -116,6 +116,18 @@ require_root() { if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then err "Run as root (e.g.
 set_fish_default() {
   local user="$1" fish_path
   fish_path="$(command -v fish 2>/dev/null || echo /usr/bin/fish)"
+  # A login shell that doesn't exist or doesn't run is an SSH lockout once
+  # harden.sh has disabled password auth — verify before touching anything.
+  if [[ ! -x "$fish_path" ]]; then
+    warn "fish not found at ${fish_path} — NOT changing ${user}'s shell."
+    record "fish:${user}" "skipped (fish not installed)"
+    return 0
+  fi
+  if ! "$fish_path" -c 'exit 0' >/dev/null 2>&1; then
+    warn "fish at ${fish_path} failed a smoke test — NOT changing ${user}'s shell."
+    record "fish:${user}" "skipped (fish smoke test failed)"
+    return 0
+  fi
   if ! grep -qxF "$fish_path" /etc/shells 2>/dev/null; then
     printf '%s\n' "$fish_path" >> /etc/shells
     log "Added ${fish_path} to /etc/shells."
@@ -171,7 +183,10 @@ else
   mapfile -t HUMAN_USERS < <(awk -F: '$3>=1000 && $3<65534 && $7 !~ /(nologin|false)$/ {print $1}' /etc/passwd | sort)
   if (( ${#HUMAN_USERS[@]} == 0 )); then
     warn "No regular (human) user accounts found to offer fish to."
-  elif [[ "$INTERACTIVE" -eq 1 || "$ASSUME_YES" == "1" ]]; then
+  elif [[ "$INTERACTIVE" -eq 1 ]]; then
+    # Interactive-only: under ASSUME_YES this used to auto-answer YES for
+    # EVERY human account and chsh them all to fish. Automation must name
+    # its targets via FISH_USERS.
     info "Choose which existing users should get fish as their default shell:"
     for u in "${HUMAN_USERS[@]}"; do
       confirm "Set fish as the default shell for '${u}'?" N && FISH_TARGETS+=("$u")
@@ -298,6 +313,6 @@ if (( ${#FISH_TARGETS[@]} > 0 )); then _fish="fish default for: ${FISH_TARGETS[*
 elif pkg_selected fish; then _fish="fish: no users changed"
 else _fish="fish: not selected"; fi
 if (( ${#SELECTED_PKGS[@]} > 0 )); then _pkgs="installed ${SELECTED_PKGS[*]}"; else _pkgs="no packages selected"; fi
-mkdir -p /var/lib/homelab-bootstrap/summaries
+mkdir -p /var/lib/homelab-bootstrap/summaries 2>/dev/null || true
 printf '%s; %s\n' "$_pkgs" "$_fish" \
-  > /var/lib/homelab-bootstrap/summaries/ancillary.sh
+  > /var/lib/homelab-bootstrap/summaries/ancillary.sh 2>/dev/null || true

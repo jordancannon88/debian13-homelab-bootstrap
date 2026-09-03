@@ -114,7 +114,7 @@ describe() {
     monitoring.sh) printf 'install Zabbix agent + Grafana Alloy (monitoring & log shipping)';;
     container.sh) printf 'Docker and/or Podman (rootless) + Compose + /opt/docker layout';;
     motd.sh)      printf 'cool dynamic login banner (host, IP, uptime) + docs link';;
-    documentation.sh) printf 'generate /tmp/connect.html — how to SSH into this host on its hardened port';;
+    documentation.sh) printf 'generate the SSH connection guide (how to reach this host on its hardened port)';;
     *)            printf 'bootstrap script';;
   esac
 }
@@ -322,7 +322,9 @@ materialize_selection() {
   fi
   [[ "$A_MOTD" == "Y" ]] && export DOC_URL
   if [[ "$A_DOC" == "Y" ]]; then
-    export OUT_FILE="/tmp/connect.html"
+    # Not /tmp: a predictable root-written path in a world-writable dir is a
+    # symlink-attack target. /var/lib/homelab-bootstrap is root-owned.
+    export OUT_FILE="/var/lib/homelab-bootstrap/connect.html"
     [[ -n "${SSH_PORT:-}" ]] && export CONN_PORT="$SSH_PORT"
     [[ -n "$PRIMARY_USER" ]] && export CONN_USER="$PRIMARY_USER"
   fi
@@ -885,7 +887,7 @@ tui_docs() {
       ) || break
     case "$sel" in
       enabled) tgl A_DOC ;;
-      help) show_help "Setup › docs › help" "run this step: generates an HTML connection doc (written to /tmp/connect.html when run via this wizard) with the host's details and exactly how to SSH in on the hardened port — including a ready-made ~/.ssh/config entry and a fish alias. Handy to paste into your wiki after setup." ;;
+      help) show_help "Setup › docs › help" "run this step: generates an HTML connection doc (written to /var/lib/homelab-bootstrap/connect.html when run via this wizard) with the host's details and exactly how to SSH in on the hardened port — including a ready-made ~/.ssh/config entry and a fish alias. Handy to paste into your wiki after setup." ;;
     esac
   done
 }
@@ -1024,6 +1026,10 @@ for s in "${SELECTED[@]}"; do
   # output to a log so we can scrape each script's NEXT STEPS for the final
   # consolidated report. pipefail makes the 'if' reflect the script's exit, not tee's.
   if ASSUME_YES=1 BOOTSTRAP_NESTED=1 bash "$src" 2>&1 | tee "$logf"; then
+    # The admin password is only bootstrap.sh's business — do not leave it in
+    # the environment of every later script (their child processes expose
+    # /proc/<pid>/environ to the users they run as).
+    [[ "$s" == "bootstrap.sh" && -n "${ADMIN_PASSWORD:-}" ]] && { unset ADMIN_PASSWORD; export -n ADMIN_PASSWORD 2>/dev/null || true; }
     STATUS[$s]="ran"; DETAIL[$s]="${srcdesc}; $(( $(date +%s) - s_start ))s"
     [[ -s "${SUMMARY_DIR}/${s}" ]] && SUMM[$s]="$(head -n1 "${SUMMARY_DIR}/${s}")"
     # Succeeded overall, but flag any error lines the script emitted along the way.

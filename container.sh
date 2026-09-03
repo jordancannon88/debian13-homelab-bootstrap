@@ -158,8 +158,11 @@ write_file() {
 # systemd/D-Bus session (required by the rootless setup tool).
 run_as_user() {
   local uid; uid="$(id -u "$DOCKER_USER")"
-  runuser -l "$DOCKER_USER" -c \
-    "export XDG_RUNTIME_DIR=/run/user/${uid} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus PATH=/usr/bin:/usr/sbin:/sbin:\$PATH; $*"
+  # Always execute through /bin/sh — never the account's login shell. If the
+  # login shell is fish (ancillary.sh may have just set it), POSIX 'export'
+  # syntax breaks or silently mangles PATH there.
+  runuser -u "$DOCKER_USER" -- /bin/sh -c \
+    "export HOME=~$DOCKER_USER XDG_RUNTIME_DIR=/run/user/${uid} DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus PATH=/usr/bin:/usr/sbin:/sbin:\$PATH; $*"
 }
 
 # write_journald_daemon_json <path> <owner:group> — set "log-driver":"journald"
@@ -278,11 +281,17 @@ prompt_for_user() {
     default="${candidates[0]}"
   fi
 
+  local _tries=0
   while true; do
     # Accept a valid pre-set / previously-entered value without re-asking.
     if [[ -n "$DOCKER_USER" ]] && id "$DOCKER_USER" >/dev/null 2>&1; then
       return 0
     fi
+    if (( _tries >= 3 )); then
+      err "No valid target user after ${_tries} attempts (tty at EOF?). Set CONTAINER_USER=<existing user>."
+      exit 1
+    fi
+    _tries=$((_tries + 1))
     if [[ -n "$DOCKER_USER" ]]; then
       # Provided but missing.
       if [[ "$INTERACTIVE" -ne 1 ]]; then
@@ -362,6 +371,10 @@ header "Pre-flight checks"
 # The target user was validated in prompt_for_user (it exists).
 USER_UID="$(id -u "$DOCKER_USER")"
 USER_HOME="$(getent passwd "$DOCKER_USER" | cut -d: -f6)"
+if [[ -z "$USER_HOME" || "$USER_HOME" != /* || "$USER_HOME" == "/" || ! -d "$USER_HOME" ]]; then
+  err "User '$DOCKER_USER' has no usable home directory (got '${USER_HOME:-empty}') — cannot set up rootless containers."
+  exit 1
+fi
 log "Target user '$DOCKER_USER' exists (uid ${USER_UID}, home ${USER_HOME})."
 
 # Detect conflicting packages (only relevant when installing Docker — these are
@@ -384,6 +397,7 @@ fi
 if [[ "$INSTALL_DOCKER" == "1" ]]; then
   [[ -z "$SETUP_ROOTLESS" ]] && { confirm "Set up ROOTLESS Docker for '$CONTAINER_USER'?" Y && SETUP_ROOTLESS=1 || SETUP_ROOTLESS=0; }
   if [[ "$SETUP_ROOTLESS" == "1" ]]; then
+    if [[ -n "$DISABLE_ROOTFUL" ]]; then DISABLE_ROOTFUL_EXPLICIT=1; else DISABLE_ROOTFUL_EXPLICIT=0; fi
     [[ -z "$DISABLE_ROOTFUL" ]] && { confirm "Also DISABLE the system-wide (root) Docker daemon? (recommended for rootless-only)" Y && DISABLE_ROOTFUL=1 || DISABLE_ROOTFUL=0; }
   fi
 else
@@ -391,6 +405,7 @@ else
 fi
 SETUP_ROOTLESS="${SETUP_ROOTLESS:-0}"
 DISABLE_ROOTFUL="${DISABLE_ROOTFUL:-0}"
+DISABLE_ROOTFUL_EXPLICIT="${DISABLE_ROOTFUL_EXPLICIT:-0}"
 
 # Do we need unprivileged user namespaces? Both rootless Docker (RootlessKit)
 # and rootless Podman require them.
@@ -447,7 +462,21 @@ DOCKER_JOURNALD_LOGS="${DOCKER_JOURNALD_LOGS:-0}"
 # Offer to remove conflicts (Docker only).
 PURGE_CONFLICTS=0
 if (( ${#FOUND_CONFLICTS[@]} > 0 )); then
-  confirm "Remove conflicting packages now (${FOUND_CONFLICTS[*]})?" N && PURGE_CONFLICTS=1
+  # Purging docker.io/containerd tears down whatever they are running, and
+  # under ASSUME_YES the old confirm auto-answered YES. Non-interactive runs
+  # now need the explicit PURGE_DOCKER_CONFLICTS=1 opt-in; and never purge
+  # while containers are running.
+  if [[ "${PURGE_DOCKER_CONFLICTS:-0}" == "1" ]]; then
+    PURGE_CONFLICTS=1
+  elif [[ "$INTERACTIVE" -eq 1 ]] && confirm "Remove conflicting packages now (${FOUND_CONFLICTS[*]})?" N; then
+    PURGE_CONFLICTS=1
+  else
+    note "Leaving conflicting packages in place (set PURGE_DOCKER_CONFLICTS=1 to remove them non-interactively)."
+  fi
+  if [[ "$PURGE_CONFLICTS" == "1" ]] && (( $(docker ps -q 2>/dev/null | wc -l || echo 0) > 0 )); then
+    warn "Containers are RUNNING under the current engine — refusing to purge it. Stop them first."
+    PURGE_CONFLICTS=0
+  fi
 fi
 
 # Compute the step total now that all decisions are made, so banners read n/N.
@@ -470,8 +499,8 @@ confirm "Proceed installing ${RUNTIMES_LABEL}$( [[ $SETUP_ROOTLESS == 1 || $INST
 if [[ "$INSTALL_DOCKER" == "1" ]]; then
   banner "Removing conflicting packages"
   if [[ "$PURGE_CONFLICTS" == "1" ]]; then
-    run apt -y purge "${FOUND_CONFLICTS[@]}"
-    run apt -y autoremove
+    run apt-get -y purge "${FOUND_CONFLICTS[@]}"
+    note "Skipping 'apt autoremove' (unattended autoremove can take unrelated packages — run it manually if wanted)."
     log "Removed: ${FOUND_CONFLICTS[*]}"
     record "Conflicts" "Removed ${FOUND_CONFLICTS[*]}"
   elif (( ${#FOUND_CONFLICTS[@]} > 0 )); then
@@ -522,10 +551,11 @@ fi
 if [[ "$INSTALL_PODMAN" == "1" ]]; then
   banner "Installing Podman + compose"
   # Guard against podman-docker, which provides /usr/bin/docker and would shadow
-  # the real Docker CLI when both runtimes are installed.
-  if dpkg-query -W -f='${Status}' podman-docker 2>/dev/null | grep -q "install ok installed"; then
+  # the real Docker CLI — but ONLY when Docker is also being installed. On a
+  # Podman-only host the admin may have installed it deliberately.
+  if [[ "$INSTALL_DOCKER" == "1" ]] && dpkg-query -W -f='${Status}' podman-docker 2>/dev/null | grep -q "install ok installed"; then
     warn "podman-docker is installed — it hijacks the 'docker' command. Removing it so Docker and Podman can coexist."
-    run apt -y purge podman-docker
+    run apt-get -y purge podman-docker
   fi
   info "Installing: ${DIM}${PODMAN_PKGS[*]}${RESET}"
   run apt update
@@ -543,11 +573,16 @@ if [[ "$ROOTLESS_NEEDED" == "1" ]]; then
   info "Installing rootless prerequisites: ${DIM}${ROOTLESS_PREREQS[*]}${RESET}"
   run apt -y install "${ROOTLESS_PREREQS[@]}"
 
-  # Ensure subordinate UID/GID ranges exist for the user (>= 65536).
+  # Ensure subordinate UID/GID ranges exist for the user (>= 65536). The range
+  # must not overlap any existing one (Proxmox LXC ships root:100000:65536, and
+  # two users sharing a range can reach each other's container files), so start
+  # after the highest end currently allocated in either file.
+  _sub_start="$(awk -F: 'BEGIN{m=100000} {e=$2+$3; if(e>m)m=e} END{print m}' /etc/subuid /etc/subgid 2>/dev/null)"
+  _sub_start="${_sub_start:-100000}"
   for f in /etc/subuid /etc/subgid; do
     if ! grep -q "^${DOCKER_USER}:" "$f" 2>/dev/null; then
-      printf '%s:100000:65536\n' "$DOCKER_USER" >> "$f"
-      log "Added subordinate range for ${DOCKER_USER} to ${f}."
+      printf '%s:%s:65536\n' "$DOCKER_USER" "$_sub_start" >> "$f"
+      log "Added subordinate range ${_sub_start}:65536 for ${DOCKER_USER} to ${f}."
     else
       log "${f} already has a range for ${DOCKER_USER}."
     fi
@@ -556,10 +591,10 @@ if [[ "$ROOTLESS_NEEDED" == "1" ]]; then
   # Legacy Debian 11 knob: enable unprivileged userns entirely if it is off.
   if [[ "$USERNS_CLONE_OFF" == "1" ]]; then
     printf '# Enable unprivileged user namespaces for rootless containers\nkernel.unprivileged_userns_clone = 1\n' \
-      | write_file /etc/sysctl.d/99-rootless-userns.conf
+      | write_file /etc/sysctl.d/99-userns-clone.conf
     run sysctl --system >/dev/null
     log "Enabled kernel.unprivileged_userns_clone=1."
-    record "userns(clone)" "enabled via /etc/sysctl.d/99-rootless-userns.conf"
+    record "userns(clone)" "enabled via /etc/sysctl.d/99-userns-clone.conf"
   fi
 
   # Debian 13 AppArmor restriction: apply the chosen method. With the apparmor
@@ -580,6 +615,16 @@ if [[ "$ROOTLESS_NEEDED" == "1" ]]; then
             _aa_applied+=("${APPARMOR_PROFILE_PATH}")
           fi
         done
+        # A previous sysctl-method run may have disabled the restriction
+        # globally — remove that override so the AppArmor method actually
+        # restores the hardening it promises.
+        for _oldconf in /etc/sysctl.d/99-userns-apparmor.conf /etc/sysctl.d/99-rootless-userns.conf; do
+          if [[ -f "$_oldconf" ]] && grep -q 'apparmor_restrict_unprivileged_userns = 0' "$_oldconf"; then
+            rm -f "$_oldconf"
+            sysctl -w kernel.apparmor_restrict_unprivileged_userns=1 >/dev/null 2>&1 || true
+            note "Removed the old global userns override (${_oldconf}); restriction re-enabled."
+          fi
+        done
         if (( ${#_aa_applied[@]} > 0 )); then
           log "AppArmor profile(s) loaded — restriction stays ON for everything else."
           record "userns(apparmor)" "Granted 'userns' to: ${_aa_applied[*]}"
@@ -590,10 +635,10 @@ if [[ "$ROOTLESS_NEEDED" == "1" ]]; then
         ;;
       sysctl)
         printf '# Disable AppArmor unprivileged-userns restriction (weakens hardening)\nkernel.apparmor_restrict_unprivileged_userns = 0\n' \
-          | write_file /etc/sysctl.d/99-rootless-userns.conf
+          | write_file /etc/sysctl.d/99-userns-apparmor.conf
         run sysctl --system >/dev/null
         warn "Disabled kernel.apparmor_restrict_unprivileged_userns globally — weaker than the AppArmor-profile method."
-        record "userns(sysctl)" "Restriction disabled globally via /etc/sysctl.d/99-rootless-userns.conf"
+        record "userns(sysctl)" "Restriction disabled globally via /etc/sysctl.d/99-userns-apparmor.conf"
         ;;
       *)
         note "Left the AppArmor userns restriction in place; rootless may fail until addressed."
@@ -614,11 +659,21 @@ if [[ "$SETUP_ROOTLESS" == "1" ]]; then
   banner "Setting up rootless Docker"
   # Optionally disable the system-wide root daemon (docs recommend this for rootless-only).
   if [[ "$DISABLE_ROOTFUL" == "1" ]]; then
-    info "Disabling the system-wide (root) Docker daemon..."
-    run systemctl disable --now docker.service docker.socket || true
-    run rm -f /var/run/docker.sock
-    log "Rootful daemon disabled."
-    record "Rootful daemon" "disabled (rootless-only)"
+    # Refuse to stop a rootful daemon that is actively running containers
+    # unless DISABLE_ROOTFUL=1 came in explicitly via the environment —
+    # 'disable --now' stops every rootful stack immediately and permanently.
+    _running_ct="$(docker ps -q 2>/dev/null | wc -l || echo 0)"
+    if (( _running_ct > 0 )) && [[ "$DISABLE_ROOTFUL_EXPLICIT" != "1" ]]; then
+      warn "The rootful Docker daemon is running ${_running_ct} container(s) — NOT disabling it."
+      note "Stop them first, or force with DISABLE_ROOTFUL=1 in the environment."
+      record "Rootful daemon" "left enabled (${_running_ct} running containers)"
+    else
+      info "Disabling the system-wide (root) Docker daemon..."
+      run systemctl disable --now docker.service docker.socket || true
+      run rm -f /var/run/docker.sock
+      log "Rootful daemon disabled."
+      record "Rootful daemon" "disabled (rootless-only)"
+    fi
   else
     note "Keeping the system-wide root daemon enabled alongside rootless."
     record "Rootful daemon" "left enabled"
@@ -632,7 +687,10 @@ if [[ "$SETUP_ROOTLESS" == "1" ]]; then
   info "Running dockerd-rootless-setuptool.sh as ${DOCKER_USER}..."
   # Give the user's systemd instance a moment to come up after enable-linger.
   sleep 2
-  if run_as_user "dockerd-rootless-setuptool.sh install --force"; then
+  if [[ -f "${USER_HOME}/.config/systemd/user/docker.service" ]]; then
+    log "Rootless Docker unit already installed for ${DOCKER_USER} — skipping the setup tool (it would bounce a running rootless daemon)."
+    record "Rootless" "already installed for ${DOCKER_USER} (setup tool skipped)"
+  elif run_as_user "dockerd-rootless-setuptool.sh install --force"; then
     run_as_user "systemctl --user enable docker" || true
     log "Rootless Docker installed for ${DOCKER_USER}."
     record "Rootless" "Installed for ${DOCKER_USER} (user service enabled)"
@@ -677,6 +735,17 @@ EOF
     log "Added PATH + DOCKER_HOST to ${BASHRC}."
   fi
   record "User env" "DOCKER_HOST=unix:///run/user/${USER_UID}/docker.sock in ${BASHRC}"
+  # fish never reads .bashrc — if the user's shell is (or becomes) fish, give
+  # it the same environment via conf.d.
+  FISHCONF="${USER_HOME}/.config/fish/conf.d/rootless-docker.fish"
+  if command -v fish >/dev/null 2>&1 || [[ -d "${USER_HOME}/.config/fish" ]]; then
+    if [[ ! -f "$FISHCONF" ]]; then
+      runuser -u "$DOCKER_USER" -- mkdir -p "${FISHCONF%/*}" 2>/dev/null || mkdir -p "${FISHCONF%/*}"
+      printf '# rootless docker\nset -gx DOCKER_HOST unix:///run/user/%s/docker.sock\n' "$USER_UID" > "$FISHCONF"
+      chown "$DOCKER_USER:$(id -gn "$DOCKER_USER")" "$FISHCONF" 2>/dev/null || true
+      log "Added DOCKER_HOST for fish at ${FISHCONF}."
+    fi
+  fi
 
   # Expected AppArmor limitation in rootless mode (not a failure).
   note "Rootless containers run WITHOUT the 'docker-default' AppArmor profile —"
@@ -825,11 +894,13 @@ if [[ "$ROOTLESS_NEEDED" == "1" ]]; then OPT_OWNER="$CONTAINER_USER:$CONTAINER_U
 APP_DIR="${OPT_DOCKER_DIR}/${EXAMPLE_APP}"
 
 # --- Base hierarchy (always created) -----------------------------------------
+OPT_DIR_PREEXISTED=0; [[ -d "$OPT_DOCKER_DIR" ]] && OPT_DIR_PREEXISTED=1
 info "Creating ${OPT_DOCKER_DIR} tree (owner ${OPT_OWNER})..."
 run install -d -m 0755 "$OPT_DOCKER_DIR"
 run install -d -m 0755 "${OPT_DOCKER_DIR}/shared" "${OPT_DOCKER_DIR}/shared/networks"
 
-# shared/networks usage notes.
+# shared/networks usage notes (only written when absent — an admin may edit it).
+if [[ ! -f "${OPT_DOCKER_DIR}/shared/networks/README.md" ]]; then
 write_file "${OPT_DOCKER_DIR}/shared/networks/README.md" <<'EOF'
 # Shared Docker networks
 
@@ -843,6 +914,7 @@ Then reference them from any app's docker-compose.yml:
       proxy:
         external: true
 EOF
+fi
 
 # --- Example app (optional — placed inside the layout under <app>/) ----------
 if [[ "$CREATE_EXAMPLE_APP" == "1" ]]; then
@@ -887,7 +959,16 @@ EOF
 fi
 
 # --- Ownership + permissions (guide: restrict sensitive files) ---------------
-chown -R "$OPT_OWNER" "$OPT_DOCKER_DIR"
+# Recursively chown ONLY when this run created the tree. /opt/docker holds
+# live bind-mount volume data on an existing host; re-owning it wholesale
+# breaks containers that run with fixed UIDs.
+if [[ "${OPT_DIR_PREEXISTED:-0}" == "1" ]]; then
+  note "${OPT_DOCKER_DIR} already existed — leaving its ownership untouched (only new files were added)."
+  chown "$OPT_OWNER" "${OPT_DOCKER_DIR}/shared" "${OPT_DOCKER_DIR}/shared/networks" 2>/dev/null || true
+  [[ "$CREATE_EXAMPLE_APP" == "1" ]] && chown -R "$OPT_OWNER" "$APP_DIR" 2>/dev/null || true
+else
+  chown -R "$OPT_OWNER" "$OPT_DOCKER_DIR"
+fi
 if [[ "$CREATE_EXAMPLE_APP" == "1" ]]; then
   chmod 600 "${APP_DIR}/.env"
   chmod 644 "${APP_DIR}/docker-compose.yml"
@@ -1004,6 +1085,6 @@ if [[ "$INSTALL_PODMAN" == "1" ]]; then
   _runtimes+="Podman (rootless for ${CONTAINER_USER})"
 fi
 if [[ "$CREATE_EXAMPLE_APP" == "1" ]]; then _opt="${OPT_DOCKER_DIR} created (+ ${EXAMPLE_APP})"; else _opt="${OPT_DOCKER_DIR} created (no example app)"; fi
-mkdir -p /var/lib/homelab-bootstrap/summaries
+mkdir -p /var/lib/homelab-bootstrap/summaries 2>/dev/null || true
 printf '%s installed; %s\n' "$_runtimes" "$_opt" \
-  > /var/lib/homelab-bootstrap/summaries/container.sh
+  > /var/lib/homelab-bootstrap/summaries/container.sh 2>/dev/null || true

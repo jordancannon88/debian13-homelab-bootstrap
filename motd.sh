@@ -104,8 +104,21 @@ require_root
 
 # Ask for the documentation URL unless it was supplied via env / automation
 # (e.g. init.sh's wizard exports DOC_URL, and ASSUME_YES runs unattended).
+# Default to the link already installed in an existing generator, so an
+# unattended re-run doesn't silently drop it.
+_existing_doc=""
+if [[ -f "$MOTD_FILE" ]]; then
+  _existing_doc="$(sed -n "s/^DOC_URL='\(.*\)'\$/\1/p" "$MOTD_FILE" | head -n1)"
+fi
 if [[ "$DOC_URL_EXPLICIT" != "1" ]]; then
-  DOC_URL="$(ask "Documentation URL to show in the login banner (leave blank to omit)" "")"
+  DOC_URL="$(ask "Documentation URL to show in the login banner (leave blank to omit)" "$_existing_doc")"
+fi
+# The URL is injected into a single-quoted string in a ROOT-executed per-login
+# script — reject anything that could break out of that context.
+_docurl_re="^[A-Za-z0-9._~:/?#@!\$&*+,;=%()-]*\$"
+if [[ -n "$DOC_URL" ]] && ! [[ "$DOC_URL" =~ $_docurl_re ]]; then
+  warn "DOC_URL contains characters unsafe for the banner script (quotes/backticks/spaces) — omitting the docs link."
+  DOC_URL=""
 fi
 if [[ -n "$DOC_URL" ]]; then
   note "Documentation link: ${DOC_URL}"
@@ -144,7 +157,9 @@ CYN=$'\033[1;36m'; GRN=$'\033[1;32m'; YEL=$'\033[1;33m'; BLU=$'\033[1;34m'
 DOC_URL='@@DOC_URL@@'
 
 # --- gather details (each guarded so the MOTD never breaks) -------------------
-host="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo unknown)"
+# Plain hostname (no -f): the FQDN form does a resolver lookup, and a dead
+# DNS server would stall EVERY login for the resolver timeout.
+host="$(hostname 2>/dev/null || echo unknown)"
 os="$( . /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-Linux}" )"
 kernel="$(uname -r 2>/dev/null)"
 ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
@@ -203,7 +218,13 @@ record "MOTD banner" "${MOTD_FILE} ($([[ -n "$DOC_URL" ]] && echo "docs: ${DOC_U
 banner "Tidying the stock static MOTD"
 # ==============================================================================
 if [[ "$BLANK_STATIC_MOTD" == "1" ]]; then
-  if [[ -s "$STATIC_MOTD" ]]; then
+  if [[ -L "$STATIC_MOTD" ]]; then
+    # Some images symlink /etc/motd at /run/motd.dynamic — truncating through
+    # the link would blank the live dynamic motd, and cp -a would "back up"
+    # only the link. Leave symlinks alone.
+    note "${STATIC_MOTD} is a symlink ($(readlink "$STATIC_MOTD" 2>/dev/null)) — leaving it untouched."
+    record "static /etc/motd" "symlink; left as-is"
+  elif [[ -s "$STATIC_MOTD" ]]; then
     if [[ ! -e "$STATIC_BAK" ]]; then
       run cp -a "$STATIC_MOTD" "$STATIC_BAK"
       log "Backed up ${STATIC_MOTD} -> ${STATIC_BAK}."
@@ -255,7 +276,7 @@ fi
 printf '%s%s  Done. 🖥️%s\n\n' "$BOLD" "$GRN" "$RESET"
 
 # One-line summary for init.sh's bootstrap report.
-mkdir -p /var/lib/homelab-bootstrap/summaries
+mkdir -p /var/lib/homelab-bootstrap/summaries 2>/dev/null || true
 if [[ -n "$DOC_URL" ]]; then _docs="docs: ${DOC_URL}"; else _docs="no docs link"; fi
 printf 'dynamic MOTD banner installed (%s); %s\n' "$MOTD_FILE" "$_docs" \
-  > /var/lib/homelab-bootstrap/summaries/motd.sh
+  > /var/lib/homelab-bootstrap/summaries/motd.sh 2>/dev/null || true
