@@ -455,7 +455,7 @@ folder.
 
 | Variable | Effect |
 | --- | --- |
-| `ADMIN_USERS="jordan"` | Admin users to create/update (sudo + SSH key); skips the prompt |
+| `ADMIN_USERS="admin"` | Admin users to create/update (sudo + SSH key); skips the prompt |
 | `PUBKEY=` / `PUBKEY_<user>=` | SSH public key(s); `PUBKEY` is the primary (first) user |
 | `ADMIN_PASSWORD=` / `PASSWORD_<user>=` | Password for a newly created account (existing accounts are never changed; blank = SSH-key only) |
 | `CREATE_<user>=1\|0` | Auto-answer the "create missing user?" prompt |
@@ -467,7 +467,7 @@ folder.
 
 | Variable | Effect |
 | --- | --- |
-| `ADMIN_USERS="jordan"` | Existing admin users the hardening relies on (lockout checks, root locking); skips the prompt. Create them with `bootstrap.sh` first |
+| `ADMIN_USERS="admin"` | Existing admin users the hardening relies on (lockout checks, root locking); skips the prompt. Create them with `bootstrap.sh` first |
 | `SSH_PORT=22` | SSH port |
 | `ALLOW_SSH_CIDRS="1.2.3.4/32"` | Restrict SSH to source ranges |
 | `ALLOW_HTTP=1` · `ALLOW_HTTPS=1` | Open 80 / 443 |

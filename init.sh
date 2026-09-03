@@ -974,7 +974,7 @@ tui_sink_buzz() {
       enabled) tgl A_SINK_buzz ;;
       relay)
         if v=$(whiptail --backtitle "$BACKTITLE" --title "Setup › monitoring › alerts › buzz › relay" \
-            --inputbox "Relay dev box the watches ssh their alerts to.\n\nuser@host, or user@host:port (port defaults to 6523).\nExample: jordan@192.168.16.100:6523\n\n(Cancel keeps the current value.)" 14 68 "$cur" 3>&1 1>&2 2>&3); then
+            --inputbox "Relay dev box the watches ssh their alerts to.\n\nuser@host, or user@host:port (port defaults to 6523).\nExample: admin@192.0.2.10:6523\n\n(Cancel keeps the current value.)" 14 68 "$cur" 3>&1 1>&2 2>&3); then
           v="${v//[[:space:]]/}"
           if [[ "$v" =~ ^([^:]+@[^:]+):([0-9]+)$ ]]; then
             BUZZ_TARGET="${BASH_REMATCH[1]}"; BUZZ_PORT="${BASH_REMATCH[2]}"
@@ -1041,7 +1041,7 @@ tui_svc_buzz() {
         fi ;;
       relay)
         if v=$(whiptail --backtitle "$BACKTITLE" --title "Setup › monitoring › alerts › buzz relay address" \
-            --inputbox "Where do the watches ssh their alerts to?\n\nuser@host, or user@host:port (port defaults to 6523).\nExample: jordan@192.168.16.100:6523\n\nA dedicated key is generated on this node; register its\npublic key on the relay afterward (shown in NEXT STEPS).\n\n(Cancel keeps the current value.)" 17 68 "$cur" 3>&1 1>&2 2>&3); then
+            --inputbox "Where do the watches ssh their alerts to?\n\nuser@host, or user@host:port (port defaults to 6523).\nExample: admin@192.0.2.10:6523\n\nA dedicated key is generated on this node; register its\npublic key on the relay afterward (shown in NEXT STEPS).\n\n(Cancel keeps the current value.)" 17 68 "$cur" 3>&1 1>&2 2>&3); then
           v="${v//[[:space:]]/}"
           if [[ "$v" =~ ^([^:]+@[^:]+):([0-9]+)$ ]]; then
             BUZZ_TARGET="${BASH_REMATCH[1]}"; BUZZ_PORT="${BASH_REMATCH[2]}"
