@@ -33,6 +33,11 @@
 #   ASSUME_YES=1     -> answer "yes" to every prompt (for automation)
 #   SKIP_UPGRADE=1   -> skip the full apt upgrade
 #   REBUILD_AIDE=1   -> force-rebuild the AIDE baseline even if present
+#   Per-component toggles (all default 1 = run; set 0 to skip that component):
+#   HARDEN_UNATTENDED, HARDEN_JOURNALD, HARDEN_SSH, HARDEN_FIREWALL,
+#   HARDEN_FAIL2BAN, HARDEN_APPARMOR, HARDEN_AIDE, HARDEN_SYSCTL,
+#   HARDEN_EXTRA (Lynis-suggestion fixes incl. auditd/banners/blacklists),
+#   HARDEN_LYNIS (the closing audit)
 #   DOCKER_COMPAT=1|0-> force Docker-compatible firewall/sysctl (else auto/prompt)
 #                       (see https://docs.docker.com/engine/install/debian/#prerequisites)
 # ==============================================================================
@@ -93,6 +98,15 @@ ASSUME_YES="${ASSUME_YES:-0}"
 SKIP_UPGRADE="${SKIP_UPGRADE:-0}"
 REBUILD_AIDE="${REBUILD_AIDE:-0}"
 
+# Per-component toggles: 1 = run that hardening component, 0 = skip it.
+# Normalised to exactly 0/1 so TOTAL_STEPS arithmetic below stays honest.
+HARDEN_COMPONENTS=(HARDEN_UNATTENDED HARDEN_JOURNALD HARDEN_SSH HARDEN_FIREWALL
+  HARDEN_FAIL2BAN HARDEN_APPARMOR HARDEN_AIDE HARDEN_SYSCTL HARDEN_EXTRA HARDEN_LYNIS)
+for _hc in "${HARDEN_COMPONENTS[@]}"; do
+  eval "$_hc=\"\${$_hc:-1}\""
+  [[ "${!_hc}" == "1" ]] || eval "$_hc=0"
+done
+
 START_TS="$(date +%s)"
 BACKUP_DIR="/tmp/hardening-backups/$(date +%F-%H%M%S)"
 
@@ -110,7 +124,9 @@ fi
 S_OK="✔"; S_INFO="•"; S_WARN="!"; S_ERR="✗"; S_STEP="▸"
 
 STEP_NO=0
-TOTAL_STEPS=13
+# 3 fixed steps (packages, core tools, user verification) + one per enabled component.
+TOTAL_STEPS=$(( 3 + HARDEN_UNATTENDED + HARDEN_JOURNALD + HARDEN_SSH + HARDEN_FIREWALL \
+  + HARDEN_FAIL2BAN + HARDEN_APPARMOR + HARDEN_AIDE + HARDEN_SYSCTL + HARDEN_EXTRA + HARDEN_LYNIS ))
 SUMMARY=()        # collected lines for the final recap
 WARNINGS=()       # collected warnings for the final recap
 
@@ -695,6 +711,7 @@ else
 fi
 
 # ==============================================================================
+if [[ "$HARDEN_UNATTENDED" == "1" ]]; then
 banner "Configuring unattended-upgrades"
 # ==============================================================================
 info "Enabling automatic security updates..."
@@ -707,8 +724,10 @@ APT::Periodic::Unattended-Upgrade "1";
 EOF
 log "Unattended-upgrades enabled (daily lists + automatic security upgrades)."
 record "Auto-upgrades" "Enabled via /etc/apt/apt.conf.d/20auto-upgrades"
+fi   # end: HARDEN_UNATTENDED
 
 # ==============================================================================
+if [[ "$HARDEN_JOURNALD" == "1" ]]; then
 banner "Enabling persistent journald logs"
 # ==============================================================================
 run mkdir -p /var/log/journal
@@ -720,8 +739,11 @@ fi
 run systemctl restart systemd-journald
 log "journald now stores logs persistently in /var/log/journal."
 record "journald" "Persistent storage enabled"
+fi   # end: HARDEN_JOURNALD
 
 # ==============================================================================
+SSH_2FA_NOTE="disabled"
+if [[ "$HARDEN_SSH" == "1" ]]; then
 banner "Hardening SSH"
 # ==============================================================================
 SSHD_CFG="/etc/ssh/sshd_config"
@@ -817,8 +839,10 @@ if command -v ss >/dev/null 2>&1; then
 fi
 log "SSH hardened on port ${BOLD}${SSH_PORT}${RESET}."
 record "SSH" "port=$SSH_PORT, root login off, password auth off, 2FA: $SSH_2FA_NOTE"
+fi   # end: HARDEN_SSH
 
 # ==============================================================================
+if [[ "$HARDEN_FIREWALL" == "1" ]]; then
 banner "Configuring nftables firewall (deny-by-default)"
 # ==============================================================================
 NFT_CONF="/etc/nftables.conf"
@@ -969,8 +993,10 @@ if [[ "$DOCKER_COMPAT" == "1" ]]; then
 else
   record "Firewall" "nftables deny-by-default; SSH=${SSH_PORT}$( [[ $ALLOW_SSH_PORT_22 == 1 ]] && echo '+22' ), HTTP=$ALLOW_HTTP, HTTPS=$ALLOW_HTTPS"
 fi
+fi   # end: HARDEN_FIREWALL
 
 # ==============================================================================
+if [[ "$HARDEN_FAIL2BAN" == "1" ]]; then
 banner "Configuring fail2ban"
 # ==============================================================================
 run mkdir -p /etc/fail2ban/jail.d
@@ -988,8 +1014,10 @@ EOF
 run systemctl enable --now fail2ban
 log "fail2ban watching sshd: 5 retries / 10 min → 1 h ban."
 record "fail2ban" "sshd jail on port $SSH_PORT (maxretry=5, bantime=3600s)"
+fi   # end: HARDEN_FAIL2BAN
 
 # ==============================================================================
+if [[ "$HARDEN_APPARMOR" == "1" ]]; then
 banner "Ensuring AppArmor is enabled"
 # ==============================================================================
 # Note: keeping AppArmor enabled also enforces Debian's unprivileged-userns
@@ -1017,8 +1045,10 @@ else
   log "AppArmor will be enabled at boot."
   record "AppArmor" "Enabled (status read skipped/unavailable)"
 fi
+fi   # end: HARDEN_APPARMOR
 
 # ==============================================================================
+if [[ "$HARDEN_AIDE" == "1" ]]; then
 banner "Initializing AIDE baseline"
 # ==============================================================================
 run_aideinit() {
@@ -1052,8 +1082,10 @@ if [[ -f /var/lib/aide/aide.db && "$REBUILD_AIDE" != "1" ]]; then
 else
   run_aideinit
 fi
+fi   # end: HARDEN_AIDE
 
 # ==============================================================================
+if [[ "$HARDEN_SYSCTL" == "1" ]]; then
 banner "Applying kernel/network sysctl hardening"
 # ==============================================================================
 SYSCTL_H="/etc/sysctl.d/99-hardening.conf"
@@ -1100,8 +1132,10 @@ run sysctl --system || true
 log "sysctl hardening applied (rp_filter, syncookies, redirect/martian protection, ...)."
 note "net.ipv4.ip_forward = ${IP_FWD} (${IP_FWD_NOTE})."
 record "sysctl" "Hardening applied to $SYSCTL_H (ip_forward=${IP_FWD})"
+fi   # end: HARDEN_SYSCTL
 
 # ==============================================================================
+if [[ "$HARDEN_EXTRA" == "1" ]]; then
 banner "Applying extra hardening (Lynis suggestions)"
 # ==============================================================================
 # Safe, automatable fixes for common Lynis suggestions, applied BEFORE the audit.
@@ -1354,12 +1388,14 @@ if [[ "${HARDEN_COMPILERS:-1}" != "0" ]]; then
     record "Compilers" "restricted to root (${_comp_done[*]})"
   fi
 fi
+fi   # end: HARDEN_EXTRA
 
-# ==============================================================================
-banner "Running Lynis quick audit (non-blocking)"
 # ==============================================================================
 LYNIS_SCORE="n/a"; LYNIS_WARN=0; LYNIS_SUGG=0
 LYNIS_REPORT="/var/log/lynis-report.dat"; LYNIS_LOG="/var/log/lynis.log"
+if [[ "$HARDEN_LYNIS" == "1" ]]; then
+banner "Running Lynis quick audit (non-blocking)"
+# ==============================================================================
 info "Auditing the system with Lynis..."
 lynis audit system --quick || true
 if [[ -r "$LYNIS_REPORT" ]]; then
@@ -1368,6 +1404,7 @@ if [[ -r "$LYNIS_REPORT" ]]; then
   LYNIS_SUGG="$(grep -c '^suggestion\[\]=' "$LYNIS_REPORT" 2>/dev/null || echo 0)"
 fi
 log "Lynis audit complete. Hardening index: ${BOLD}${LYNIS_SCORE}${RESET} (${LYNIS_WARN} warnings, ${LYNIS_SUGG} suggestions)."
+fi   # end: HARDEN_LYNIS
 
 # ==============================================================================
 #  Live status block
@@ -1513,10 +1550,24 @@ printf '   %s•%s  To install a container runtime (Docker and/or Podman, rootle
 hr '═'
 printf '%s%s  Done. Stay safe. 🔐%s\n\n' "$BOLD" "$GRN" "$RESET"
 
-# One-line summary for init.sh's bootstrap report.
+# One-line summary for init.sh's bootstrap report — only what actually ran.
 _root_state="unchanged"
 { [[ "${LOCK_ROOT_NOW:-0}" -eq 1 ]] || [[ "${ROOT_ALREADY_LOCKED:-0}" -eq 1 ]]; } && _root_state="locked"
+_comps=()
+[[ "$HARDEN_SSH"      == "1" ]] && _comps+=("SSH:${SSH_PORT} key-only")
+[[ "$HARDEN_FIREWALL" == "1" ]] && _comps+=("nftables deny-by-default")
+[[ "$HARDEN_FAIL2BAN" == "1" ]] && _comps+=(fail2ban)
+[[ "$HARDEN_APPARMOR" == "1" ]] && _comps+=(AppArmor)
+[[ "$HARDEN_AIDE"     == "1" ]] && _comps+=(AIDE)
+[[ "$HARDEN_SYSCTL"   == "1" ]] && _comps+=(sysctl)
+[[ "$HARDEN_EXTRA"    == "1" ]] && _comps+=(extras)
+_skips=()
+for _hc in "${HARDEN_COMPONENTS[@]}"; do
+  [[ "${!_hc}" == "1" ]] || _skips+=("${_hc#HARDEN_}")
+done
+_comps_str="$(IFS='+'; printf '%s' "${_comps[*]:-none}")"
 mkdir -p /var/lib/homelab-bootstrap/summaries
-printf 'admins: %s (verified); SSH :%s key-only; nftables deny-by-default; fail2ban+AppArmor+AIDE; root %s; Lynis %s\n' \
-  "${ADMIN_USER_LIST[*]}" "$SSH_PORT" "$_root_state" "${LYNIS_SCORE:-n/a}" \
+printf 'admins: %s (verified); %s; root %s; Lynis %s%s\n' \
+  "${ADMIN_USER_LIST[*]}" "$_comps_str" "$_root_state" "${LYNIS_SCORE:-n/a}" \
+  "$( (( ${#_skips[@]} )) && printf '; skipped: %s' "${_skips[*],,}" )" \
   > /var/lib/homelab-bootstrap/summaries/harden.sh

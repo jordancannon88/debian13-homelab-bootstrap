@@ -169,6 +169,8 @@ BUZZ_TARGET="${BUZZ_TARGET:-}"; BUZZ_PORT="${BUZZ_PORT:-}"
 PRIMARY_USER="${PRIMARY_USER:-}"; PUBKEY="${PUBKEY:-}"; ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 SSH_PORT="${SSH_PORT:-}"; A_UPGRADE=""; A_LOCKROOT=""; A_USBBLACK=""; ALLOW_TCP_PORTS="${ALLOW_TCP_PORTS:-}"
 A_SSH2FA=""; A_COMPILERS=""; A_HTTP=""; A_HTTPS=""
+A_HC_unattended=""; A_HC_journald=""; A_HC_ssh=""; A_HC_firewall=""; A_HC_fail2ban=""
+A_HC_apparmor=""; A_HC_aide=""; A_HC_sysctl=""; A_HC_extra=""; A_HC_lynis=""
 ALLOW_UDP_PORTS="${ALLOW_UDP_PORTS:-}"; ALLOW_SSH_CIDRS="${ALLOW_SSH_CIDRS:-}"
 A_FISH_DEFAULT=""
 ZABBIX_SERVER_ACTIVE="${ZABBIX_SERVER_ACTIVE:-}"; A_ZBX_DOCKER=""; LOKI_URL="${LOKI_URL:-}"; A_ALLOY_DOCKERLOGS=""
@@ -197,6 +199,8 @@ compute_defaults() {
   # hardening extras default OFF there.
   A_UPGRADE="$(yn_def Y Y)"; A_LOCKROOT="$(yn_def Y Y N)"; A_USBBLACK="$(yn_def Y Y N)"
   A_SSH2FA=N; A_COMPILERS=Y; A_HTTP=N; A_HTTPS=N
+  A_HC_unattended=Y; A_HC_journald=Y; A_HC_ssh=Y; A_HC_firewall=Y; A_HC_fail2ban=Y
+  A_HC_apparmor=Y; A_HC_aide=Y; A_HC_sysctl=Y; A_HC_extra=Y; A_HC_lynis=Y
   A_ZBX_DOCKER="$(yn_def N N)"; A_ALLOY_DOCKERLOGS="$(yn_def N N)"
   # Neither runtime is pre-selected: enabling the container step then opens the
   # runtime picker where you explicitly choose Docker and/or Podman. (Pre-ticking
@@ -266,6 +270,16 @@ materialize_selection() {
     [[ "$A_HTTPS"    == "Y" ]] && export ALLOW_HTTPS=1         || export ALLOW_HTTPS=0
     export ALLOW_TCP_PORTS ALLOW_UDP_PORTS ALLOW_SSH_CIDRS
     export DOCKER_COMPAT=0
+    [[ "$A_HC_unattended" == "Y" ]] && export HARDEN_UNATTENDED=1 || export HARDEN_UNATTENDED=0
+    [[ "$A_HC_journald"   == "Y" ]] && export HARDEN_JOURNALD=1   || export HARDEN_JOURNALD=0
+    [[ "$A_HC_ssh"        == "Y" ]] && export HARDEN_SSH=1        || export HARDEN_SSH=0
+    [[ "$A_HC_firewall"   == "Y" ]] && export HARDEN_FIREWALL=1   || export HARDEN_FIREWALL=0
+    [[ "$A_HC_fail2ban"   == "Y" ]] && export HARDEN_FAIL2BAN=1   || export HARDEN_FAIL2BAN=0
+    [[ "$A_HC_apparmor"   == "Y" ]] && export HARDEN_APPARMOR=1   || export HARDEN_APPARMOR=0
+    [[ "$A_HC_aide"       == "Y" ]] && export HARDEN_AIDE=1       || export HARDEN_AIDE=0
+    [[ "$A_HC_sysctl"     == "Y" ]] && export HARDEN_SYSCTL=1     || export HARDEN_SYSCTL=0
+    [[ "$A_HC_extra"      == "Y" ]] && export HARDEN_EXTRA=1      || export HARDEN_EXTRA=0
+    [[ "$A_HC_lynis"      == "Y" ]] && export HARDEN_LYNIS=1      || export HARDEN_LYNIS=0
   fi
   if [[ "$A_ANCILLARY" == "Y" && ${#ANCILLARY_PICK[@]} -gt 0 ]]; then
     export ANCILLARY_PKGS="${ANCILLARY_PICK[*]}"
@@ -326,7 +340,7 @@ need_bootstrap() {
   if [[ "$A_BOOTSTRAP" == Y || "$A_HARDEN" == Y || "$A_CONTAINER" == Y || "$A_ANCILLARY" == Y ]]; then
     { [[ -z "$PRIMARY_USER" ]] || ! valid_user "$PRIMARY_USER"; } && n+=("admin user")
   fi
-  if [[ "$A_BOOTSTRAP" == Y && "$A_HARDEN" == Y && -n "$PRIMARY_USER" ]] && valid_user "$PRIMARY_USER"; then
+  if [[ "$A_BOOTSTRAP" == Y && "$A_HARDEN" == Y && "$A_HC_ssh" == Y && -n "$PRIMARY_USER" ]] && valid_user "$PRIMARY_USER"; then
     akf="$(getent passwd "$PRIMARY_USER" 2>/dev/null | cut -d: -f6)/.ssh/authorized_keys"
     if [[ -z "$PUBKEY" ]] && ! { id "$PRIMARY_USER" &>/dev/null && [[ -s "$akf" ]]; }; then
       n+=("SSH key")
@@ -336,7 +350,7 @@ need_bootstrap() {
 }
 need_harden() {
   local akf
-  [[ "$A_HARDEN" == Y && "$A_BOOTSTRAP" != Y && -n "$PRIMARY_USER" ]] || return 0
+  [[ "$A_HARDEN" == Y && "$A_HC_ssh" == Y && "$A_BOOTSTRAP" != Y && -n "$PRIMARY_USER" ]] || return 0
   if ! id "$PRIMARY_USER" &>/dev/null; then
     printf 'existing user'
   else
@@ -380,7 +394,7 @@ validate_tui() {
   if [[ "$A_BOOTSTRAP" == Y || "$A_HARDEN" == Y || "$A_CONTAINER" == Y || "$A_ANCILLARY" == Y ]]; then
     { [[ -z "$PRIMARY_USER" ]] || ! valid_user "$PRIMARY_USER"; } && m+=("Set a valid admin username (in bootstrap.sh).")
   fi
-  if [[ "$A_HARDEN" == Y && -n "$PRIMARY_USER" ]]; then
+  if [[ "$A_HARDEN" == Y && "$A_HC_ssh" == Y && -n "$PRIMARY_USER" ]]; then
     akf="$(getent passwd "$PRIMARY_USER" 2>/dev/null | cut -d: -f6)/.ssh/authorized_keys"
     if [[ "$A_BOOTSTRAP" == Y ]]; then
       if [[ -z "$PUBKEY" ]] && ! { id "$PRIMARY_USER" &>/dev/null && [[ -s "$akf" ]]; }; then
@@ -461,8 +475,31 @@ tui_harden() {
   if whiptail --backtitle "$BACKTITLE" --title "harden.sh" \
       --yesno "Harden the system?\n\nSSH lockdown, nftables firewall, fail2ban, sysctl,\nAppArmor, AIDE, Lynis." 12 66; then A_HARDEN=Y; else A_HARDEN=N; return; fi
   local v sel t
-  if v=$(whiptail --backtitle "$BACKTITLE" --title "SSH port" \
-      --inputbox "SSH port (a random high port is suggested;\non a PVE host keep 22 for cluster ssh):" 10 60 "${SSH_PORT:-22}" 3>&1 1>&2 2>&3); then SSH_PORT="${v//[[:space:]]/}"; fi
+  if sel=$(whiptail --backtitle "$BACKTITLE" --title "Hardening components" \
+      --checklist "Which hardening components should run? (Space to toggle)\nAll are on by default; skip only what you have a reason to skip." 20 76 10 \
+      "ssh"        "SSH lockdown (port, key-only, root off)"       "$(onoff "$A_HC_ssh")" \
+      "firewall"   "nftables firewall (deny-by-default input)"     "$(onoff "$A_HC_firewall")" \
+      "fail2ban"   "fail2ban (bans repeated failed SSH logins)"    "$(onoff "$A_HC_fail2ban")" \
+      "unattended" "Automatic security updates"                    "$(onoff "$A_HC_unattended")" \
+      "journald"   "Persistent journald logs"                      "$(onoff "$A_HC_journald")" \
+      "apparmor"   "AppArmor mandatory access control"             "$(onoff "$A_HC_apparmor")" \
+      "aide"       "AIDE file-integrity baseline"                  "$(onoff "$A_HC_aide")" \
+      "sysctl"     "Kernel/network sysctl hardening"               "$(onoff "$A_HC_sysctl")" \
+      "extra"      "Extra Lynis fixes (auditd, banners, blacklists)" "$(onoff "$A_HC_extra")" \
+      "lynis"      "Closing Lynis audit (report only)"             "$(onoff "$A_HC_lynis")" \
+      3>&1 1>&2 2>&3); then
+    A_HC_ssh=N; A_HC_firewall=N; A_HC_fail2ban=N; A_HC_unattended=N; A_HC_journald=N
+    A_HC_apparmor=N; A_HC_aide=N; A_HC_sysctl=N; A_HC_extra=N; A_HC_lynis=N
+    for t in $sel; do t="${t//\"/}"; case "$t" in
+      ssh) A_HC_ssh=Y;; firewall) A_HC_firewall=Y;; fail2ban) A_HC_fail2ban=Y;;
+      unattended) A_HC_unattended=Y;; journald) A_HC_journald=Y;; apparmor) A_HC_apparmor=Y;;
+      aide) A_HC_aide=Y;; sysctl) A_HC_sysctl=Y;; extra) A_HC_extra=Y;; lynis) A_HC_lynis=Y;;
+    esac; done
+  fi
+  if [[ "$A_HC_ssh" == Y ]]; then
+    if v=$(whiptail --backtitle "$BACKTITLE" --title "SSH port" \
+        --inputbox "SSH port (a random high port is suggested;\non a PVE host keep 22 for cluster ssh):" 10 60 "${SSH_PORT:-22}" 3>&1 1>&2 2>&3); then SSH_PORT="${v//[[:space:]]/}"; fi
+  fi
   if sel=$(whiptail --backtitle "$BACKTITLE" --title "Hardening options" \
       --checklist "Pick the hardening options you want (Space to toggle):" 17 76 7 \
       "upgrade"   "Run apt full-upgrade"                          "$(onoff "$A_UPGRADE")" \

@@ -270,9 +270,14 @@ the ⚠ is about.
   opening a service starts a small wizard with exactly that service's inputs —
   the Zabbix server address, the Loki URL, or for buzz the alert types and the
   relay address as one `user@host:port` field.
-- The hardening dialog lets you pick the options you want: apt full-upgrade,
-  root password lock, usb-storage blacklist, SSH TOTP 2FA, compiler
-  restriction, opening 80/443, extra TCP/UDP ports, and SSH source CIDRs.
+- The hardening dialog first asks which components to run — SSH lockdown,
+  firewall, fail2ban, automatic updates, persistent journald, AppArmor, AIDE,
+  sysctl, the extra Lynis fixes, and the closing audit are each toggleable
+  (all on by default) — then the options within them: apt full-upgrade, root
+  password lock, usb-storage blacklist, SSH TOTP 2FA, compiler restriction,
+  opening 80/443, extra TCP/UDP ports, and SSH source CIDRs. Deselecting the
+  SSH component also lifts the SSH-key requirement, since password login stays
+  enabled without it.
 - Accept validates required inputs, then the chosen scripts run
   non-interactively. A missing required value (the SSH key, say) pops a message
   so you can fix it before install.
@@ -438,6 +443,7 @@ folder.
 | `BACKUP_DNS="1.1.1.1 9.9.9.9"` | Fallback DNS servers |
 | `REMOTE_SYSLOG="host:port"` | Forward logs to a remote syslog host (opt-in) |
 | `GRUB_PASSWORD="…"` | Set a GRUB password; normal boot stays password-free (opt-in) |
+| `HARDEN_SSH=0` · `HARDEN_FIREWALL=0` · `HARDEN_FAIL2BAN=0` · `HARDEN_UNATTENDED=0` · `HARDEN_JOURNALD=0` · `HARDEN_APPARMOR=0` · `HARDEN_AIDE=0` · `HARDEN_SYSCTL=0` · `HARDEN_EXTRA=0` · `HARDEN_LYNIS=0` | Per-component toggles; each defaults to 1 (run). Set 0 to skip that component entirely — its step, packages-side effects and recap entry are all skipped |
 
 </details>
 
