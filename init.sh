@@ -496,7 +496,7 @@ bs_key_icon() {
 tui_bootstrap() {
   local sel v
   while true; do
-    sel=$(hubmenu "Setup › bootstrap (user config)" 6 \
+    sel=$(hubmenu "Setup › user (admin user + SSH key)" 6 \
       "enabled"  "[$(onoff3 "$A_BOOTSTRAP")]  run this step" \
       "user"     "[$(valic "$PRIMARY_USER" Y)]  admin username: $(valp "$PRIMARY_USER")" \
       "sshkey"   "[$(bs_key_icon)]  SSH public key: $(bs_key_state)" \
@@ -506,13 +506,13 @@ tui_bootstrap() {
       ) || break
     case "$sel" in
       enabled)  tgl A_BOOTSTRAP ;;
-      user)     ask "Setup › bootstrap › admin username" "Admin username (sudo + SSH login):" "$PRIMARY_USER" PRIMARY_USER ;;
+      user)     ask "Setup › user › admin username" "Admin username (sudo + SSH login):" "$PRIMARY_USER" PRIMARY_USER ;;
       sshkey)
-        if v=$(whiptail --backtitle "$BACKTITLE" --title "Setup › bootstrap › SSH public key" \
+        if v=$(whiptail --backtitle "$BACKTITLE" --title "Setup › user › SSH public key" \
             --inputbox "Paste the admin user's PUBLIC SSH key.\nLeave blank to use an existing authorized_keys file.\n\n(Cancel keeps the current value.)" 13 78 "$PUBKEY" 3>&1 1>&2 2>&3); then
           PUBKEY="${v#"${v%%[![:space:]]*}"}"; PUBKEY="${PUBKEY%"${PUBKEY##*[![:space:]]}"}"
         fi ;;
-      help) show_help "Setup › bootstrap › help" "enabled: whether this step runs at install time.
+      help) show_help "Setup › user › help" "enabled: whether this step runs at install time.
 
 user: the admin account to create or update. It gets sudo and is the account you log in with after hardening.
 
@@ -902,19 +902,19 @@ tui_main() {
       container)  tui_container ;;
       banner)     tui_motd ;;
       docs)       tui_docs ;;
-      help) show_help "Setup › help" "bootstrap: creates/updates the admin user and installs its SSH key — runs first; hardening relies on it.
+      help) show_help "Setup › help" "user: creates/updates the admin user and installs its SSH key — runs first; security hardening relies on it.
 
-harden: system hardening — SSH lockdown, deny-by-default firewall, fail2ban, automatic updates, AppArmor, AIDE, sysctl, Lynis. Components and options are pickable inside.
+harden: security hardening — SSH lockdown, deny-by-default firewall, fail2ban, automatic updates, AppArmor, AIDE, sysctl, Lynis. Components and options are pickable inside.
 
-extra packages: quality-of-life tools (vim, btop, duf, fish, rsync, guest agent).
+packages: quality-of-life tools (vim, btop, duf, fish, rsync, guest agent).
 
-monitoring services: Zabbix metrics agent, Grafana Alloy log shipper, and buzz relay alerting — each configured in its own screen.
+monitoring: Zabbix metrics agent, Grafana Alloy log shipper, and buzz relay alerting — each configured in its own screen.
 
-container runtime: Docker and/or Podman, rootless, plus the /opt/docker layout.
+container: Docker and/or Podman, rootless, plus the /opt/docker layout.
 
-login banner: dynamic MOTD with live host info on every login.
+banner: dynamic login banner (MOTD) with live host info on every login.
 
-connection doc: generates an HTML how-to-connect page for this host." ;;
+docs: generates an HTML connection guide for this host." ;;
       ACCEPT)     if validate_tui; then break; fi ;;
     esac
   done

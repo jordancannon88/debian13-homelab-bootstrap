@@ -270,7 +270,7 @@ same. Opening a step shows the same kind of menu again, with each setting on
 its own line showing its current value:
 
 ```text
-        Setup › bootstrap (user config)
+        Setup › user (admin user + SSH key)
   ┌────────────────────────────────────────────────────┐
   │  enabled     [ ✔ ]  run this step                   │
   │  user        [ ⚠ ]  admin username: (not set)       │
