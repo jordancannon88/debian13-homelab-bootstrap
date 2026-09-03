@@ -404,6 +404,24 @@ if [[ "$SSH_PORT" == "22" ]]; then
   ALLOW_SSH_PORT_22=0
 fi
 
+# --- Proxmox VE host guard ----------------------------------------------------
+# A bare PVE host reached over its web UI must not be cut off by the firewall,
+# and cluster ssh assumes port 22. Auto-repair the ports; warn on the rest.
+IS_PVE=0
+if command -v pveversion >/dev/null 2>&1 || [[ -d /etc/pve/local ]]; then IS_PVE=1; fi
+if [[ "$IS_PVE" == "1" ]]; then
+  if [[ "$HARDEN_FIREWALL" == "1" ]] && ! grep -qw 8006 <<<"${ALLOW_TCP_PORTS//,/ }"; then
+    warn "Proxmox VE host: adding 8006 (web UI) and 3128 (SPICE console) to ALLOW_TCP_PORTS so hardening does not cut off the UI."
+    ALLOW_TCP_PORTS="${ALLOW_TCP_PORTS:+${ALLOW_TCP_PORTS} }8006 3128"
+  fi
+  if [[ "$HARDEN_SSH" == "1" && "$SSH_PORT" != "22" ]]; then
+    warn "Proxmox VE host with SSH on ${SSH_PORT}: inter-node ssh (migration, replication, cluster join) assumes port 22 — change it only fleet-wide."
+  fi
+  if [[ "$HARDEN_FIREWALL" == "1" && "$DOCKER_COMPAT" != "1" ]] && systemctl is-active --quiet pve-firewall 2>/dev/null; then
+    warn "pve-firewall is active: this firewall's 'flush ruleset' will clobber its rules on every load. Use DOCKER_COMPAT=1 (scoped flush) or disable pve-firewall."
+  fi
+fi
+
 info "Run date     : $(date '+%Y-%m-%d %H:%M:%S %Z')"
 info "Hostname     : $(hostname -f 2>/dev/null || hostname)"
 [[ "$IS_CONTAINER" == "1" ]] && info "Environment  : ${BOLD}${CONTAINER_TYPE} container${RESET} (host-managed steps will be skipped)"
@@ -485,7 +503,9 @@ if [[ "$ROOT_ALREADY_LOCKED" -eq 1 ]]; then
 elif [[ -n "$KEYED_ADMIN" ]]; then
   if [[ -n "$DISABLE_ROOT_LOGIN" ]]; then
     [[ "$DISABLE_ROOT_LOGIN" == "1" ]] && LOCK_ROOT_NOW=1
-  elif confirm "Lock the root account password (root SSH already off; sudo via '$KEYED_ADMIN' still works)?" N; then
+  # Interactive-only question: under ASSUME_YES this used to auto-answer YES
+  # and lock root without being asked for. Non-interactive + unset = no lock.
+  elif [[ "$INTERACTIVE" -eq 1 ]] && confirm "Lock the root account password (root SSH already off; sudo via '$KEYED_ADMIN' still works)?" N; then
     LOCK_ROOT_NOW=1
   fi
 elif [[ "$DISABLE_ROOT_LOGIN" == "1" ]]; then
@@ -627,10 +647,15 @@ fi
 
 # 3b) Offer to remove Docker-conflicting packages (Docker prereq).
 if [[ "$DOCKER_COMPAT" == "1" ]] && (( ${#FOUND_CONFLICTS[@]} > 0 )); then
-  if confirm "Remove conflicting packages now (${FOUND_CONFLICTS[*]})?" N; then
+  # Purging docker.io/containerd/runc can kill running containers — under
+  # ASSUME_YES this used to auto-answer YES. Non-interactive runs now need
+  # the explicit PURGE_DOCKER_CONFLICTS=1 opt-in.
+  if [[ "${PURGE_DOCKER_CONFLICTS:-0}" == "1" ]]; then
+    PURGE_CONFLICTS=1
+  elif [[ "$INTERACTIVE" -eq 1 ]] && confirm "Remove conflicting packages now (${FOUND_CONFLICTS[*]})?" N; then
     PURGE_CONFLICTS=1
   else
-    note "Leaving them in place — remove manually before installing Docker Engine."
+    note "Leaving them in place — remove manually before installing Docker Engine (or set PURGE_DOCKER_CONFLICTS=1)."
   fi
 fi
 
@@ -1085,7 +1110,10 @@ fi
 
 if [[ -f /var/lib/aide/aide.db && "$REBUILD_AIDE" != "1" ]]; then
   info "AIDE baseline already exists."
-  if confirm "Rebuild the AIDE baseline database now?" N; then
+  # Interactive-only question: under ASSUME_YES this used to auto-answer YES
+  # and rebuild the baseline on every re-run. Non-interactive keeps the
+  # existing baseline; REBUILD_AIDE=1 forces a rebuild.
+  if [[ "$INTERACTIVE" -eq 1 ]] && confirm "Rebuild the AIDE baseline database now?" N; then
     run_aideinit
   else
     log "Keeping existing AIDE baseline (idempotent skip)."
@@ -1213,9 +1241,22 @@ fi
 #    is often unwanted on a homelab. Set BLACKLIST_USB_STORAGE=1 (or answer the
 #    prompt) to include it.
 if [[ -z "${BLACKLIST_USB_STORAGE:-}" ]]; then
-  if confirm "Also blacklist usb-storage (disables USB drives) for tighter security?" N; then
+  # Interactive-only question: under ASSUME_YES this used to auto-answer YES.
+  if [[ "$INTERACTIVE" -eq 1 ]] && confirm "Also blacklist usb-storage (disables USB drives) for tighter security?" N; then
     BLACKLIST_USB_STORAGE=1
   else
+    BLACKLIST_USB_STORAGE=0
+  fi
+fi
+# Never blacklist usb-storage when the root filesystem lives on a USB disk:
+# modprobe.d blacklists are copied into the next initramfs, and a USB-booted
+# host would then fail to find its root device. Best-effort detection.
+if [[ "$BLACKLIST_USB_STORAGE" == "1" ]]; then
+  _rootsrc="$(findmnt -n -o SOURCE / 2>/dev/null || true)"
+  _rootdisk="$(lsblk -no PKNAME "$_rootsrc" 2>/dev/null | head -n1 || true)"
+  _roottran="$(lsblk -dno TRAN "/dev/${_rootdisk}" 2>/dev/null || true)"
+  if [[ "$_roottran" == "usb" ]]; then
+    warn "Root filesystem is on a USB disk (/dev/${_rootdisk}) — REFUSING to blacklist usb-storage (the next initramfs would leave the host unbootable)."
     BLACKLIST_USB_STORAGE=0
   fi
 fi

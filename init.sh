@@ -269,7 +269,14 @@ materialize_selection() {
     [[ "$A_HTTP"     == "Y" ]] && export ALLOW_HTTP=1          || export ALLOW_HTTP=0
     [[ "$A_HTTPS"    == "Y" ]] && export ALLOW_HTTPS=1         || export ALLOW_HTTPS=0
     export ALLOW_TCP_PORTS ALLOW_UDP_PORTS ALLOW_SSH_CIDRS
-    export DOCKER_COMPAT=0
+    # Docker needs the compat firewall (forward accepted, scoped flush,
+    # ip_forward on) only when a ROOTFUL daemon will exist on this host;
+    # rootless Docker/Podman work under the strict firewall.
+    if [[ "$A_CONTAINER" == "Y" && "$A_DOCKER" == "Y" && "$A_DISABLE_ROOTFUL" != "Y" ]]; then
+      export DOCKER_COMPAT=1
+    else
+      export DOCKER_COMPAT=0
+    fi
     [[ "$A_HC_unattended" == "Y" ]] && export HARDEN_UNATTENDED=1 || export HARDEN_UNATTENDED=0
     [[ "$A_HC_journald"   == "Y" ]] && export HARDEN_JOURNALD=1   || export HARDEN_JOURNALD=0
     [[ "$A_HC_ssh"        == "Y" ]] && export HARDEN_SSH=1        || export HARDEN_SSH=0
