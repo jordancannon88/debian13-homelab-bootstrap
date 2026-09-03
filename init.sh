@@ -358,6 +358,20 @@ need_monitoring() {
 }
 # need_tag <needs> — render the hub-line marker (" ⚠ needs X"), or nothing.
 need_tag() { [[ -n "$1" ]] && printf ' ⚠ needs %s' "$1"; return 0; }
+# boot_key_note — say WHERE the SSH key requirement is satisfied from, so a
+# quiet bootstrap line is explainable ("key on file" = the user already exists
+# with a populated authorized_keys; no key is ever defaulted).
+boot_key_note() {
+  local akf
+  [[ "$A_BOOTSTRAP" == Y ]] || return 0
+  if [[ -n "$PUBKEY" ]]; then
+    printf ' (key entered)'
+  elif [[ -n "$PRIMARY_USER" ]] && id "$PRIMARY_USER" &>/dev/null; then
+    akf="$(getent passwd "$PRIMARY_USER" 2>/dev/null | cut -d: -f6)/.ssh/authorized_keys"
+    [[ -s "$akf" ]] && printf ' (key on file)'
+  fi
+  return 0
+}
 
 # validate_tui — check required inputs are present; collect any problems and
 # show them in a whiptail msgbox. Returns 0 if ready to install.
@@ -575,7 +589,7 @@ tui_main() {
     sel=$(whiptail --backtitle "$BACKTITLE" --title "Review & customise  —  [${ENV_TYPE^^}]" \
       --ok-button "Open" --cancel-button "Quit" \
       --menu "Select a step to change its options, then choose Accept.\nThe defaults are already set — just Accept to use them as-is.\n⚠ marks a step that needs configuration before install." 21 78 11 \
-      "bootstrap"  "[$(pad3 "$A_BOOTSTRAP")]  admin user + SSH key$(need_tag "$(need_bootstrap)")" \
+      "bootstrap"  "[$(pad3 "$A_BOOTSTRAP")]  admin user + SSH key$(boot_key_note)$(need_tag "$(need_bootstrap)")" \
       "harden"     "[$(pad3 "$A_HARDEN")]  hardening — SSH port ${SSH_PORT:-22}$(need_tag "$(need_harden)")" \
       "ancillary"  "[$(pad3 "$A_ANCILLARY")]  packages: $(anc_list)" \
       "monitoring" "[$(pad3 "$A_MONITORING")]  agents: $(mon_list)$(need_tag "$(need_monitoring)")" \
