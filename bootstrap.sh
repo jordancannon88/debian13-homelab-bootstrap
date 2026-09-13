@@ -31,6 +31,38 @@ set -euo pipefail
 # /usr/sbin and /sbin, which some non-login shells / sudo configs drop from PATH.
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
 
+# ==============================================================================
+#  Install logging  (captures the whole run to a timestamped file for debugging)
+#  - Everything on stdout/stderr is teed to the log AND the screen.
+#  - Interactive prompts and typed secrets are written to /dev/tty (never stdout),
+#    so passwords/keys typed at prompts are NOT logged.
+#  - A redaction filter scrubs any secret-shaped text (key=value/:value secrets
+#    and PEM private-key bodies) that still reaches stdout/stderr, as a backstop.
+#  - Colors are off while logging (stdout is a pipe, so [[ -t 1 ]] is false) —
+#    the log is therefore plain text, no ANSI to strip.
+#  - Disable with BOOTSTRAP_NO_LOG=1.  Log path is exported as $LOG_FILE.
+# ==============================================================================
+if [[ -z "${BOOTSTRAP_NO_LOG:-}" && -z "${_BOOTSTRAP_LOG_ACTIVE:-}" ]]; then
+  export _BOOTSTRAP_LOG_ACTIVE=1
+  _log_dir=/tmp
+  for _d in /var/log /root "${HOME:-}"; do
+    if [[ -n "$_d" && -d "$_d" && -w "$_d" ]]; then _log_dir="$_d"; break; fi
+  done
+  LOG_FILE="$_log_dir/debian13-bootstrap-$(date +%Y%m%d-%H%M%S).log"
+  export LOG_FILE
+  exec > >(stdbuf -oL sed -E \
+      -e '/-----BEGIN[^-]*PRIVATE KEY-----/,/-----END[^-]*PRIVATE KEY-----/{/-----(BEGIN|END)[^-]*PRIVATE KEY-----/!s/.*/[REDACTED PRIVATE KEY]/}' \
+      -e 's/((PASS(WORD)?|PASSWD|SECRET|TOKEN|API[_-]?KEY|PRIVATE[_-]?KEY|NSEC)[A-Za-z0-9_]*[[:space:]]*[:=][[:space:]]*)[^[:space:]]+/\1[REDACTED]/gI' \
+      | tee -a "$LOG_FILE") 2>&1
+  LOGGER_PID=$!
+  printf '# bootstrap.sh install log — started %s\n# log file: %s\n' "$(date -Is)" "$LOG_FILE"
+  # On any exit (success, error, or Ctrl-C): record the status, then close fd1/fd2
+  # to send EOF to the logger and wait for it, so the log is fully flushed to disk
+  # even on an early/failed exit — which is exactly when the log matters most.
+  # shellcheck disable=SC2154
+  trap 'ec=$?; printf "\n# bootstrap.sh finished %s — exit code %s\n# log: %s\n" "$(date -Is)" "$ec" "$LOG_FILE"; exec 1>&- 2>&-; wait "$LOGGER_PID" 2>/dev/null || true' EXIT
+fi
+
 ASSUME_YES="${ASSUME_YES:-0}"
 
 START_TS="$(date +%s)"
