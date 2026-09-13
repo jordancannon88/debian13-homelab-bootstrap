@@ -561,7 +561,11 @@ buzz_alert_list() { local p=(); [[ "$A_BUZZ_disk" == Y ]] && p+=(disk); [[ "$A_B
 # validate_tui: same conditions, attributed to the step whose dialog fixes them.
 need_bootstrap() {
   local n=() akf
-  if [[ "$A_BOOTSTRAP" == Y || "$A_HARDEN" == Y || "$A_CONTAINER" == Y || "$A_ANCILLARY" == Y ]]; then
+  # Only require an admin user when a step actually creates or depends on one:
+  # the user step itself (bootstrap creates the account), or harden's SSH
+  # lockdown (no keyed user = locked out). container/ancillary degrade to root,
+  # so leaving the user step off must not block the install.
+  if [[ "$A_BOOTSTRAP" == Y ]] || [[ "$A_HARDEN" == Y && "$A_HC_ssh" == Y ]]; then
     { [[ -z "$PRIMARY_USER" ]] || ! valid_user "$PRIMARY_USER"; } && n+=("admin user")
   fi
   local _key_required=0
@@ -636,7 +640,10 @@ stat3() {
 # show them in a whiptail msgbox. Returns 0 if ready to install.
 validate_tui() {
   local m=() akf=""
-  if [[ "$A_BOOTSTRAP" == Y || "$A_HARDEN" == Y || "$A_CONTAINER" == Y || "$A_ANCILLARY" == Y ]]; then
+  # KEEP IN SYNC with need_bootstrap: require an admin user only when the user
+  # step runs (bootstrap creates it) or harden's SSH lockdown runs (lockout
+  # safety). With the user step off, container/ancillary fall back to root.
+  if [[ "$A_BOOTSTRAP" == Y ]] || [[ "$A_HARDEN" == Y && "$A_HC_ssh" == Y ]]; then
     { [[ -z "$PRIMARY_USER" ]] || ! valid_user "$PRIMARY_USER"; } && m+=("Set a valid admin username (in bootstrap.sh).")
   fi
   if [[ -n "$PRIMARY_USER" ]] && { [[ "$ENV_TYPE" == "pve" ]] || [[ "$A_HARDEN" == Y && "$A_HC_ssh" == Y ]]; }; then
