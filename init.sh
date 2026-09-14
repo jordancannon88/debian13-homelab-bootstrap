@@ -577,6 +577,12 @@ need_bootstrap() {
       n+=("SSH key")
     fi
   fi
+  # A newly-created admin needs a password, or it is left locked and can't sudo
+  # (a key-only account has no password for sudo to authenticate). Existing
+  # accounts are never modified by bootstrap.sh, so only require it for new ones.
+  if [[ "$A_BOOTSTRAP" == Y && -n "$PRIMARY_USER" ]] && valid_user "$PRIMARY_USER" && ! id "$PRIMARY_USER" &>/dev/null && [[ -z "$ADMIN_PASSWORD" ]]; then
+    n+=("password")
+  fi
   local IFS='+'; printf '%s' "${n[*]:-}"
 }
 need_harden() {
@@ -656,6 +662,12 @@ validate_tui() {
       if ! id "$PRIMARY_USER" &>/dev/null; then m+=("harden without bootstrap: user ${PRIMARY_USER} does not exist.")
       elif [[ ! -s "$akf" ]]; then m+=("harden without bootstrap: ${PRIMARY_USER} has no authorized_keys."); fi
     fi
+  fi
+  # KEEP IN SYNC with need_bootstrap: a newly-created admin must have a password
+  # — a key-only account is left locked and can't sudo. Existing accounts are
+  # untouched by bootstrap.sh, so this is only required when creating a new user.
+  if [[ "$A_BOOTSTRAP" == Y && -n "$PRIMARY_USER" ]] && valid_user "$PRIMARY_USER" && ! id "$PRIMARY_USER" &>/dev/null && [[ -z "$ADMIN_PASSWORD" ]]; then
+    m+=("Set a password for the new admin user — a key-only account can't sudo (bootstrap.sh).")
   fi
   [[ "$A_MONITORING" == Y && "$A_AGENT_zabbix" == Y && -z "${ZABBIX_SERVER_ACTIVE//[[:space:]]/}" ]] && m+=("zabbix-agent2 needs a server address.")
   [[ "$A_MONITORING" == Y && "$A_AGENT_buzz" == Y && "$(buzz_alert_list)" == "none" ]] && m+=("alerts: pick at least one alert type (disk/repl/ha/backup/tbmesh).")
@@ -747,7 +759,7 @@ tui_bootstrap() {
     if [[ "$A_BOOTSTRAP" == Y ]]; then
       items+=("user"     "[$(valic "$PRIMARY_USER" Y)]  admin username: $(valp "$PRIMARY_USER")")
       items+=("sshkey"   "[$(bs_key_icon)]  SSH public key: $(bs_key_state)")
-      items+=("password" "[$(onoff3 "$([[ -n "$ADMIN_PASSWORD" ]] && echo Y || echo N)")]  password: $([[ -n "$ADMIN_PASSWORD" ]] && echo set || echo 'SSH-key only')")
+      items+=("password" "[$(onoff3 "$([[ -n "$ADMIN_PASSWORD" ]] && echo Y || echo N)")]  password: $([[ -n "$ADMIN_PASSWORD" ]] && echo set || echo 'not set (required for a new user)')")
     fi
     items+=(" " "────────────────────────────────────")
     items+=("help" "[ ? ]  what does each setting do?")
@@ -766,7 +778,7 @@ user: the admin account to create or update. It gets sudo and is the account you
 
 SSH public key: pasted into the user's authorized_keys. Required when the harden step's SSH lockdown runs, because that disables password login — without a working key you would be locked out. If the user already exists with keys on file, this can stay blank.
 
-password: optional login password for a NEWLY created account. Blank means SSH-key only (recommended). Existing accounts are never changed." ;;
+password: login password for a NEWLY created account. Required for a new admin — a key-only account is left locked and cannot sudo. Existing accounts are never changed." ;;
       password) tui_get_password "${PRIMARY_USER:-admin}" ;;
     esac
   done
@@ -786,7 +798,7 @@ tui_get_password() {
   fi
   while true; do
     p1=$(whiptail --backtitle "$BACKTITLE" --title "New password — ${user}" \
-      $box "Enter a login password for ${user}.\n(Leave blank = passwordless / SSH-key only.)" 11 66 3>&1 1>&2 2>&3) || return 0
+      $box "Enter a login password for ${user}.\n(A new admin needs one to sudo. Leave blank only for an existing account.)" 11 66 3>&1 1>&2 2>&3) || return 0
     if [[ -z "$p1" ]]; then ADMIN_PASSWORD=""; return 0; fi
     p2=$(whiptail --backtitle "$BACKTITLE" --title "Confirm password — ${user}" \
       $box "Re-enter the password to confirm:" 10 66 3>&1 1>&2 2>&3) || return 0
