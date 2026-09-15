@@ -26,7 +26,8 @@ grep -q 'No error detected' <<<"$st" && errors=0
 grep -q 'No sync is in progress' <<<"$st" && sync_in_progress=0 || sync_in_progress=1
 grep -q 'No rehash is in progress or needed' <<<"$st" && rehash_needed=0 || rehash_needed=1
 # The scrub graph is empty until the first sync: report 99999 so "never" is obvious.
-: "${oldest:=99999}" "${median:=99999}" "${newest:=99999}" "${unscrubbed:=100}" "${errors:=0}"
+# snapraid omits the "N% of the array is not scrubbed" line entirely once everything is scrubbed, so a missing line means 0.
+: "${oldest:=99999}" "${median:=99999}" "${newest:=99999}" "${unscrubbed:=0}" "${errors:=0}"
 
 added=-1; removed=-1; updated=-1; moved=-1; copied=-1; restored=-1; diff_rc=-1; differences=-1
 if df="$(timeout "$DIFF_TIMEOUT" $SUDO "$SNAPRAID" diff -q 2>&1)"; then diff_rc=0; else diff_rc=$?; fi
