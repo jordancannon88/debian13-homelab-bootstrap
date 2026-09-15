@@ -65,7 +65,9 @@
 #                                       mass-delete guarded). Default: on when
 #                                       /etc/snapraid.conf exists, else off
 #    ZABBIX_NIC_FLAP=1|0 -> install the physical-NIC link-flap UserParameters
-#                                       (LLD of real NICs + carrier_down_count).
+#                                       (LLD of real NICs + carrier_down_count) and
+#                                       the PCIe-detach counter (kernel journal,
+#                                       zabbix user joins systemd-journal).
 #                                       Default 1 on bare metal, 0 on VMs/containers
 #    LOKI_URL="scheme://host:port" -> Loki base URL for Alloy to push to
 #                                       (used when alloy is selected; asked
@@ -472,10 +474,16 @@ setup_snapraid() {
 # kernel's carrier_down_count per interface (driver-agnostic; a bouncing cable
 # on a corosync NIC self-fences a Proxmox node within a minute).
 setup_nic_flap() {
-  if install_zbx_helper physnic-discovery.sh 0755 && install_zbx_helper nic-carrier-down.sh 0755; then
+  if install_zbx_helper physnic-discovery.sh 0755 && install_zbx_helper nic-carrier-down.sh 0755 && install_zbx_helper nic-pcie-detach.sh 0755; then
     write_agent_dropin physnic.conf 'UserParameter=custom.physnic.discovery,/usr/local/bin/physnic-discovery.sh
-UserParameter=custom.nic.carrier_down[*],/usr/local/bin/nic-carrier-down.sh "$1"'
-    record "Zabbix NIC flap" "installed (custom.physnic.discovery, custom.nic.carrier_down)"
+UserParameter=custom.nic.carrier_down[*],/usr/local/bin/nic-carrier-down.sh "$1"
+UserParameter=custom.nic.pcie_detach,/usr/local/bin/nic-pcie-detach.sh'
+    # The PCIe-detach counter reads the kernel journal; dmesg is root-only on a
+    # hardened host (kernel.dmesg_restrict=1), journal access is a group.
+    if getent group systemd-journal >/dev/null 2>&1 && id zabbix >/dev/null 2>&1; then
+      usermod -aG systemd-journal zabbix
+    fi
+    record "Zabbix NIC flap" "installed (custom.physnic.discovery, custom.nic.carrier_down, custom.nic.pcie_detach)"
   else
     warn "NIC flap helper scripts not available — skipped."
     record "Zabbix NIC flap" "skipped (helpers missing)"
