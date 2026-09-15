@@ -23,9 +23,11 @@ zabbix_export:
           triggers:
             - uuid: 36405cc7ae8648a88a56c19b8bc2fb8f
               expression: 'change(/Homelab physical NIC flapping/custom.nic.pcie_detach)>0'
+              recovery_mode: NONE
               name: 'PCIe device dropped off the bus on {HOST.NAME} ({ITEM.LASTVALUE1}x this boot)'
+              type: MULTIPLE
               priority: HIGH
-              description: 'A PCI device detached at runtime. On the Intel I225-V NICs this took corosync down and self-fenced the node (report link/367). pcie_aspm=off is already applied on pve3: a recurrence means escalate to NIC firmware/BIOS, then a replacement NIC. Close by hand once acted on; the counter stays until reboot.'
+              description: 'A PCI device detached at runtime. On the Intel I225-V NICs this took corosync down and self-fenced the node (report link/367). pcie_aspm=off is already applied on pve3: a recurrence means escalate to NIC firmware/BIOS, then a replacement NIC. Never recovers on its own and each further detach opens a new problem; close by hand once acted on. The counter stays until reboot.'
               manual_close: 'YES'
               tags:
                 - tag: scope
