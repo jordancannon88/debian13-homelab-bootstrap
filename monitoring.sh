@@ -325,6 +325,9 @@ write_cpu_temp_dropin() {
 # Label-matched so it survives inxi reordering fields; -c 0 strips colour codes.
 ${pfx}UserParameter=${hn}.cpuTemperature,inxi -s -c 0 | grep -oP 'cpu:\s*\K[0-9.]+'
 EOF
+  # harden.sh sets UMASK 027; an include the zabbix user cannot read stops the
+  # agent from starting at all (restart loop), so force the mode explicitly.
+  chmod 0644 "${dir}/cpu-temperature.conf"
 }
 
 # install_zbx_helper <name> <mode> — install zabbix/<name> from beside this
@@ -777,9 +780,16 @@ ZBX_HOSTNAME="$(hostname)"
 
 # CPU thermal sensors only exist on bare metal. If this is a VM or a container
 # (LXC/etc.), the cpuTemperature UserParameter drop-in is written commented out.
-ZBX_VIRT=0
+ZBX_VIRT=0; ZBX_CONTAINER=0
 if command -v systemd-detect-virt >/dev/null 2>&1 && systemd-detect-virt -q 2>/dev/null; then
   ZBX_VIRT=1
+  # A container (LXC etc.) sees no disks of its own: SMART, ZFS and smartd are
+  # the host's business, so the disk-health helpers default to off there unless
+  # ZABBIX_DISK_HEALTH says otherwise. A VM keeps them (passed-through disks).
+  systemd-detect-virt -cq 2>/dev/null && ZBX_CONTAINER=1
+fi
+if [[ "$ZBX_CONTAINER" == "1" && -z "${ZABBIX_DISK_HEALTH:-}" ]]; then
+  ZBX_DISK_HEALTH=0
 fi
 
 # Resolve the Zabbix server address for active checks — required, no default.
@@ -846,8 +856,13 @@ else
       info "Installing disk-health helpers for the SMART and ZFS templates..."
       setup_disk_health "$ZBX_VIRT"
     else
-      note "Disk-health helpers skipped (ZABBIX_DISK_HEALTH=0)."
-      record "Zabbix disk health" "skipped (ZABBIX_DISK_HEALTH=0)"
+      if [[ "$ZBX_CONTAINER" == "1" ]]; then
+        note "Container detected: disks belong to the host; disk-health helpers skipped (set ZABBIX_DISK_HEALTH=1 to force)."
+        record "Zabbix disk health" "skipped (container)"
+      else
+        note "Disk-health helpers skipped (ZABBIX_DISK_HEALTH=0)."
+        record "Zabbix disk health" "skipped (ZABBIX_DISK_HEALTH=0)"
+      fi
     fi
     # NIC link-flap helpers: bare metal by default; a VM's virtual NIC never
     # carries a real cable, so its flaps belong to the host.
