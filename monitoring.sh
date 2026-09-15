@@ -487,7 +487,7 @@ setup_pve_events() {
     record "Zabbix PVE events" "skipped (helper missing)"
     return 0
   fi
-  printf 'zabbix ALL=(root) NOPASSWD: /usr/sbin/pvesr status\n' > /etc/sudoers.d/zabbix-pve.tmp
+  printf 'zabbix ALL=(root) NOPASSWD: /usr/bin/pvesr status\n' > /etc/sudoers.d/zabbix-pve.tmp
   if visudo -cf /etc/sudoers.d/zabbix-pve.tmp >/dev/null 2>&1; then
     install -m 0440 /etc/sudoers.d/zabbix-pve.tmp /etc/sudoers.d/zabbix-pve
   else
