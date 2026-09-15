@@ -1,0 +1,223 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: bf6177b54b3f4fe39b327f18494c3001
+      name: Templates/Custom
+  templates:
+    - uuid: 70c85608cc684203b91ef91082f0359c
+      template: 'Homelab Proxmox events'
+      name: 'Homelab Proxmox events'
+      description: 'Proxmox VE events that used to post to buzz #Alerts. Replication: every pvesr job as an LLD row (fails, state, last sync, enabled) from custom.pve.replication (pve-replication-json.sh via a sudoers line limited to `pvesr status`), failing High, stale-sync Warning, script-error High. HA events and backup failures join this template on their own cards (a89gxf9oi0fc, hit98p2i8y2s). Host side installed by debian13-homelab-bootstrap monitoring.sh (ZABBIX_PVE_EVENTS). Source of truth: zabbix/templates/homelab-proxmox-events.yaml in that repo. Kan q7wzccj15ypp, tracker a25kba4yp866.'
+      groups:
+        - name: Templates/Custom
+      items:
+        - uuid: c52e116a9caa45aebbcd44efbb619ba3
+          name: 'Replication status (raw)'
+          type: ZABBIX_ACTIVE
+          key: custom.pve.replication
+          delay: 5m
+          history: '0'
+          value_type: TEXT
+          timeout: 30s
+          description: 'JSON from pve-replication-json.sh. Master for every replication item and the job discovery.'
+          tags:
+            - tag: component
+              value: raw
+            - tag: component
+              value: replication
+        - uuid: 42933517d3ae4a359544ba46fe0bc999
+          name: 'Replication: status script error'
+          type: DEPENDENT
+          key: 'custom.pve.replication.error'
+          value_type: CHAR
+          trends: '0'
+          description: 'Non-empty when pve-replication-json.sh could not run pvesr status. Empty is healthy.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.error"
+              error_handler: CUSTOM_VALUE
+              error_handler_params: ''
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.pve.replication
+          tags:
+            - tag: component
+              value: replication
+          triggers:
+            - uuid: 3a0c55dc31f44d399b9354caad902cfd
+              expression: 'length(last(/Homelab Proxmox events/custom.pve.replication.error))>0'
+              name: 'Homelab replication: status script failed on {HOST.NAME}'
+              priority: HIGH
+              description: 'pvesr status did not run (sudoers, pmxcfs or pvesr itself); every replication trigger on this host is blind. Value: {ITEM.LASTVALUE1}'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: e28d2a27422c4c188df9e75d303145d4
+          name: 'Replication: jobs on this node'
+          type: DEPENDENT
+          key: 'custom.pve.replication.job_count'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.job_count"
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.pve.replication
+          tags:
+            - tag: component
+              value: replication
+        - uuid: 83847d3e6968407ca4e47aebb1670b71
+          name: 'Replication: failing jobs'
+          type: DEPENDENT
+          key: 'custom.pve.replication.failing_count'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.failing_count"
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.pve.replication
+          tags:
+            - tag: component
+              value: replication
+      discovery_rules:
+        - uuid: 9f1e39ea9f514f7a95cba80847997e91
+          name: 'Replication job discovery'
+          type: DEPENDENT
+          key: custom.pve.replication.discovery
+          lifetime: 7d
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
+          description: 'One row per pvesr job on this node (and the synthetic TEST-0 while the test marker exists).'
+          item_prototypes:
+            - uuid: 7250d211e291471b819ea94ad1e7c73c
+              name: 'Replication [{#JOB}] guest {#GUEST} to {#TARGET}: consecutive failures'
+              type: DEPENDENT
+              key: 'custom.pve.replication.fails[{#JOB}]'
+              description: 'FailCount column of pvesr status. Non-zero means the last sync attempts failed; changes since the last good sync are unprotected.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['jobs']['{#JOB}']['fails']"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.pve.replication
+              tags:
+                - tag: component
+                  value: replication
+                - tag: job
+                  value: '{#JOB}'
+                - tag: guest
+                  value: '{#GUEST}'
+                - tag: target
+                  value: '{#TARGET}'
+              trigger_prototypes:
+                - uuid: 6307020fb5cb43829419d53582748d8d
+                  expression: 'last(/Homelab Proxmox events/custom.pve.replication.fails[{#JOB}])>0'
+                  name: 'Homelab replication: job {#JOB} (guest {#GUEST}) to {#TARGET} failing, {ITEM.LASTVALUE1} in a row'
+                  priority: HIGH
+                  description: 'Replication of guest {#GUEST} to {#TARGET} keeps failing; an HA recover would boot the last good copy. Read the error in the job state item, then `pvesr status` on the node. Runbook link/355. Clears on its own when the next sync succeeds.'
+                  tags:
+                    - tag: scope
+                      value: availability
+            - uuid: 3d0ecfb66cb041f98604e6498e6b507c
+              name: 'Replication [{#JOB}] guest {#GUEST} to {#TARGET}: state'
+              type: DEPENDENT
+              key: 'custom.pve.replication.state[{#JOB}]'
+              value_type: CHAR
+              trends: '0'
+              description: 'OK, or the error text pvesr reports for the failing job.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['jobs']['{#JOB}']['state']"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.pve.replication
+              tags:
+                - tag: component
+                  value: replication
+                - tag: job
+                  value: '{#JOB}'
+                - tag: guest
+                  value: '{#GUEST}'
+                - tag: target
+                  value: '{#TARGET}'
+            - uuid: 703c13c7294b4d85a8956f2d60283700
+              name: 'Replication [{#JOB}] guest {#GUEST} to {#TARGET}: last sync'
+              type: DEPENDENT
+              key: 'custom.pve.replication.last_sync[{#JOB}]'
+              units: 'unixtime'
+              description: 'End of the last successful sync. 0 when the job never synced.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['jobs']['{#JOB}']['last_sync']"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.pve.replication
+              tags:
+                - tag: component
+                  value: replication
+                - tag: job
+                  value: '{#JOB}'
+                - tag: guest
+                  value: '{#GUEST}'
+                - tag: target
+                  value: '{#TARGET}'
+              trigger_prototypes:
+                - uuid: 6b239c802f494da18cd4ed6c9970e30d
+                  expression: 'now()-last(/Homelab Proxmox events/custom.pve.replication.last_sync[{#JOB}])>{$REPL_MAX_SYNC_AGE} and last(/Homelab Proxmox events/custom.pve.replication.enabled[{#JOB}])=1'
+                  name: 'Homelab replication: job {#JOB} to {#TARGET} not synced for over {$REPL_MAX_SYNC_AGE}'
+                  priority: WARNING
+                  description: 'An enabled job has not completed a sync within {$REPL_MAX_SYNC_AGE} (3x the longest schedule). Either the schedule stopped, the node was down, or syncs are failing without a FailCount. Check `pvesr status` and the job schedule.'
+                  tags:
+                    - tag: scope
+                      value: availability
+            - uuid: e8bebd1756e24a8f9e05ce21aa6fb56d
+              name: 'Replication [{#JOB}] guest {#GUEST} to {#TARGET}: enabled'
+              type: DEPENDENT
+              key: 'custom.pve.replication.enabled[{#JOB}]'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['jobs']['{#JOB}']['enabled']"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.pve.replication
+              tags:
+                - tag: component
+                  value: replication
+                - tag: job
+                  value: '{#JOB}'
+                - tag: guest
+                  value: '{#GUEST}'
+                - tag: target
+                  value: '{#TARGET}'
+          master_item:
+            key: custom.pve.replication
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.lld_jobs
+      tags:
+        - tag: class
+          value: custom
+      macros:
+        - macro: '{$REPL_MAX_SYNC_AGE}'
+          value: 6h
+          description: 'Warning when an enabled replication job has not completed a sync for this long (3x the longest job schedule). Override per host if a job runs less often.'

@@ -64,6 +64,11 @@
 #                                       snapraid-runner timer (sync + partial scrub,
 #                                       mass-delete guarded). Default: on when
 #                                       /etc/snapraid.conf exists, else off
+#    ZABBIX_PVE_EVENTS=1|0 -> install the Proxmox events collectors for the
+#                                       "Homelab Proxmox events" template (today:
+#                                       replication jobs from pvesr status via a
+#                                       sudoers line). Default: on when pvesr
+#                                       exists, else off
 #    ZABBIX_NIC_FLAP=1|0 -> install the physical-NIC link-flap UserParameters
 #                                       (LLD of real NICs + carrier_down_count) and
 #                                       the PCIe-detach counter (kernel journal,
@@ -135,6 +140,7 @@ ZBX_DISK_HEALTH="${ZABBIX_DISK_HEALTH:-1}"
 SMARTD_SCHEDULE="${SMARTD_SCHEDULE:-(S/../.././02|L/../../7/03)}"
 ZBX_NIC_FLAP="${ZABBIX_NIC_FLAP:-}"
 ZBX_SNAPRAID="${ZABBIX_SNAPRAID:-}"
+ZBX_PVE_EVENTS="${ZABBIX_PVE_EVENTS:-}"
 # Helper scripts shipped in zabbix/ next to this script (fetched from the repo
 # when absent), installed under /usr/local/bin.
 ZBX_HELPER_DIR="${ZBX_HELPER_DIR:-${SCRIPT_DIR}/zabbix}"
@@ -174,7 +180,7 @@ BUZZ_TARGET="${BUZZ_TARGET:-}"
 BUZZ_PORT="${BUZZ_PORT:-6523}"
 NTFY_URL="${NTFY_URL:-}"
 NTFY_TOKEN="${NTFY_TOKEN:-}"
-BUZZ_ALERTS="${BUZZ_ALERTS:-disk}"
+BUZZ_ALERTS="${BUZZ_ALERTS:-none}"
 BUZZ_KEY="/root/.ssh/buzz_report"
 
 # Which agents to install. MONITORING_PKGS (space-separated list, or "none")
@@ -467,6 +473,29 @@ setup_snapraid() {
   systemctl daemon-reload
   systemctl enable --now snapraid-runner.timer >/dev/null 2>&1 || warn "snapraid-runner.timer did not enable — check: systemctl status snapraid-runner.timer"
   record "Zabbix snapraid" "installed (custom.snapraid.status; snapraid-runner.timer daily 04:00)"
+}
+
+# setup_pve_events — host side of the "Homelab Proxmox events" template:
+# pve-replication-json.sh behind custom.pve.replication (every pvesr job as an
+# LLD row), run through a sudoers line limited to `pvesr status` (pmxcfs is
+# root/www-data only). The HA-event and backup collectors join here on their
+# own cards (Kan a89gxf9oi0fc, hit98p2i8y2s). Replaces the buzz
+# repl-health-report watch.
+setup_pve_events() {
+  if ! install_zbx_helper pve-replication-json.sh 0755; then
+    warn "pve-replication-json.sh not available — Proxmox events skipped."
+    record "Zabbix PVE events" "skipped (helper missing)"
+    return 0
+  fi
+  printf 'zabbix ALL=(root) NOPASSWD: /usr/sbin/pvesr status\n' > /etc/sudoers.d/zabbix-pve.tmp
+  if visudo -cf /etc/sudoers.d/zabbix-pve.tmp >/dev/null 2>&1; then
+    install -m 0440 /etc/sudoers.d/zabbix-pve.tmp /etc/sudoers.d/zabbix-pve
+  else
+    warn "sudoers rule for pvesr failed validation — not installed."
+  fi
+  rm -f /etc/sudoers.d/zabbix-pve.tmp
+  write_agent_dropin pve-events.conf 'UserParameter=custom.pve.replication,/usr/local/bin/pve-replication-json.sh'
+  record "Zabbix PVE events" "installed (custom.pve.replication)"
 }
 
 # setup_nic_flap — physical-NIC link-flap UserParameters for the "Homelab
@@ -932,6 +961,14 @@ else
       info "Installing the snapraid watch and daily runner..."
       setup_snapraid
     fi
+    # Proxmox events (replication jobs today): only where pvesr exists.
+    if [[ -z "$ZBX_PVE_EVENTS" ]]; then
+      command -v pvesr >/dev/null 2>&1 && ZBX_PVE_EVENTS=1 || ZBX_PVE_EVENTS=0
+    fi
+    if [[ "${ZBX_PVE_EVENTS,,}" =~ ^(1|y|yes|true|on)$ ]]; then
+      info "Installing the Proxmox events collectors (replication)..."
+      setup_pve_events
+    fi
 
     systemctl enable zabbix-agent2 >/dev/null 2>&1 || true
     if systemctl restart zabbix-agent2 2>/dev/null; then
@@ -1151,33 +1188,9 @@ else
   _buzz_installed=()
   _buzz_skipped=()
 
-  if alert_selected disk; then
-    info "Installing the disk-health watch (SMART + zpool, daily)..."
-    apt-get install -y smartmontools >/dev/null
-    if write_watch_script disk-health-report.sh /usr/local/sbin/disk-health-report.sh; then
-      # Stagger the daily run by the trailing digit of the hostname so a fleet
-      # doesn't post at the same second (pve3 -> 09:03, no digit -> 09:00).
-      _m="$(hostname | grep -o '[0-9]*$' || true)"; _m="${_m:-0}"; _m=$(( _m % 60 ))
-      install_buzz_cron disk-health-report "${_m} 9 * * *" /usr/local/sbin/disk-health-report.sh
-      _buzz_installed+=("disk (daily 09:$(printf '%02d' "$_m"))")
-    else
-      _buzz_skipped+=("disk (template missing)")
-    fi
-  fi
-
-  if alert_selected repl; then
-    if command -v pvesr >/dev/null 2>&1; then
-      info "Installing the replication watch (pvesr failures, every 30 min)..."
-      if write_watch_script repl-health-report.sh /usr/local/sbin/repl-health-report.sh; then
-        install_buzz_cron repl-health-report "*/30 * * * *" /usr/local/sbin/repl-health-report.sh
-        _buzz_installed+=("repl (*/30)")
-      else
-        _buzz_skipped+=("repl (template missing)")
-      fi
-    else
-      note "repl watch skipped — no pvesr here (Proxmox VE hosts only)."
-      _buzz_skipped+=("repl (no pvesr)")
-    fi
+  if alert_selected disk || alert_selected repl; then
+    note "The disk and repl buzz watches were retired on 2026-09-15: Zabbix covers them (SMART/ZFS templates, Homelab Proxmox events). Nothing installed for them."
+    _buzz_skipped+=("disk/repl (retired, now Zabbix)")
   fi
 
   if alert_selected ha; then
@@ -1270,6 +1283,9 @@ if pkg_selected zabbix-agent2; then
   fi
   if [[ "${ZBX_NIC_FLAP,,}" =~ ^(1|y|yes|true|on)$ ]]; then
     printf '   %s•%s  Also link %sHomelab physical NIC flapping%s (bare-metal hosts).\n' "$BOLD" "$RESET" "$BOLD" "$RESET"
+  fi
+  if [[ "${ZBX_PVE_EVENTS:-0}" == "1" ]]; then
+    printf '   %s•%s  Also link %sHomelab Proxmox events%s (zabbix/templates/homelab-proxmox-events.yaml) on cluster nodes.\n' "$BOLD" "$RESET" "$BOLD" "$RESET"
   fi
   if [[ "${ZBX_SNAPRAID:-0}" == "1" ]]; then
     printf '   %s•%s  Also link %sHomelab snapraid%s (zabbix/templates/homelab-snapraid.yaml); first run: %s/usr/local/bin/snapraid-runner.sh%s\n' "$BOLD" "$RESET" "$BOLD" "$RESET" "$DIM" "$RESET"
