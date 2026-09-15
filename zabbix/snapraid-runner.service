@@ -1,0 +1,9 @@
+[Unit]
+Description=snapraid daily sync and partial scrub (mass-delete guarded)
+ConditionPathExists=/etc/snapraid.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/snapraid-runner.sh
+Nice=10
+IOSchedulingClass=idle

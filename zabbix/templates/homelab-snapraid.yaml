@@ -1,0 +1,309 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: bf6177b54b3f4fe39b327f18494c3001
+      name: Templates/Custom
+  templates:
+    - uuid: e0b92b62b7934232a6a74bc5d9071955
+      template: 'Homelab snapraid'
+      name: 'Homelab snapraid'
+      description: 'snapraid array health from snapraid status and snapraid diff, read every 30 minutes by /usr/local/bin/snapraid-status-json.sh through the UserParameter custom.snapraid.status (sudoers: zabbix may run snapraid status and diff -q only). Also reports the result of the daily snapraid-runner.timer (sync + partial scrub, mass-delete guarded). Source of truth: ~/frigate/zabbix-template-homelab-snapraid.yaml on the dev box. Kan ez7prbx6pr3z.'
+      groups:
+        - name: Templates/Custom
+      items:
+        - uuid: 4b2ec1dbf1ad47889c9462704e1a93c4
+          name: 'snapraid status (raw)'
+          type: ZABBIX_ACTIVE
+          key: custom.snapraid.status
+          delay: 30m
+          history: '0'
+          value_type: TEXT
+          timeout: 150s
+          description: 'JSON from snapraid-status-json.sh (status + diff). Master for every snapraid item.'
+          tags:
+            - tag: component
+              value: raw
+            - tag: component
+              value: snapraid
+        - uuid: aca171a2cadd45bcb7642d52ed8f3b75
+          name: 'snapraid: script error'
+          type: DEPENDENT
+          key: custom.snapraid.error
+          value_type: CHAR
+          trends: '0'
+          description: 'Non-empty when snapraid-status-json.sh could not run snapraid status. Empty is healthy.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.error
+              error_handler: CUSTOM_VALUE
+              error_handler_params: ''
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.snapraid.status
+          tags:
+            - tag: component
+              value: snapraid
+          triggers:
+            - uuid: 41b86a07998247958373b68a8c0ba5e0
+              expression: 'length(last(/Homelab snapraid/custom.snapraid.error))>0'
+              name: 'Homelab snapraid: status script failed on {HOST.NAME}'
+              priority: HIGH
+              description: 'snapraid status did not run; every snapraid trigger on this host is blind. Value: {ITEM.LASTVALUE1}'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: f84f965894874afdb9b85d2a7311675e
+          name: 'snapraid: array errors'
+          type: DEPENDENT
+          key: custom.snapraid.errors
+          description: 'Blocks snapraid status reports as bad (DANGER line). 0 is healthy.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.errors
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.snapraid.status
+          tags:
+            - tag: component
+              value: snapraid
+          triggers:
+            - uuid: 2091d4b12a8f41a787a13f9f178a1da3
+              expression: 'last(/Homelab snapraid/custom.snapraid.errors)>0'
+              name: 'Homelab snapraid: {ITEM.LASTVALUE1} bad blocks in the array'
+              priority: HIGH
+              description: 'snapraid status reports unrecoverable or unverified-bad blocks. Run snapraid status -v, then snapraid fix -e for the listed files.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 848dfcb70c094cc99e766ca3fad1c92a
+          name: 'snapraid: oldest scrub age'
+          type: DEPENDENT
+          key: custom.snapraid.scrub_oldest_days
+          units: 'd'
+          description: 'Days since the least recently scrubbed block was verified. 99999 = never synced.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.scrub_oldest_days
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.snapraid.status
+          tags:
+            - tag: component
+              value: snapraid
+          triggers:
+            - uuid: cfcbf78e0b2e4cd3bb07a40d0435a46e
+              expression: 'last(/Homelab snapraid/custom.snapraid.scrub_oldest_days)>60'
+              name: 'Homelab snapraid: oldest block not scrubbed for {ITEM.LASTVALUE1} days'
+              priority: WARNING
+              description: 'The daily scrub slice should keep this under a few weeks. Check snapraid-runner.timer and the last run result.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 6d7f208e7e194bd4b6c7b39eeee59fd0
+          name: 'snapraid: newest scrub age'
+          type: DEPENDENT
+          key: custom.snapraid.scrub_newest_days
+          units: 'd'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.scrub_newest_days
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.snapraid.status
+          tags:
+            - tag: component
+              value: snapraid
+        - uuid: aae0a6c9b027456a83bdb994d3324be0
+          name: 'snapraid: unscrubbed share'
+          type: DEPENDENT
+          key: custom.snapraid.unscrubbed_pct
+          units: '%'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.unscrubbed_pct
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.snapraid.status
+          tags:
+            - tag: component
+              value: snapraid
+          triggers:
+            - uuid: 09d11fb14a274010ad3e501ce7ef352a
+              expression: 'min(/Homelab snapraid/custom.snapraid.unscrubbed_pct,14d)>90'
+              name: 'Homelab snapraid: {ITEM.LASTVALUE1} of the array unscrubbed for 14 days'
+              priority: WARNING
+              description: 'Parity exists but has never been verified against the data. Let the daily scrub run, or run snapraid scrub by hand.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 2767c4a72a1e4811a9a242ec3f9d49f9
+          name: 'snapraid: unsynced differences'
+          type: DEPENDENT
+          key: custom.snapraid.differences
+          description: 'added+removed+updated+moved+copied+restored from snapraid diff. -1 when diff did not complete.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.differences
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.snapraid.status
+          tags:
+            - tag: component
+              value: snapraid
+          triggers:
+            - uuid: 71ca2d79f4e74682ab8e4d6cc55f5751
+              expression: 'min(/Homelab snapraid/custom.snapraid.differences,36h)>0'
+              name: 'Homelab snapraid: changes unsynced for more than 36 hours ({ITEM.LASTVALUE1} files)'
+              priority: WARNING
+              description: 'Files changed on the data disks are not covered by parity. The daily sync should have cleared this; check the runner result.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: ba82fdba71b643f1a3936f0f616b0f35
+          name: 'snapraid: diff exit code'
+          type: DEPENDENT
+          key: custom.snapraid.diff_rc
+          description: '0 no differences, 2 differences, -1 diff did not finish within the timeout, other = failure.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.diff_rc
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.snapraid.status
+          tags:
+            - tag: component
+              value: snapraid
+          triggers:
+            - uuid: 552bce9aa89446e0ba091fa3414f4e60
+              expression: 'min(/Homelab snapraid/custom.snapraid.diff_rc,2h)<>0 and min(/Homelab snapraid/custom.snapraid.diff_rc,2h)<>2 and max(/Homelab snapraid/custom.snapraid.diff_rc,2h)<>0 and max(/Homelab snapraid/custom.snapraid.diff_rc,2h)<>2'
+              name: 'Homelab snapraid: snapraid diff failing or timing out'
+              priority: WARNING
+              description: 'snapraid diff has not completed cleanly for 2 hours (rc {ITEM.LASTVALUE1}). Data disk unreadable or unmounted?'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: bb7aced69c574f67901d6c632256a862
+          name: 'snapraid: sync in progress'
+          type: DEPENDENT
+          key: custom.snapraid.sync_in_progress
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.sync_in_progress
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.snapraid.status
+          tags:
+            - tag: component
+              value: snapraid
+        - uuid: 81145ab5137a47eb8c476d7c2de33267
+          name: 'snapraid: rehash needed'
+          type: DEPENDENT
+          key: custom.snapraid.rehash_needed
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.rehash_needed
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.snapraid.status
+          tags:
+            - tag: component
+              value: snapraid
+          triggers:
+            - uuid: 572b83ec86954f4793e7c19661417f16
+              expression: 'last(/Homelab snapraid/custom.snapraid.rehash_needed)=1'
+              name: 'Homelab snapraid: rehash in progress or needed'
+              priority: INFO
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 748db867e4da4aa68e34d30cdffbb855
+          name: 'snapraid: last scheduled run'
+          type: DEPENDENT
+          key: custom.snapraid.last_run_epoch
+          units: 'unixtime'
+          description: 'When snapraid-runner.sh last finished. 0 = never.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.last_run_epoch
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.snapraid.status
+          tags:
+            - tag: component
+              value: snapraid
+          triggers:
+            - uuid: 2ef4a411f0034988b1fd603b4ff3324b
+              expression: 'now()-last(/Homelab snapraid/custom.snapraid.last_run_epoch)>2d'
+              name: 'Homelab snapraid: scheduled sync has not run for 2 days'
+              priority: WARNING
+              description: 'snapraid-runner.timer did not complete a run. systemctl status snapraid-runner.timer snapraid-runner.service; journalctl -u snapraid-runner.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: bc1a986d46894ce0ac198ec72c50648a
+          name: 'snapraid: last scheduled run result'
+          type: DEPENDENT
+          key: custom.snapraid.last_run_rc
+          description: '0 ok; 2 sync refused (more than DEL_THRESHOLD files removed, needs a human); 1 diff failed; 3 sync failed; 4 scrub failed; -1 never ran.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.last_run_rc
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.snapraid.status
+          tags:
+            - tag: component
+              value: snapraid
+          triggers:
+            - uuid: 6f221941eb704283b787c16bead7deb3
+              expression: 'last(/Homelab snapraid/custom.snapraid.last_run_rc)=2'
+              name: 'Homelab snapraid: sync refused: mass deletion detected'
+              priority: HIGH
+              description: 'More files were removed than the runner allows. If the deletion was intended run snapraid sync by hand; if not, restore with snapraid fix before anything else writes to the array.'
+              tags:
+                - tag: scope
+                  value: availability
+            - uuid: 7161e782c4fb4fec8769841171e7c032
+              expression: 'last(/Homelab snapraid/custom.snapraid.last_run_rc)>2 or last(/Homelab snapraid/custom.snapraid.last_run_rc)=1'
+              name: 'Homelab snapraid: scheduled sync/scrub failed (rc {ITEM.LASTVALUE1})'
+              priority: HIGH
+              description: 'journalctl -u snapraid-runner for the snapraid output.'
+              tags:
+                - tag: scope
+                  value: availability
+      tags:
+        - tag: class
+          value: custom

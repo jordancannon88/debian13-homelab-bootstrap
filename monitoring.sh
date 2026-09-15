@@ -60,6 +60,10 @@
 #                                       (S/../.././02|L/../../7/03). Use
 #                                       L/../01/./03 for monthly long tests on
 #                                       very large disks
+#    ZABBIX_SNAPRAID=1|0 -> install the snapraid watch and the daily
+#                                       snapraid-runner timer (sync + partial scrub,
+#                                       mass-delete guarded). Default: on when
+#                                       /etc/snapraid.conf exists, else off
 #    ZABBIX_NIC_FLAP=1|0 -> install the physical-NIC link-flap UserParameters
 #                                       (LLD of real NICs + carrier_down_count).
 #                                       Default 1 on bare metal, 0 on VMs/containers
@@ -128,6 +132,7 @@ ZBX_DOCKER_USER="${ZABBIX_DOCKER_USER:-}"
 ZBX_DISK_HEALTH="${ZABBIX_DISK_HEALTH:-1}"
 SMARTD_SCHEDULE="${SMARTD_SCHEDULE:-(S/../.././02|L/../../7/03)}"
 ZBX_NIC_FLAP="${ZABBIX_NIC_FLAP:-}"
+ZBX_SNAPRAID="${ZABBIX_SNAPRAID:-}"
 # Helper scripts shipped in zabbix/ next to this script (fetched from the repo
 # when absent), installed under /usr/local/bin.
 ZBX_HELPER_DIR="${ZBX_HELPER_DIR:-${SCRIPT_DIR}/zabbix}"
@@ -424,6 +429,42 @@ setup_disk_health() {
     warn "smartd did not start — check: systemctl status smartmontools (no SMART-capable disks?)"
   fi
   record "Zabbix disk health" "${summary:-nothing installed}"
+}
+
+# setup_snapraid — the "Homelab snapraid" template's host side plus the job it
+# reports on: snapraid-runner.sh on a daily timer (diff, refuse to sync after a
+# mass deletion, sync, scrub a slice of the oldest blocks), and
+# snapraid-status-json.sh behind custom.snapraid.status, which the agent runs
+# through a sudoers rule limited to `snapraid status` and `snapraid diff -q`.
+setup_snapraid() {
+  local ok=1 f
+  command -v snapraid >/dev/null 2>&1 || apt-get install -y snapraid >/dev/null
+  install_zbx_helper snapraid-status-json.sh 0755 || ok=0
+  install_zbx_helper snapraid-runner.sh 0755 || ok=0
+  for f in snapraid-runner.service snapraid-runner.timer; do
+    if resolve_template "${ZBX_HELPER_DIR}/${f}" "zabbix/${f}"; then
+      install -m 0644 "$RESOLVED_TEMPLATE" "/etc/systemd/system/${f}"
+      [[ "$RESOLVED_TEMPLATE_IS_TMP" == "1" ]] && rm -f "$RESOLVED_TEMPLATE"
+    else
+      ok=0
+    fi
+  done
+  if [[ "$ok" != "1" ]]; then
+    warn "snapraid helpers not available — skipped."
+    record "Zabbix snapraid" "skipped (helpers missing)"
+    return 0
+  fi
+  printf 'zabbix ALL=(root) NOPASSWD: /usr/bin/snapraid status, /usr/bin/snapraid diff -q\n' > /etc/sudoers.d/zabbix-snapraid.tmp
+  if visudo -cf /etc/sudoers.d/zabbix-snapraid.tmp >/dev/null 2>&1; then
+    install -m 0440 /etc/sudoers.d/zabbix-snapraid.tmp /etc/sudoers.d/zabbix-snapraid
+  else
+    warn "sudoers rule for snapraid failed validation — not installed."
+  fi
+  rm -f /etc/sudoers.d/zabbix-snapraid.tmp
+  write_agent_dropin snapraid-status.conf 'UserParameter=custom.snapraid.status,/usr/local/bin/snapraid-status-json.sh'
+  systemctl daemon-reload
+  systemctl enable --now snapraid-runner.timer >/dev/null 2>&1 || warn "snapraid-runner.timer did not enable — check: systemctl status snapraid-runner.timer"
+  record "Zabbix snapraid" "installed (custom.snapraid.status; snapraid-runner.timer daily 04:00)"
 }
 
 # setup_nic_flap — physical-NIC link-flap UserParameters for the "Homelab
@@ -875,6 +916,14 @@ else
     else
       note "NIC link-flap helpers skipped (virtualized host, or ZABBIX_NIC_FLAP=0)."
     fi
+    # snapraid watch + runner: only where a snapraid array is configured.
+    if [[ -z "$ZBX_SNAPRAID" ]]; then
+      [[ -f /etc/snapraid.conf ]] && ZBX_SNAPRAID=1 || ZBX_SNAPRAID=0
+    fi
+    if [[ "${ZBX_SNAPRAID,,}" =~ ^(1|y|yes|true|on)$ ]]; then
+      info "Installing the snapraid watch and daily runner..."
+      setup_snapraid
+    fi
 
     systemctl enable zabbix-agent2 >/dev/null 2>&1 || true
     if systemctl restart zabbix-agent2 2>/dev/null; then
@@ -1213,6 +1262,9 @@ if pkg_selected zabbix-agent2; then
   fi
   if [[ "${ZBX_NIC_FLAP,,}" =~ ^(1|y|yes|true|on)$ ]]; then
     printf '   %s•%s  Also link %sHomelab physical NIC flapping%s (bare-metal hosts).\n' "$BOLD" "$RESET" "$BOLD" "$RESET"
+  fi
+  if [[ "${ZBX_SNAPRAID:-0}" == "1" ]]; then
+    printf '   %s•%s  Also link %sHomelab snapraid%s (zabbix/templates/homelab-snapraid.yaml); first run: %s/usr/local/bin/snapraid-runner.sh%s\n' "$BOLD" "$RESET" "$BOLD" "$RESET" "$DIM" "$RESET"
   fi
 fi
 if pkg_selected alloy; then
