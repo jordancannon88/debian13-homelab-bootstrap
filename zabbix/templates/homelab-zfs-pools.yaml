@@ -1,0 +1,567 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: bf6177b54b3f4fe39b327f18494c3001
+      name: Templates/Custom
+  templates:
+    - uuid: 6157662b93ac496f903b443102dec983
+      template: 'Homelab ZFS pools'
+      name: 'Homelab ZFS pools'
+      description: 'Per-pool and per-vdev ZFS health from zpool status -j (OpenZFS 2.3+), read every minute by /usr/local/bin/zfs-status-json.py through the UserParameter custom.zfs.status (needs no root). Two LLD rules: pools (health, capacity, permanent errors, scrub) and vdevs (state and read/write/checksum/slow-IO counters per device, the numbers the pool summary hides). Source of truth: ~/frigate/zabbix-template-homelab-zfs.yaml on the dev box. Kan ez7prbx6pr3z.'
+      groups:
+        - name: Templates/Custom
+      items:
+        - uuid: 9e84600de3414138806e2c1045c0abc7
+          name: 'ZFS status (raw)'
+          type: ZABBIX_ACTIVE
+          key: custom.zfs.status
+          delay: 1m
+          history: '0'
+          value_type: TEXT
+          timeout: 15s
+          description: 'JSON from zfs-status-json.py. Master for every ZFS item and both discovery rules.'
+          tags:
+            - tag: component
+              value: raw
+            - tag: component
+              value: zfs
+        - uuid: aaebb794ac64482d81caa227254473aa
+          name: 'ZFS status script error'
+          type: DEPENDENT
+          key: custom.zfs.error
+          value_type: CHAR
+          trends: '0'
+          description: 'Non-empty when zfs-status-json.py could not run zpool. Empty is healthy.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.error
+              error_handler: CUSTOM_VALUE
+              error_handler_params: ''
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.zfs.status
+          tags:
+            - tag: component
+              value: zfs
+          triggers:
+            - uuid: 9958cda3d53141bc82cd84edfa4efca5
+              expression: 'length(last(/Homelab ZFS pools/custom.zfs.error))>0'
+              name: 'Homelab ZFS: status script failed on {HOST.NAME}'
+              priority: HIGH
+              description: 'zfs-status-json.py returned an error instead of pool data; every ZFS trigger on this host is blind until fixed. Value: {ITEM.LASTVALUE1}'
+              tags:
+                - tag: scope
+                  value: availability
+      discovery_rules:
+        - uuid: 4563832ffa4f4554b46b8001c173c393
+          name: 'ZFS pool discovery'
+          type: DEPENDENT
+          key: custom.zfs.pool.discovery
+          lifetime: 7d
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
+          description: 'One entry per imported pool.'
+          item_prototypes:
+          - uuid: 839cd81c2a17453b911c0ee1703a372f
+            name: '[{#POOL}]: health'
+            type: DEPENDENT
+            key: 'custom.zfs.pool.health[{#POOL}]'
+            value_type: CHAR
+            trends: '0'
+            description: 'zpool state string: ONLINE, DEGRADED, FAULTED, OFFLINE, UNAVAIL, REMOVED.'
+            preprocessing:
+              - type: JSONPATH
+                parameters:
+                  - "$['pools']['{#POOL}']['health']"
+              - type: DISCARD_UNCHANGED_HEARTBEAT
+                parameters:
+                  - 1h
+            master_item:
+              key: custom.zfs.status
+            tags:
+              - tag: component
+                value: zfs
+              - tag: pool
+                value: '{#POOL}'
+            trigger_prototypes:
+              - uuid: 1b0e594b180443a68ad0f6736eaadfea
+                expression: 'last(/Homelab ZFS pools/custom.zfs.pool.health[{#POOL}])<>"ONLINE"'
+                name: 'Homelab ZFS: [{#POOL}]: pool is {ITEM.LASTVALUE1}'
+                priority: HIGH
+                description: 'ZFS has marked the pool unhealthy. Check the vdev rows for which device, and do not zpool clear a device with a rising error count.'
+                tags:
+                  - tag: scope
+                    value: availability
+          - uuid: 5df3f674e4aa47d9be670d145a1f41f3
+            name: '[{#POOL}]: health code'
+            type: DEPENDENT
+            key: 'custom.zfs.pool.health_code[{#POOL}]'
+            description: '0 ONLINE, 1 DEGRADED, 2 FAULTED, 3 OFFLINE, 4 UNAVAIL, 5 REMOVED, 6 other.'
+            preprocessing:
+              - type: JSONPATH
+                parameters:
+                  - "$['pools']['{#POOL}']['health_code']"
+              - type: DISCARD_UNCHANGED_HEARTBEAT
+                parameters:
+                  - 1h
+            master_item:
+              key: custom.zfs.status
+            tags:
+              - tag: component
+                value: zfs
+              - tag: pool
+                value: '{#POOL}'
+          - uuid: e83f96526de14dc6b5fcb2f48cd835d2
+            name: '[{#POOL}]: permanent errors'
+            type: DEPENDENT
+            key: 'custom.zfs.pool.error_count[{#POOL}]'
+            description: 'Number of entries in the permanent error list (zpool status -v). Any non-zero value means data ZFS could not repair.'
+            preprocessing:
+              - type: JSONPATH
+                parameters:
+                  - "$['pools']['{#POOL}']['error_count']"
+              - type: DISCARD_UNCHANGED_HEARTBEAT
+                parameters:
+                  - 1h
+            master_item:
+              key: custom.zfs.status
+            tags:
+              - tag: component
+                value: zfs
+              - tag: pool
+                value: '{#POOL}'
+            trigger_prototypes:
+              - uuid: 3d7df97358e14bb4b6713368455541cd
+                expression: 'last(/Homelab ZFS pools/custom.zfs.pool.error_count[{#POOL}])>0'
+                name: 'Homelab ZFS: [{#POOL}]: {ITEM.LASTVALUE1} permanent errors'
+                priority: HIGH
+                description: 'zpool status -v lists files or zvols with unrecoverable blocks. Restore them from a replica or backup; on a single-disk pool this is the disk failing.'
+                tags:
+                  - tag: scope
+                    value: availability
+          - uuid: 631760b2e47f4bb7b7f68d0f36f6874e
+            name: '[{#POOL}]: capacity used'
+            type: DEPENDENT
+            key: 'custom.zfs.pool.cap[{#POOL}]'
+            units: '%'
+            preprocessing:
+              - type: JSONPATH
+                parameters:
+                  - "$['pools']['{#POOL}']['cap']"
+              - type: DISCARD_UNCHANGED_HEARTBEAT
+                parameters:
+                  - 1h
+            master_item:
+              key: custom.zfs.status
+            tags:
+              - tag: component
+                value: zfs
+              - tag: pool
+                value: '{#POOL}'
+            trigger_prototypes:
+              - uuid: 623f1df1dec74cfa9c2d5b11f6e34a06
+                expression: 'last(/Homelab ZFS pools/custom.zfs.pool.cap[{#POOL}])>90'
+                name: 'Homelab ZFS: [{#POOL}]: pool over 90% full'
+                priority: HIGH
+                description: 'ZFS performance collapses and snapshots/replication start failing near full. Free space or grow the pool now.'
+                tags:
+                  - tag: scope
+                    value: availability
+              - uuid: 70b0d258bf9844a998fbab683d13f941
+                expression: 'last(/Homelab ZFS pools/custom.zfs.pool.cap[{#POOL}])>80 and last(/Homelab ZFS pools/custom.zfs.pool.cap[{#POOL}])<=90'
+                name: 'Homelab ZFS: [{#POOL}]: pool over 80% full'
+                priority: WARNING
+                tags:
+                  - tag: scope
+                    value: availability
+          - uuid: 4e17e54e985a48e3978672e82260ecfc
+            name: '[{#POOL}]: fragmentation'
+            type: DEPENDENT
+            key: 'custom.zfs.pool.frag[{#POOL}]'
+            units: '%'
+            preprocessing:
+              - type: JSONPATH
+                parameters:
+                  - "$['pools']['{#POOL}']['frag']"
+              - type: DISCARD_UNCHANGED_HEARTBEAT
+                parameters:
+                  - 1h
+            master_item:
+              key: custom.zfs.status
+            tags:
+              - tag: component
+                value: zfs
+              - tag: pool
+                value: '{#POOL}'
+          - uuid: 7b3a1064cb4b41a094dc620be9b8150a
+            name: '[{#POOL}]: size'
+            type: DEPENDENT
+            key: 'custom.zfs.pool.size[{#POOL}]'
+            units: 'B'
+            preprocessing:
+              - type: JSONPATH
+                parameters:
+                  - "$['pools']['{#POOL}']['size']"
+              - type: DISCARD_UNCHANGED_HEARTBEAT
+                parameters:
+                  - 6h
+            master_item:
+              key: custom.zfs.status
+            tags:
+              - tag: component
+                value: zfs
+              - tag: pool
+                value: '{#POOL}'
+          - uuid: c495063d6c124d18945288c076758430
+            name: '[{#POOL}]: allocated'
+            type: DEPENDENT
+            key: 'custom.zfs.pool.alloc[{#POOL}]'
+            units: 'B'
+            preprocessing:
+              - type: JSONPATH
+                parameters:
+                  - "$['pools']['{#POOL}']['alloc']"
+              - type: DISCARD_UNCHANGED_HEARTBEAT
+                parameters:
+                  - 1h
+            master_item:
+              key: custom.zfs.status
+            tags:
+              - tag: component
+                value: zfs
+              - tag: pool
+                value: '{#POOL}'
+          - uuid: d00e7dadd5bd4f5ca69205417f9887db
+            name: '[{#POOL}]: scan state'
+            type: DEPENDENT
+            key: 'custom.zfs.pool.scan_state[{#POOL}]'
+            value_type: CHAR
+            trends: '0'
+            description: 'State of the last scrub or resilver: FINISHED, SCANNING, CANCELED, NONE (never run).'
+            preprocessing:
+              - type: JSONPATH
+                parameters:
+                  - "$['pools']['{#POOL}']['scan_state']"
+              - type: DISCARD_UNCHANGED_HEARTBEAT
+                parameters:
+                  - 1h
+            master_item:
+              key: custom.zfs.status
+            tags:
+              - tag: component
+                value: zfs
+              - tag: pool
+                value: '{#POOL}'
+          - uuid: f3fe8a2fbe78433b84bd4e6b9bd19f7d
+            name: '[{#POOL}]: last scan finished'
+            type: DEPENDENT
+            key: 'custom.zfs.pool.scan_end[{#POOL}]'
+            units: 'unixtime'
+            description: 'End time of the last scrub or resilver. 0 when none has ever completed.'
+            preprocessing:
+              - type: JSONPATH
+                parameters:
+                  - "$['pools']['{#POOL}']['scan_end']"
+              - type: DISCARD_UNCHANGED_HEARTBEAT
+                parameters:
+                  - 1h
+            master_item:
+              key: custom.zfs.status
+            tags:
+              - tag: component
+                value: zfs
+              - tag: pool
+                value: '{#POOL}'
+            trigger_prototypes:
+              - uuid: 8c0b7ec80f4a439481e44289a23e2492
+                expression: 'now()-last(/Homelab ZFS pools/custom.zfs.pool.scan_end[{#POOL}])>35d and last(/Homelab ZFS pools/custom.zfs.pool.scan_state[{#POOL}])<>"SCANNING"'
+                name: 'Homelab ZFS: [{#POOL}]: no scrub completed in 35 days'
+                priority: WARNING
+                description: 'Silent corruption is only found by a scrub. Run zpool scrub {#POOL} in a quiet window, or check why the monthly one did not run.'
+                tags:
+                  - tag: scope
+                    value: availability
+          - uuid: 7f5169d0240343e9b3d6eb2b7c9decaa
+            name: '[{#POOL}]: last scan errors'
+            type: DEPENDENT
+            key: 'custom.zfs.pool.scan_errors[{#POOL}]'
+            preprocessing:
+              - type: JSONPATH
+                parameters:
+                  - "$['pools']['{#POOL}']['scan_errors']"
+              - type: DISCARD_UNCHANGED_HEARTBEAT
+                parameters:
+                  - 1h
+            master_item:
+              key: custom.zfs.status
+            tags:
+              - tag: component
+                value: zfs
+              - tag: pool
+                value: '{#POOL}'
+            trigger_prototypes:
+              - uuid: 02658b334dfe45858f2a63f56d52c5f7
+                expression: 'last(/Homelab ZFS pools/custom.zfs.pool.scan_errors[{#POOL}])>0'
+                name: 'Homelab ZFS: [{#POOL}]: last scrub found {ITEM.LASTVALUE1} errors'
+                priority: HIGH
+                description: 'The scrub hit blocks it could not repair. Read zpool status -v for the affected files and see the vdev rows for the failing device.'
+                tags:
+                  - tag: scope
+                    value: availability
+          graph_prototypes:
+            - uuid: d64891ac510c48a6842e80389ab87d9b
+              name: 'Homelab ZFS: [{#POOL}]: capacity and fragmentation'
+              graph_items:
+              - sortorder: '0'
+                color: 1A7C11
+                item:
+                  host: 'Homelab ZFS pools'
+                  key: 'custom.zfs.pool.cap[{#POOL}]'
+              - sortorder: '1'
+                color: F63100
+                item:
+                  host: 'Homelab ZFS pools'
+                  key: 'custom.zfs.pool.frag[{#POOL}]'
+          master_item:
+            key: custom.zfs.status
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.lld_pools
+        - uuid: 07b3f1554e6948488d112366fa418ccf
+          name: 'ZFS vdev discovery'
+          type: DEPENDENT
+          key: custom.zfs.vdev.discovery
+          lifetime: 7d
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
+          description: 'One entry per vdev below the root: mirror/raidz groups, leaf disks, log and cache devices.'
+          item_prototypes:
+          - uuid: d11092eda7344e5fb412deda7464cb4f
+            name: '[{#POOL}/{#VDEV}]: state'
+            type: DEPENDENT
+            key: 'custom.zfs.vdev.state[{#POOL},{#VDEV}]'
+            value_type: CHAR
+            trends: '0'
+            preprocessing:
+              - type: JSONPATH
+                parameters:
+                  - "$['vdevs']['{#POOL}/{#VDEV}']['state']"
+              - type: DISCARD_UNCHANGED_HEARTBEAT
+                parameters:
+                  - 1h
+            master_item:
+              key: custom.zfs.status
+            tags:
+              - tag: component
+                value: zfs
+              - tag: pool
+                value: '{#POOL}'
+              - tag: vdev
+                value: '{#VDEV}'
+              - tag: vdevtype
+                value: '{#VDEVTYPE}'
+            trigger_prototypes:
+              - uuid: c40f932b14e24faf881b86709a7bc720
+                expression: 'last(/Homelab ZFS pools/custom.zfs.vdev.state[{#POOL},{#VDEV}])<>"ONLINE"'
+                name: 'Homelab ZFS: [{#POOL}/{#VDEV}]: vdev is {ITEM.LASTVALUE1}'
+                priority: HIGH
+                description: 'A device or vdev group under this pool is not ONLINE. A mirror or raidz keeps running degraded; a single-disk pool has no redundancy left.'
+                tags:
+                  - tag: scope
+                    value: availability
+          - uuid: 76ca72a0dd7143a1a6e4a0d42217f7b5
+            name: '[{#POOL}/{#VDEV}]: state code'
+            type: DEPENDENT
+            key: 'custom.zfs.vdev.state_code[{#POOL},{#VDEV}]'
+            preprocessing:
+              - type: JSONPATH
+                parameters:
+                  - "$['vdevs']['{#POOL}/{#VDEV}']['state_code']"
+              - type: DISCARD_UNCHANGED_HEARTBEAT
+                parameters:
+                  - 1h
+            master_item:
+              key: custom.zfs.status
+            tags:
+              - tag: component
+                value: zfs
+              - tag: pool
+                value: '{#POOL}'
+              - tag: vdev
+                value: '{#VDEV}'
+              - tag: vdevtype
+                value: '{#VDEVTYPE}'
+          - uuid: fd045b9163794958a3295da0fa4e0691
+            name: '[{#POOL}/{#VDEV}]: read errors'
+            type: DEPENDENT
+            key: 'custom.zfs.vdev.read[{#POOL},{#VDEV}]'
+            description: 'READ column of zpool status for this vdev, since import or the last zpool clear.'
+            preprocessing:
+              - type: JSONPATH
+                parameters:
+                  - "$['vdevs']['{#POOL}/{#VDEV}']['read']"
+              - type: DISCARD_UNCHANGED_HEARTBEAT
+                parameters:
+                  - 1h
+            master_item:
+              key: custom.zfs.status
+            tags:
+              - tag: component
+                value: zfs
+              - tag: pool
+                value: '{#POOL}'
+              - tag: vdev
+                value: '{#VDEV}'
+              - tag: vdevtype
+                value: '{#VDEVTYPE}'
+          - uuid: b847905f92f645379f0b6f1b6fbff18c
+            name: '[{#POOL}/{#VDEV}]: write errors'
+            type: DEPENDENT
+            key: 'custom.zfs.vdev.write[{#POOL},{#VDEV}]'
+            preprocessing:
+              - type: JSONPATH
+                parameters:
+                  - "$['vdevs']['{#POOL}/{#VDEV}']['write']"
+              - type: DISCARD_UNCHANGED_HEARTBEAT
+                parameters:
+                  - 1h
+            master_item:
+              key: custom.zfs.status
+            tags:
+              - tag: component
+                value: zfs
+              - tag: pool
+                value: '{#POOL}'
+              - tag: vdev
+                value: '{#VDEV}'
+              - tag: vdevtype
+                value: '{#VDEVTYPE}'
+          - uuid: 43be88787495490aa0a07c17cbcc9cbe
+            name: '[{#POOL}/{#VDEV}]: checksum errors'
+            type: DEPENDENT
+            key: 'custom.zfs.vdev.cksum[{#POOL},{#VDEV}]'
+            preprocessing:
+              - type: JSONPATH
+                parameters:
+                  - "$['vdevs']['{#POOL}/{#VDEV}']['cksum']"
+              - type: DISCARD_UNCHANGED_HEARTBEAT
+                parameters:
+                  - 1h
+            master_item:
+              key: custom.zfs.status
+            tags:
+              - tag: component
+                value: zfs
+              - tag: pool
+                value: '{#POOL}'
+              - tag: vdev
+                value: '{#VDEV}'
+              - tag: vdevtype
+                value: '{#VDEVTYPE}'
+          - uuid: 99c72f40880b4e649f1f4b1d9fc6e575
+            name: '[{#POOL}/{#VDEV}]: errors total'
+            type: DEPENDENT
+            key: 'custom.zfs.vdev.errors_total[{#POOL},{#VDEV}]'
+            description: 'read + write + checksum for this vdev. This is the per-device number the pool summary hides.'
+            preprocessing:
+              - type: JSONPATH
+                parameters:
+                  - "$['vdevs']['{#POOL}/{#VDEV}']['errors_total']"
+              - type: DISCARD_UNCHANGED_HEARTBEAT
+                parameters:
+                  - 1h
+            master_item:
+              key: custom.zfs.status
+            tags:
+              - tag: component
+                value: zfs
+              - tag: pool
+                value: '{#POOL}'
+              - tag: vdev
+                value: '{#VDEV}'
+              - tag: vdevtype
+                value: '{#VDEVTYPE}'
+            trigger_prototypes:
+              - uuid: 1f17440e0d0649d1bd8973745ecccb2e
+                expression: 'last(/Homelab ZFS pools/custom.zfs.vdev.errors_total[{#POOL},{#VDEV}])>0'
+                name: 'Homelab ZFS: [{#POOL}/{#VDEV}]: vdev has {ITEM.LASTVALUE1} read/write/checksum errors'
+                priority: WARNING
+                description: 'ZFS counted I/O or checksum failures on this device. Compare with its SMART rows: pending/uncorrectable sectors mean the disk, CRC means the cable.'
+                tags:
+                  - tag: scope
+                    value: availability
+              - uuid: ab2154774d7a4ff188b39eb4f923a08a
+                expression: 'last(/Homelab ZFS pools/custom.zfs.vdev.errors_total[{#POOL},{#VDEV}])>min(/Homelab ZFS pools/custom.zfs.vdev.errors_total[{#POOL},{#VDEV}],24h)'
+                name: 'Homelab ZFS: [{#POOL}/{#VDEV}]: vdev errors rising (24h)'
+                priority: HIGH
+                description: 'New errors in the last 24 hours: the device is failing now, not historically. Move data off it and plan the replacement.'
+                tags:
+                  - tag: scope
+                    value: availability
+          - uuid: 2afef218eb6f439e9f00f8799f6402a4
+            name: '[{#POOL}/{#VDEV}]: slow IOs'
+            type: DEPENDENT
+            key: 'custom.zfs.vdev.slow_ios[{#POOL},{#VDEV}]'
+            description: 'I/Os that took longer than zfs_slow_io_ms (default 30 s).'
+            preprocessing:
+              - type: JSONPATH
+                parameters:
+                  - "$['vdevs']['{#POOL}/{#VDEV}']['slow_ios']"
+              - type: DISCARD_UNCHANGED_HEARTBEAT
+                parameters:
+                  - 1h
+            master_item:
+              key: custom.zfs.status
+            tags:
+              - tag: component
+                value: zfs
+              - tag: pool
+                value: '{#POOL}'
+              - tag: vdev
+                value: '{#VDEV}'
+              - tag: vdevtype
+                value: '{#VDEVTYPE}'
+            trigger_prototypes:
+              - uuid: f660eee0def74f04b23f4b56476b217d
+                expression: 'last(/Homelab ZFS pools/custom.zfs.vdev.slow_ios[{#POOL},{#VDEV}])>min(/Homelab ZFS pools/custom.zfs.vdev.slow_ios[{#POOL},{#VDEV}],24h)'
+                name: 'Homelab ZFS: [{#POOL}/{#VDEV}]: slow IOs rising (24h)'
+                priority: WARNING
+                description: 'The device is stalling. On USB-attached disks check the link and cable; on internal disks this often precedes read errors.'
+                tags:
+                  - tag: scope
+                    value: availability
+          graph_prototypes:
+            - uuid: 0582a09a5dca413390ea390041b19590
+              name: 'Homelab ZFS: [{#POOL}/{#VDEV}]: error counters'
+              graph_items:
+              - sortorder: '0'
+                color: F63100
+                item:
+                  host: 'Homelab ZFS pools'
+                  key: 'custom.zfs.vdev.read[{#POOL},{#VDEV}]'
+              - sortorder: '1'
+                color: 2774A4
+                item:
+                  host: 'Homelab ZFS pools'
+                  key: 'custom.zfs.vdev.write[{#POOL},{#VDEV}]'
+              - sortorder: '2'
+                color: A54F10
+                item:
+                  host: 'Homelab ZFS pools'
+                  key: 'custom.zfs.vdev.cksum[{#POOL},{#VDEV}]'
+              - sortorder: '3'
+                color: 1A7C11
+                item:
+                  host: 'Homelab ZFS pools'
+                  key: 'custom.zfs.vdev.slow_ios[{#POOL},{#VDEV}]'
+          master_item:
+            key: custom.zfs.status
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.lld_vdevs
+      tags:
+        - tag: class
+          value: custom
