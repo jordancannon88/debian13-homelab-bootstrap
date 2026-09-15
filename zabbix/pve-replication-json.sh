@@ -2,7 +2,7 @@
 # pve-replication-json.sh: every Proxmox replication job on this node as one JSON
 # document, for the Zabbix UserParameter custom.pve.replication (template
 # "Homelab Proxmox events"). Runs `pvesr status` through sudo (sudoers:
-# zabbix -> /usr/sbin/pvesr status only).
+# zabbix -> /usr/bin/pvesr status only).
 # Test marker: if /etc/zabbix/homelab-test/replication exists, a synthetic job
 # TEST-0 (target TEST) is added; file content "0" makes it healthy, anything
 # else makes it fail 3 times in a row. Remove the marker after the test.
@@ -17,7 +17,7 @@ epoch() { # pvesr prints 2026-09-15_17:45:01, '-' or 'pending'
 }
 jsonstr() { local s="${1//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\n'/ }"; printf '%s' "${s:0:160}"; }
 
-out="$($SUDO /usr/sbin/pvesr status 2>&1)"; rc=$?
+out="$($SUDO /usr/bin/pvesr status 2>&1)"; rc=$?
 if [ $rc -ne 0 ] || ! grep -q '^JobID' <<<"$out"; then
   printf '{"error":"pvesr status rc=%d: %s","jobs":{},"job_count":0,"failing_count":0,"lld_jobs":[]}\n' "$rc" "$(jsonstr "$(tail -1 <<<"$out")")"
   exit 0
