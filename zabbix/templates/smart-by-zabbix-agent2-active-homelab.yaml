@@ -693,7 +693,7 @@ zabbix_export:
                     - tag: scope
                       value: notice
             - uuid: a7a86b4098ec45baad4cea4f7e9e4ca2
-              name: '[{#NAME}]: Current_Pending_Sector'
+              name: '[{#NAME}]: Pending sectors'
               type: DEPENDENT
               key: 'smart.disk.attribute.current_pending_sector[{#NAME}]'
               discover: NO_DISCOVER
@@ -740,7 +740,7 @@ zabbix_export:
                     - tag: homelab
                       value: smart
             - uuid: 0f3c09b7c21347ee90e04e594bf3a44a
-              name: '[{#NAME}]: Offline_Uncorrectable'
+              name: '[{#NAME}]: Uncorrectable sectors'
               type: DEPENDENT
               key: 'smart.disk.attribute.offline_uncorrectable[{#NAME}]'
               discover: NO_DISCOVER
@@ -787,7 +787,7 @@ zabbix_export:
                     - tag: homelab
                       value: smart
             - uuid: 62236011e06a439cbad6662a0b6a8aab
-              name: '[{#NAME}]: UDMA_CRC_Error_Count'
+              name: '[{#NAME}]: CRC errors'
               type: DEPENDENT
               key: 'smart.disk.attribute.udma_crc_error_count[{#NAME}]'
               discover: NO_DISCOVER
@@ -1042,7 +1042,7 @@ zabbix_export:
                     value: Current_Pending_Sector
               operations:
                 - operator: REGEXP
-                  value: Current_Pending_Sector
+                  value: 'Pending sectors'
                   discover: DISCOVER
             - name: Offline_Uncorrectable
               step: '13'
@@ -1052,7 +1052,7 @@ zabbix_export:
                     value: Offline_Uncorrectable
               operations:
                 - operator: REGEXP
-                  value: Offline_Uncorrectable
+                  value: 'Uncorrectable sectors'
                   discover: DISCOVER
             - name: UDMA_CRC_Error_Count
               step: '14'
@@ -1062,7 +1062,7 @@ zabbix_export:
                     value: UDMA_CRC_Error_Count
               operations:
                 - operator: REGEXP
-                  value: UDMA_CRC_Error_Count
+                  value: 'CRC errors'
                   discover: DISCOVER
             - name: 'Homelab NVMe only'
               step: '15'
