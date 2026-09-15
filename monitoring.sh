@@ -47,6 +47,22 @@
 #                                       daemon is detected (default no)
 #    ZABBIX_DOCKER_USER=<user> -> the rootless Docker owner to monitor (default:
 #                                       auto-detected from the running daemon)
+#    ZABBIX_DISK_HEALTH=1|0 -> install the disk-health helpers the homelab
+#                                       Zabbix templates need: smartmontools, a
+#                                       sudoers rule so the agent can run smartctl,
+#                                       the NVMe available-spare UserParameter, the
+#                                       ZFS pool/vdev UserParameter (when zpool is
+#                                       present), and a smartd self-test schedule.
+#                                       Default 1
+#    SMARTD_SCHEDULE="<smartd -s regex>" -> self-test schedule written into
+#                                       /etc/smartd.conf. Default: short test daily
+#                                       02:00, long test Sunday 03:00
+#                                       (S/../.././02|L/../../7/03). Use
+#                                       L/../01/./03 for monthly long tests on
+#                                       very large disks
+#    ZABBIX_NIC_FLAP=1|0 -> install the physical-NIC link-flap UserParameters
+#                                       (LLD of real NICs + carrier_down_count).
+#                                       Default 1 on bare metal, 0 on VMs/containers
 #    LOKI_URL="scheme://host:port" -> Loki base URL for Alloy to push to
 #                                       (used when alloy is selected; asked
 #                                       interactively, defaults to localhost:3100)
@@ -106,6 +122,15 @@ ZBX_SERVER_ACTIVE="${ZABBIX_SERVER_ACTIVE:-}"
 # no). The owning user is auto-detected unless ZABBIX_DOCKER_USER overrides it.
 ZBX_ROOTLESS_DOCKER="${ZABBIX_MONITOR_ROOTLESS_DOCKER:-}"
 ZBX_DOCKER_USER="${ZABBIX_DOCKER_USER:-}"
+# Disk-health helpers for the homelab SMART/ZFS templates (1/0, default on) and
+# the smartd self-test schedule. NIC link-flap helpers default to bare metal only
+# (empty = decide from systemd-detect-virt).
+ZBX_DISK_HEALTH="${ZABBIX_DISK_HEALTH:-1}"
+SMARTD_SCHEDULE="${SMARTD_SCHEDULE:-(S/../.././02|L/../../7/03)}"
+ZBX_NIC_FLAP="${ZABBIX_NIC_FLAP:-}"
+# Helper scripts shipped in zabbix/ next to this script (fetched from the repo
+# when absent), installed under /usr/local/bin.
+ZBX_HELPER_DIR="${ZBX_HELPER_DIR:-${SCRIPT_DIR}/zabbix}"
 
 # Grafana Alloy specifics (Grafana's apt repo + custom config; see the step below).
 ALLOY_CONF="/etc/alloy/config.alloy"
@@ -300,6 +325,117 @@ write_cpu_temp_dropin() {
 # Label-matched so it survives inxi reordering fields; -c 0 strips colour codes.
 ${pfx}UserParameter=${hn}.cpuTemperature,inxi -s -c 0 | grep -oP 'cpu:\s*\K[0-9.]+'
 EOF
+}
+
+# install_zbx_helper <name> <mode> — install zabbix/<name> from beside this
+# script (or fetched from the repo) to /usr/local/bin/<name> with an explicit
+# mode. Explicit modes matter: harden.sh sets UMASK 027, so a plain redirect
+# would leave the file unreadable by the zabbix user.
+install_zbx_helper() {
+  local name="$1" mode="${2:-0755}"
+  resolve_template "${ZBX_HELPER_DIR}/${name}" "zabbix/${name}" || return 1
+  install -m "$mode" "$RESOLVED_TEMPLATE" "/usr/local/bin/${name}"
+  [[ "$RESOLVED_TEMPLATE_IS_TMP" == "1" ]] && rm -f "$RESOLVED_TEMPLATE"
+  return 0
+}
+
+# write_agent_dropin <file> <content> — write a zabbix_agent2.d/<file> drop-in
+# world-readable (0644). The agent refuses to start on an unreadable include.
+write_agent_dropin() {
+  local dir="/etc/zabbix/zabbix_agent2.d"
+  install -d -m 755 "$dir"
+  printf '%s\n' "$2" > "${dir}/$1.tmp"
+  install -m 0644 "${dir}/$1.tmp" "${dir}/$1"
+  rm -f "${dir}/$1.tmp"
+}
+
+# setup_disk_health — everything the "SMART by Zabbix agent 2 active" template
+# (with the Homelab additions) and the "Homelab ZFS pools" template need on the
+# host side:
+#   - smartmontools (smartctl for the agent's SMART plugin, smartd for tests)
+#   - /etc/sudoers.d/zabbix-smart: the agent runs smartctl via sudo
+#   - custom.nvme.smart[*]: raw smartctl JSON for NVMe available spare (the stock
+#     plugin does not expose it). Harmless on hosts without NVMe.
+#   - custom.zfs.status: pool/vdev JSON from zpool status -j (OpenZFS 2.3+, no
+#     root needed). Only when zpool exists; rerun after adding ZFS.
+#   - smartd -s schedule so the stock "self-test is not passed" trigger has a
+#     real result to report (it also fires when no test was ever run).
+# Inside a VM Debian's smartmontools unit refuses to start
+# (ConditionVirtualization=no); passed-through disks are real, so a drop-in
+# clears that and retries if the daemon starts before the disks appear.
+setup_disk_health() {
+  local virt="${1:-0}" summary="" conf=/etc/smartd.conf
+
+  apt-get install -y smartmontools >/dev/null
+
+  printf 'zabbix ALL=(root) NOPASSWD: /usr/sbin/smartctl\n' > /etc/sudoers.d/zabbix-smart.tmp
+  if visudo -cf /etc/sudoers.d/zabbix-smart.tmp >/dev/null 2>&1; then
+    install -m 0440 /etc/sudoers.d/zabbix-smart.tmp /etc/sudoers.d/zabbix-smart
+    summary="sudoers"
+  else
+    warn "sudoers rule for smartctl failed validation — not installed."
+  fi
+  rm -f /etc/sudoers.d/zabbix-smart.tmp
+
+  if install_zbx_helper nvme-smart-json.sh 0755; then
+    write_agent_dropin nvme-smart.conf 'UserParameter=custom.nvme.smart[*],/usr/local/bin/nvme-smart-json.sh "$1"'
+    summary+="${summary:+, }nvme-spare"
+  else
+    warn "nvme-smart-json.sh not available — NVMe available-spare items will be unsupported."
+  fi
+
+  if command -v zpool >/dev/null 2>&1; then
+    if install_zbx_helper zfs-status-json.py 0755; then
+      write_agent_dropin zfs-status.conf 'UserParameter=custom.zfs.status,/usr/local/bin/zfs-status-json.py'
+      summary+="${summary:+, }zfs"
+    else
+      warn "zfs-status-json.py not available — ZFS items will be unsupported."
+    fi
+  else
+    note "No zpool on this host — ZFS UserParameter skipped (rerun monitoring.sh after adding ZFS)."
+  fi
+
+  # smartd: keep the packaged DEVICESCAN line, add the self-test schedule once.
+  if [[ -f "$conf" ]] && grep -q '^DEVICESCAN' "$conf"; then
+    cp -n "$conf" "${conf}.orig" 2>/dev/null || true
+    if grep -q '^DEVICESCAN.* -s ' "$conf"; then
+      sed -i -E "s#^(DEVICESCAN.*) -s \([^)]*\)#\1 -s ${SMARTD_SCHEDULE}#" "$conf"
+    else
+      sed -i -E "s#^DEVICESCAN #DEVICESCAN -s ${SMARTD_SCHEDULE} #" "$conf"
+    fi
+  else
+    printf 'DEVICESCAN -d removable -n standby -s %s -m root -M exec /usr/share/smartmontools/smartd-runner\n' \
+      "$SMARTD_SCHEDULE" > "$conf"
+  fi
+  if [[ "$virt" == "1" ]]; then
+    install -d -m 755 /etc/systemd/system/smartmontools.service.d
+    printf '[Unit]\nConditionVirtualization=\n[Service]\nRestart=on-failure\nRestartSec=60\n' \
+      > /etc/systemd/system/smartmontools.service.d/virt.conf
+    chmod 0644 /etc/systemd/system/smartmontools.service.d/virt.conf
+    systemctl daemon-reload
+  fi
+  systemctl enable smartmontools >/dev/null 2>&1 || true
+  if systemctl restart smartmontools 2>/dev/null; then
+    summary+="${summary:+, }smartd tests ${SMARTD_SCHEDULE}"
+  else
+    warn "smartd did not start — check: systemctl status smartmontools (no SMART-capable disks?)"
+  fi
+  record "Zabbix disk health" "${summary:-nothing installed}"
+}
+
+# setup_nic_flap — physical-NIC link-flap UserParameters for the "Homelab
+# physical NIC flapping" template: an LLD of real, non-wireless NICs and the
+# kernel's carrier_down_count per interface (driver-agnostic; a bouncing cable
+# on a corosync NIC self-fences a Proxmox node within a minute).
+setup_nic_flap() {
+  if install_zbx_helper physnic-discovery.sh 0755 && install_zbx_helper nic-carrier-down.sh 0755; then
+    write_agent_dropin physnic.conf 'UserParameter=custom.physnic.discovery,/usr/local/bin/physnic-discovery.sh
+UserParameter=custom.nic.carrier_down[*],/usr/local/bin/nic-carrier-down.sh "$1"'
+    record "Zabbix NIC flap" "installed (custom.physnic.discovery, custom.nic.carrier_down)"
+  else
+    warn "NIC flap helper scripts not available — skipped."
+    record "Zabbix NIC flap" "skipped (helpers missing)"
+  fi
 }
 
 # detect_rootless_docker_users — print the username(s) that currently own a
@@ -705,6 +841,26 @@ else
     # outbound and needs no rule.)
     open_firewall_port tcp 10050 "Zabbix agent 2 passive checks"
 
+    # Disk-health helpers (SMART via sudo, NVMe spare, ZFS, smartd self-tests).
+    if [[ "${ZBX_DISK_HEALTH,,}" =~ ^(1|y|yes|true|on)$ ]]; then
+      info "Installing disk-health helpers for the SMART and ZFS templates..."
+      setup_disk_health "$ZBX_VIRT"
+    else
+      note "Disk-health helpers skipped (ZABBIX_DISK_HEALTH=0)."
+      record "Zabbix disk health" "skipped (ZABBIX_DISK_HEALTH=0)"
+    fi
+    # NIC link-flap helpers: bare metal by default; a VM's virtual NIC never
+    # carries a real cable, so its flaps belong to the host.
+    if [[ -z "$ZBX_NIC_FLAP" ]]; then
+      [[ "$ZBX_VIRT" == "1" ]] && ZBX_NIC_FLAP=0 || ZBX_NIC_FLAP=1
+    fi
+    if [[ "${ZBX_NIC_FLAP,,}" =~ ^(1|y|yes|true|on)$ ]]; then
+      info "Installing physical-NIC link-flap helpers..."
+      setup_nic_flap
+    else
+      note "NIC link-flap helpers skipped (virtualized host, or ZABBIX_NIC_FLAP=0)."
+    fi
+
     systemctl enable zabbix-agent2 >/dev/null 2>&1 || true
     if systemctl restart zabbix-agent2 2>/dev/null; then
       log "zabbix-agent2 enabled and running."
@@ -1034,6 +1190,15 @@ _had_step=0
 if pkg_selected zabbix-agent2; then
   printf '   %s•%s  Add this host on your Zabbix server using hostname %s%s%s, then confirm data\n' "$BOLD" "$RESET" "$BOLD" "$(hostname)" "$RESET"
   printf '       with: %ssystemctl status zabbix-agent2%s and %stail -f /var/log/zabbix/zabbix_agent2.log%s\n' "$DIM" "$RESET" "$DIM" "$RESET"; _had_step=1
+  if [[ "${ZBX_DISK_HEALTH,,}" =~ ^(1|y|yes|true|on)$ ]]; then
+    printf '   %s•%s  Link the templates on the server: %sSMART by Zabbix agent 2 active%s (with the Homelab\n' "$BOLD" "$RESET" "$BOLD" "$RESET"
+    printf '       additions from zabbix/templates/) and, on ZFS hosts, %sHomelab ZFS pools%s. Active-only agents:\n' "$BOLD" "$RESET"
+    printf '       discovery runs on the agent'"'"'s 10-minute clock, so give it up to 15 minutes before judging.\n'
+    printf '       On a VM whose boot disk is virtual, set the host macro %s{$SMART.DISK.NAME.NOT_MATCHES}%s to hide it.\n' "$DIM" "$RESET"
+  fi
+  if [[ "${ZBX_NIC_FLAP,,}" =~ ^(1|y|yes|true|on)$ ]]; then
+    printf '   %s•%s  Also link %sHomelab physical NIC flapping%s (bare-metal hosts).\n' "$BOLD" "$RESET" "$BOLD" "$RESET"
+  fi
 fi
 if pkg_selected alloy; then
   printf '   %s•%s  Confirm logs are flowing: %ssystemctl status alloy%s, then in Grafana query\n' "$BOLD" "$RESET" "$DIM" "$RESET"

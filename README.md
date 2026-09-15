@@ -98,6 +98,7 @@ tick in the picker are installed.
 | `zabbix-release` | Zabbix repo | `.deb` that registers Zabbix's official apt repository. |
 | `zabbix-agent2` | Zabbix repo | Zabbix monitoring agent 2. |
 | `inxi` | Debian | System-information CLI; backs the CPU-temperature monitoring item. Installed alongside `zabbix-agent2`. |
+| `smartmontools` | Debian | `smartctl` for the agent's SMART plugin and `smartd` for scheduled self-tests. Installed alongside `zabbix-agent2` unless `ZABBIX_DISK_HEALTH=0`. |
 | `gnupg` | Debian | Ensured present to import the Grafana repo key (usually already installed by `harden.sh`). |
 | `alloy` | Grafana repo | Grafana Alloy, a journal-first log shipper to Loki. |
 | `smartmontools` | Debian | `smartctl`, backs the buzz disk-health watch. Installed with the `buzz` disk alert. |
@@ -119,6 +120,31 @@ tick in the picker are installed.
 > `{compose_service="nginx"}`. `container.sh` attaches those labels by default
 > (`DOCKER_LOG_LABELS`) and Alloy promotes them. The daemon's own logs already
 > arrive via `docker.service`.
+
+#### Disk health and NIC watch (host side of the homelab Zabbix templates)
+
+A Zabbix template is only half of an agent item: the host still needs the
+matching `UserParameter=` and whatever the command needs to run. When
+`zabbix-agent2` is selected, `monitoring.sh` puts that half in place so a new
+host gets the same disk and link coverage as the rest of the fleet as soon as
+the templates are linked on the server:
+
+| On the host | Feeds | Notes |
+| --- | --- | --- |
+| `smartmontools` + `/etc/sudoers.d/zabbix-smart` | `SMART by Zabbix agent 2 active` (stock template, plus the Homelab attribute items and triggers in [`zabbix/templates/smart-by-zabbix-agent2-active-homelab.yaml`](zabbix/templates/smart-by-zabbix-agent2-active-homelab.yaml)) | The stock template has **no** trigger on reallocated, pending or uncorrectable sectors; the Homelab additions add them, plus 24-hour "rising" tripwires. Import with *Update existing* on and every *Delete missing* off. |
+| `/usr/local/bin/nvme-smart-json.sh` + `zabbix_agent2.d/nvme-smart.conf` | the NVMe *available spare* items in the same template | The stock SMART plugin does not expose available spare; this reads `smartctl -j -A` through the sudoers rule. Harmless on hosts without NVMe. |
+| `/usr/local/bin/zfs-status-json.py` + `zabbix_agent2.d/zfs-status.conf` (only when `zpool` exists) | [`Homelab ZFS pools`](zabbix/templates/homelab-zfs-pools.yaml) | Pool health, capacity, permanent errors, scrub age and result, and **per-vdev** read/write/checksum/slow-IO counters, the numbers a pool summary hides. Needs OpenZFS 2.3+ (`zpool status -j`); runs as the zabbix user with no root. Rerun `monitoring.sh` after adding ZFS to an existing host. |
+| smartd `-s` schedule in `/etc/smartd.conf` | the stock *self-test is not passed* trigger | That trigger also fires when no test was ever logged, so every disk needs a schedule. Default short daily / long weekly; `SMARTD_SCHEDULE` overrides. On a VM the smartmontools unit gets a drop-in clearing `ConditionVirtualization=` (Debian's unit otherwise never starts there). |
+| `/usr/local/bin/physnic-discovery.sh`, `nic-carrier-down.sh` + `zabbix_agent2.d/physnic.conf` (bare metal only) | `Homelab physical NIC flapping` | LLD of real, non-wireless NICs and the kernel's per-interface `carrier_down_count`. A bouncing cable on a corosync NIC self-fences a Proxmox node within a minute; this catches it as a High. Export the template from your server, it has no YAML here yet. |
+
+Every drop-in is written `0644` and every helper `0755` on purpose: `harden.sh`
+sets `UMASK 027`, and an unreadable include stops `zabbix-agent2` from starting
+at all. Turn the whole block off with `ZABBIX_DISK_HEALTH=0`; the NIC helpers
+follow `ZABBIX_NIC_FLAP`.
+
+<br>
+
+<br>
 
 ### container.sh Docker and/or Podman (rootless)
 
@@ -520,6 +546,9 @@ folder.
 | `ZABBIX_SERVER_ACTIVE="host[:port]"` | Zabbix server/proxy for active checks. Required when `zabbix-agent2` is selected (asked interactively if unset). Written into `ServerActive=` in `/etc/zabbix/zabbix_agent2.conf` |
 | `ZABBIX_MONITOR_ROOTLESS_DOCKER=1\|0` | Set the agent up to monitor a rootless Docker daemon. Empty = ask when a rootless daemon is detected (default no). Writes a Docker-plugin drop-in pointing `Plugins.Docker.Endpoint` at the user's `/run/user/<uid>/docker.sock`, enables lingering, and adds a systemd override running `zabbix-agent2` as that user so it can reach the socket. The override also sets `RuntimeDirectory`/`LogsDirectory` so `/run/zabbix` and `/var/log/zabbix` are re-owned by that user at every start (reboot-proof), and the logrotate `create` rule is repointed at that user so rotated logs stay writable |
 | `ZABBIX_DOCKER_USER=<user>` | The rootless Docker owner to monitor (default: auto-detected from the running daemon; falls back to `$SUDO_USER`) |
+| `ZABBIX_DISK_HEALTH=1\|0` | Install the host side of the disk-health templates (default on): `smartmontools`, `/etc/sudoers.d/zabbix-smart` so the agent's SMART plugin can run `smartctl`, the `custom.nvme.smart[*]` UserParameter (NVMe available spare, which the stock plugin does not expose), the `custom.zfs.status` UserParameter when `zpool` exists (pool and per-vdev health from `zpool status -j`, no root needed), and a smartd self-test schedule. Inside a VM it also clears `ConditionVirtualization=` on the smartmontools unit, since passed-through disks are real |
+| `SMARTD_SCHEDULE="(S/../.././02\|L/../../7/03)"` | smartd `-s` self-test schedule written into `/etc/smartd.conf`. Default: short test daily 02:00, long test Sunday 03:00. Use `(S/../.././02\|L/../01/./03)` (long test monthly) for very large disks, where a long test runs a day or more |
+| `ZABBIX_NIC_FLAP=1\|0` | Install the physical-NIC link-flap UserParameters (`custom.physnic.discovery`, `custom.nic.carrier_down[*]`, from the kernel's `carrier_down_count`). Default on for bare metal, off for VMs and containers, whose virtual NICs never carry a cable |
 | `LOKI_URL="scheme://host:port"` | Loki base URL for Alloy to push to. Used when `alloy` is selected (asked interactively; defaults to `http://localhost:3100`). The `/loki/api/v1/push` path is appended automatically |
 | `ALLOY_DOCKER_LOGS=1` | Also capture Docker container logs. Used when `alloy` is selected (asked interactively; defaults to off). Keeps the journald relabel rules that promote `container`/`image`/`compose_project`/`compose_service` labels; relies on Docker using the `journald` log driver (rootful or rootless). Container logs then ship via the journal under `{host="<host>", container=~".+"}` |
 | `ALLOY_SET_DOCKER_DRIVER=1\|0` | When `ALLOY_DOCKER_LOGS=1` and Docker is already installed here, set Docker's `journald` log driver from `monitoring.sh` itself (rootful via `/etc/docker/daemon.json`, rootless via the user's `~/.config/docker/daemon.json`), so an existing Docker host needs no separate `container.sh` run. Empty = ask; default yes |
