@@ -1,0 +1,64 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: bf6177b54b3f4fe39b327f18494c3001
+      name: Templates/Custom
+  templates:
+    - uuid: 0283ca7f1f89408e8c9fd28f4e643367
+      template: 'Homelab physical NIC flapping'
+      name: 'Homelab physical NIC flapping'
+      description: 'Physical-NIC failure family on bare-metal nodes. (1) Link flapping: LLD of real, non-wireless NICs (custom.physnic.discovery) and the kernel carrier_down_count per interface (custom.nic.carrier_down), High on 3+ link-downs in 5 min; a bouncing corosync cable self-fences a Proxmox node within a minute. (2) PCIe detach: custom.nic.pcie_detach counts "PCIe link lost, device now detached" kernel-journal lines this boot (the I225-V fault of 2026-09-05), High on any increase, manual close. Host side: physnic-discovery.sh, nic-carrier-down.sh, nic-pcie-detach.sh + physnic.conf, zabbix user in systemd-journal; installed by debian13-homelab-bootstrap monitoring.sh (ZABBIX_NIC_FLAP). Source of truth: zabbix/templates/homelab-physical-nic-flapping.yaml in that repo. Docs: BookStack link/375, catalog link/376.'
+      groups:
+        - name: Templates/Custom
+      items:
+        - uuid: dc81eb10e7e540b0a377e079e702cdea
+          name: 'PCIe device detaches this boot'
+          type: ZABBIX_ACTIVE
+          key: custom.nic.pcie_detach
+          delay: 1m
+          description: 'Count of "PCIe link lost, device now detached" kernel lines in the current boot, any driver (nic-pcie-detach.sh reads the kernel journal as the zabbix user). Resets to 0 on reboot.'
+          tags:
+            - tag: component
+              value: network
+          triggers:
+            - uuid: 36405cc7ae8648a88a56c19b8bc2fb8f
+              expression: 'change(/Homelab physical NIC flapping/custom.nic.pcie_detach)>0'
+              name: 'PCIe device dropped off the bus on {HOST.NAME} ({ITEM.LASTVALUE1}x this boot)'
+              priority: HIGH
+              description: 'A PCI device detached at runtime. On the Intel I225-V NICs this took corosync down and self-fenced the node (report link/367). pcie_aspm=off is already applied on pve3: a recurrence means escalate to NIC firmware/BIOS, then a replacement NIC. Close by hand once acted on; the counter stays until reboot.'
+              manual_close: 'YES'
+              tags:
+                - tag: scope
+                  value: availability
+      discovery_rules:
+        - uuid: 07486c33398e4f8db1f32194cbb5f0f1
+          name: 'Physical NIC discovery'
+          type: ZABBIX_ACTIVE
+          key: custom.physnic.discovery
+          delay: 10m
+          item_prototypes:
+            - uuid: cfd27c53a4cf4a619cebdc69d6f29b17
+              name: 'Link down events on {#IFNAME}'
+              type: ZABBIX_ACTIVE
+              key: 'custom.nic.carrier_down[{#IFNAME}]'
+              preprocessing:
+                - type: SIMPLE_CHANGE
+              trigger_prototypes:
+                - uuid: 149de243dc604e168653477f1d50e49d
+                  expression: 'sum(/Homelab physical NIC flapping/custom.nic.carrier_down[{#IFNAME}],5m)>2'
+                  name: 'NIC {#IFNAME} ({#DRIVER}) flapping on {HOST.NAME}'
+                  priority: HIGH
+                  manual_close: 'YES'
+          graph_prototypes:
+            - uuid: 1644c479543942d3bdf48a458cba2ad5
+              name: 'NIC {#IFNAME} link-down events per minute'
+              graph_items:
+                - drawtype: FILLED_REGION
+                  color: 199C0D
+                  calc_fnc: ALL
+                  item:
+                    host: 'Homelab physical NIC flapping'
+                    key: 'custom.nic.carrier_down[{#IFNAME}]'
+      tags:
+        - tag: class
+          value: custom
