@@ -24,12 +24,11 @@
 #  - buzz (if selected) sets this host up to report alerts to a buzz relay dev
 #    box over forced-command ssh (the v3 protocol): it generates a dedicated
 #    ed25519 key (/root/.ssh/buzz_report) and installs the chosen watch scripts
-#    with their crons. Which watches (BUZZ_ALERTS, or asked): disk (SMART +
-#    zpool health, daily), repl (Proxmox replication failures, 30 min), ha
-#    (Proxmox HA recover/migrate events, 5 min), tbmesh (Thunderbolt mesh
-#    auto-heal, 1 min). repl/ha/tbmesh only install where their tooling exists
-#    (pvesr / pve-ha-crm / the TB reset scripts). Alerts flow only after the
-#    printed public key is registered on the dev box (see NEXT STEPS).
+#    with their crons. Every watch has been retired in favour of Zabbix
+#    (disk, repl, backup, ha on 2026-09-15/16; tbmesh on 2026-09-16, its heal
+#    now installs with the Zabbix helpers, see ZABBIX_TBMESH), so selecting
+#    alerts only generates the key today. Kept for the delivery plumbing until
+#    the bootstrap revamp (Kan 6sjz7rdp0r9p) removes it.
 #
 #  Config templates live alongside this script in zabbix/, alloy/ and buzz/; if
 #  this script is run on its own (no repo checkout) they're fetched from the repo.
@@ -74,6 +73,12 @@
 #                                       the PCIe-detach counter (kernel journal,
 #                                       zabbix user joins systemd-journal).
 #                                       Default 1 on bare metal, 0 on VMs/containers
+#    ZABBIX_TBMESH=1|0 -> install the Thunderbolt mesh auto-heal
+#                                       (tb-mesh-heal.sh, cron every minute) and its
+#                                       Zabbix collector for the "Homelab TB3 mesh"
+#                                       template (custom.tbmesh.status). Default: on
+#                                       when the TB reset scripts exist (mesh nodes),
+#                                       else off
 #    LOKI_URL="scheme://host:port" -> Loki base URL for Alloy to push to
 #                                       (used when alloy is selected; asked
 #                                       interactively, defaults to localhost:3100)
@@ -141,6 +146,7 @@ SMARTD_SCHEDULE="${SMARTD_SCHEDULE:-(S/../.././02|L/../../7/03)}"
 ZBX_NIC_FLAP="${ZABBIX_NIC_FLAP:-}"
 ZBX_SNAPRAID="${ZABBIX_SNAPRAID:-}"
 ZBX_PVE_EVENTS="${ZABBIX_PVE_EVENTS:-}"
+ZBX_TBMESH="${ZABBIX_TBMESH:-}"
 # Helper scripts shipped in zabbix/ next to this script (fetched from the repo
 # when absent), installed under /usr/local/bin.
 ZBX_HELPER_DIR="${ZBX_HELPER_DIR:-${SCRIPT_DIR}/zabbix}"
@@ -348,9 +354,9 @@ EOF
 # mode. Explicit modes matter: harden.sh sets UMASK 027, so a plain redirect
 # would leave the file unreadable by the zabbix user.
 install_zbx_helper() {
-  local name="$1" mode="${2:-0755}"
+  local name="$1" mode="${2:-0755}" dest="${3:-/usr/local/bin}"
   resolve_template "${ZBX_HELPER_DIR}/${name}" "zabbix/${name}" || return 1
-  install -m "$mode" "$RESOLVED_TEMPLATE" "/usr/local/bin/${name}"
+  install -m "$mode" "$RESOLVED_TEMPLATE" "${dest}/${name}"
   [[ "$RESOLVED_TEMPLATE_IS_TMP" == "1" ]] && rm -f "$RESOLVED_TEMPLATE"
   return 0
 }
@@ -528,6 +534,26 @@ UserParameter=custom.nic.pcie_detach,/usr/local/bin/nic-pcie-detach.sh'
     warn "NIC flap helper scripts not available — skipped."
     record "Zabbix NIC flap" "skipped (helpers missing)"
   fi
+}
+
+# setup_tbmesh — the Thunderbolt mesh auto-heal and its Zabbix collector for
+# the "Homelab TB3 mesh" template. The heal (tb-mesh-heal.sh, root cron every
+# minute) repairs the mesh itself and appends every action to
+# /var/lib/tb-mesh-heal/events.log; tb-mesh-status-json.py turns that plus the
+# heal's state files into custom.tbmesh.status as the zabbix user. No sudoers
+# line: the state dir is 0755 and the heal writes with umask 022. Mesh nodes
+# only (the pve-enXX-disconnect-bug-fix.sh reset scripts must exist).
+setup_tbmesh() {
+  if ! install_zbx_helper tb-mesh-heal.sh 0755 /usr/local/sbin || ! install_zbx_helper tb-mesh-status-json.py 0755; then
+    warn "TB3 mesh helpers not available — skipped."
+    record "Zabbix TB3 mesh" "skipped (helpers missing)"
+    return 0
+  fi
+  install -d -m 0755 /var/lib/tb-mesh-heal
+  chmod 0644 /var/lib/tb-mesh-heal/* 2>/dev/null || true   # files from an older heal (umask 027)
+  install_buzz_cron tb-mesh-heal "* * * * *" /usr/local/sbin/tb-mesh-heal.sh
+  write_agent_dropin tbmesh.conf 'UserParameter=custom.tbmesh.status,/usr/local/bin/tb-mesh-status-json.py'
+  record "Zabbix TB3 mesh" "installed (tb-mesh-heal cron every minute, custom.tbmesh.status)"
 }
 
 # detect_rootless_docker_users — print the username(s) that currently own a
@@ -980,6 +1006,14 @@ else
       info "Installing the Proxmox events collectors (replication, backups, HA events)..."
       setup_pve_events
     fi
+    # TB3 mesh auto-heal + collector: only on mesh nodes (the TB reset scripts exist).
+    if [[ -z "$ZBX_TBMESH" ]]; then
+      [[ -x /usr/local/bin/pve-en02-disconnect-bug-fix.sh ]] && ZBX_TBMESH=1 || ZBX_TBMESH=0
+    fi
+    if [[ "${ZBX_TBMESH,,}" =~ ^(1|y|yes|true|on)$ ]]; then
+      info "Installing the Thunderbolt mesh auto-heal and its Zabbix collector..."
+      setup_tbmesh
+    fi
 
     systemctl enable zabbix-agent2 >/dev/null 2>&1 || true
     if systemctl restart zabbix-agent2 2>/dev/null; then
@@ -1205,18 +1239,8 @@ else
   fi
 
   if alert_selected tbmesh; then
-    if [[ -x /usr/local/bin/pve-en02-disconnect-bug-fix.sh ]]; then
-      info "Installing the TB3 mesh auto-heal watch (every minute)..."
-      if write_watch_script tb-mesh-heal.sh /usr/local/sbin/tb-mesh-heal.sh; then
-        install_buzz_cron tb-mesh-heal "* * * * *" /usr/local/sbin/tb-mesh-heal.sh
-        _buzz_installed+=("tbmesh (every minute)")
-      else
-        _buzz_skipped+=("tbmesh (template missing)")
-      fi
-    else
-      note "tbmesh watch skipped — no TB disconnect-bug-fix scripts here (mesh nodes only)."
-      _buzz_skipped+=("tbmesh (not a mesh node)")
-    fi
+    note "The tbmesh buzz watch was retired (2026-09-16): the mesh heal now installs with the Zabbix helpers (ZABBIX_TBMESH) and reports through the Homelab TB3 mesh template. Nothing installed for it here."
+    _buzz_skipped+=("tbmesh (retired, now Zabbix)")
   fi
 
   _sink_desc=""

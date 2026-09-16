@@ -1,0 +1,403 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: bf6177b54b3f4fe39b327f18494c3001
+      name: Templates/Custom
+  templates:
+    - uuid: 548b0109257344c48650ce76a2a3df07
+      template: 'Homelab TB3 mesh'
+      name: 'Homelab TB3 mesh'
+      description: 'Thunderbolt mesh watchdog (tb-mesh-heal.sh on pve2, pve3, pve4) events and give-up states, which used to post to buzz #Alerts. One master JSON custom.tbmesh.status from tb-mesh-status-json.py (reads /var/lib/tb-mesh-heal as the zabbix user, nothing else). States that need a human are plain triggers that clear when the heal clears its own state: edge stuck (needs a cold cycle of both ends), controller off the PCI bus (reboot needed), whole mesh down, auto recovery gave up, heal not running, status script failed. "heal acted" is a short Information state, not a sticky event. Per-interface triggers depend on "whole mesh down" so one episode is one problem. Mesh health items (FRR, adjacency per link, peer reachability) join this template under HOM-99 au7whhkkl5zi. Host side installed by debian13-homelab-bootstrap monitoring.sh (ZABBIX_TBMESH, mesh nodes only). Source of truth: zabbix/templates/homelab-tb3-mesh.yaml in that repo. Dry run: /etc/zabbix/homelab-test/tbmesh (linkstuck <if> | nobus <if> | meshdown <s> | paging | stale) and a synthetic events.log line. Kan 6p7mjqcecu6c, tracker a25kba4yp866. Docs: BookStack link/129, catalog link/376.'
+      groups:
+        - name: Templates/Custom
+      items:
+        - uuid: 5c870244faec4e7089e3310d11da100f
+          name: 'TB3 mesh heal status (raw)'
+          type: ZABBIX_ACTIVE
+          key: custom.tbmesh.status
+          delay: 1m
+          history: '0'
+          value_type: TEXT
+          timeout: 10s
+          description: 'JSON from tb-mesh-status-json.py. Master for every TB3 mesh item and the interface discovery.'
+          tags:
+            - tag: component
+              value: raw
+            - tag: component
+              value: tbmesh
+        - uuid: 43409c327e0043d7a3c156e2c8d1b31a
+          name: 'TB3 mesh: status script error'
+          type: DEPENDENT
+          key: 'custom.tbmesh.error'
+          value_type: CHAR
+          trends: '0'
+          description: 'Non-empty when tb-mesh-status-json.py could not read /var/lib/tb-mesh-heal. Empty is healthy.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.error"
+              error_handler: CUSTOM_VALUE
+              error_handler_params: ''
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.tbmesh.status
+          tags:
+            - tag: component
+              value: tbmesh
+          triggers:
+            - uuid: 70156fea99f74d34854c81e4ec24efeb
+              expression: 'length(last(/Homelab TB3 mesh/custom.tbmesh.error))>0'
+              name: 'Homelab TB3 mesh: status script failed on {HOST.NAME}'
+              priority: HIGH
+              description: 'The collector cannot read the heal state dir, so every TB3 mesh trigger on this host is blind. Usually the dir is not 0755 (heal older than 2026-09-16, or umask 027) or the heal never ran. Value: {ITEM.LASTVALUE1}'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: e16404a0755f4fe0a082f866c1074145
+          name: 'TB3 mesh: heal last run age'
+          type: DEPENDENT
+          key: 'custom.tbmesh.heal_last_run_age'
+          units: s
+          description: 'Seconds since tb-mesh-heal.sh last started a run (its last_run heartbeat, written after the run lock). 999999 when it never ran.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.heal_last_run_age"
+          master_item:
+            key: custom.tbmesh.status
+          tags:
+            - tag: component
+              value: tbmesh
+          triggers:
+            - uuid: 53022fde84754c67a03786ec00a74f7d
+              expression: 'last(/Homelab TB3 mesh/custom.tbmesh.heal_last_run_age)>{$TBMESH_HEAL_STALE}'
+              name: 'Homelab TB3 mesh: heal not running on {HOST.NAME} ({ITEM.LASTVALUE1} since the last run)'
+              priority: WARNING
+              description: 'The mesh watchdog cron (/etc/cron.d/tb-mesh-heal, every minute) has not run for {$TBMESH_HEAL_STALE}: cron stopped, the script is missing, or one run is wedged holding /run/tb-mesh-heal.run.lock (an ssh hang in a coordinated reset). Check `systemctl status cron`, `journalctl -t tb-mesh-heal -n 20` and `pgrep -af tb-mesh-heal`. Nothing heals the mesh while this is open. buzz could never report this.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 9b30cc0c889844dda9d05791bbd7ce8d
+          name: 'TB3 mesh: whole mesh unreachable for'
+          type: DEPENDENT
+          key: 'custom.tbmesh.mesh_down_for'
+          units: s
+          description: 'Seconds this node has reached no mesh peer on any link (mesh_down_since). 0 when at least one peer answers.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.mesh_down_for"
+          master_item:
+            key: custom.tbmesh.status
+          tags:
+            - tag: component
+              value: tbmesh
+          triggers:
+            - uuid: f33a0d79fcfc41f8849cba1f2d69e9fa
+              expression: 'last(/Homelab TB3 mesh/custom.tbmesh.mesh_down_for)>={$TBMESH_DOWN_GRACE}'
+              name: 'Homelab TB3 mesh: whole mesh down on {HOST.NAME} for {ITEM.LASTVALUE1}'
+              priority: HIGH
+              description: 'This node cannot reach any mesh peer (10.0.0.x) on any link, longer than the heal grace period. The heal is running cluster-serialised recovery rounds (FRR restart if wedged, then a both-controller reset per node per round) and will page through the "auto recovery gave up" trigger if that does not converge. Migration and replication ride the mesh (10.0.0.0/24), so they are degraded now. Per-interface triggers on this host depend on this one. Runbooks: TB3 mesh page link/129, outage runbook link/358.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 4195b65562b040f1b98a5c803b00041f
+          name: 'TB3 mesh: whole mesh auto recovery gave up'
+          type: DEPENDENT
+          key: 'custom.tbmesh.mesh_paging'
+          description: '1 when the heal paged on a whole-mesh episode: resets ineffective after MESH_REBOOT_AFTER with AUTO_MESH_REBOOT off (mesh_page), or an evacuate-and-reboot guard failed (noquorum, notarget, evac_failed) while the mesh is still down.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.mesh_paging"
+          master_item:
+            key: custom.tbmesh.status
+          tags:
+            - tag: component
+              value: tbmesh
+          triggers:
+            - uuid: 77160ef8fa344430a2bcc513e1ee220c
+              expression: 'last(/Homelab TB3 mesh/custom.tbmesh.mesh_paging)=1 and length(last(/Homelab TB3 mesh/custom.tbmesh.last_meshwide))>=0'
+              name: 'Homelab TB3 mesh: whole mesh down, auto recovery gave up on {HOST.NAME} ({ITEM.LASTVALUE2})'
+              priority: HIGH
+              description: 'Coordinated resets did not bring the mesh back and the heal will not reboot on its own (AUTO_MESH_REBOOT is off, or its guards refused: no quorum, no reachable target, evacuation incomplete). A human reboots the nodes one at a time, or cold-cycles both ends of a stuck edge together. Clears when a peer is reachable again. Runbooks: TB3 mesh page link/129, outage runbook link/358.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: e723fcb965d54b45b3e14490d1919426
+          name: 'TB3 mesh: heal actions this boot'
+          type: DEPENDENT
+          key: 'custom.tbmesh.events_this_boot'
+          description: 'Lines in /var/lib/tb-mesh-heal/events.log with a timestamp after boot.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.events_this_boot"
+          master_item:
+            key: custom.tbmesh.status
+          tags:
+            - tag: component
+              value: tbmesh
+        - uuid: 7748e42e3e5049b98b8369ef8a5a8759
+          name: 'TB3 mesh: last heal action'
+          type: DEPENDENT
+          key: 'custom.tbmesh.last_event'
+          value_type: CHAR
+          trends: '0'
+          description: 'Newest heal action, same text the buzz alert used to carry: tbmesh <if> reason=missing|noadj|rescan|back|reboot|guests|nobus|coordreset|linkstuck [att=N], or meshwide host=<node> event=detected|creset|up|manual|notarget|noquorum|evacuate|evac_failed|rebooting.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.last_event"
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.tbmesh.status
+          tags:
+            - tag: component
+              value: tbmesh
+        - uuid: 4fa944a5ae854453b502c640c563502e
+          name: 'TB3 mesh: last heal action age'
+          type: DEPENDENT
+          key: 'custom.tbmesh.last_event_age'
+          units: s
+          description: 'Seconds since the newest heal action. 999999 when there was never one.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.last_event_age"
+          master_item:
+            key: custom.tbmesh.status
+          tags:
+            - tag: component
+              value: tbmesh
+          triggers:
+            - uuid: 5303d887e4b44498a796f1067a48d94d
+              expression: 'last(/Homelab TB3 mesh/custom.tbmesh.last_event_age)<{$TBMESH_ACTED_WINDOW} and length(last(/Homelab TB3 mesh/custom.tbmesh.last_event))>0'
+              name: 'Homelab TB3 mesh: heal acted on {HOST.NAME}: {ITEM.LASTVALUE2}'
+              priority: INFO
+              description: 'The mesh watchdog did something (reset a controller, rescanned the PCI bus, ran a coordinated reset, or an interface came back). Informational: no action needed unless it keeps happening (see the reset-rate Warning) or a High from this template is open. Resolves on its own {$TBMESH_ACTED_WINDOW} after the last action. Meaning of each reason: BookStack link/129.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 29b834a20be948759ed9a538e2657679
+          name: 'TB3 mesh: last whole-mesh action'
+          type: DEPENDENT
+          key: 'custom.tbmesh.last_meshwide'
+          value_type: CHAR
+          trends: '0'
+          description: 'Newest meshwide event this boot (detected, creset, up, manual, notarget, noquorum, evacuate, evac_failed, rebooting).'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.last_meshwide"
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.tbmesh.status
+          tags:
+            - tag: component
+              value: tbmesh
+        - uuid: eb40ef36cbef40c593950efb00f95ced
+          name: 'TB3 mesh: AUTO_MESH_REBOOT'
+          type: DEPENDENT
+          key: 'custom.tbmesh.auto_mesh_reboot'
+          description: 'AUTO_MESH_REBOOT from /etc/default/tb-mesh-heal: 0 page instead of rebooting (default), 1 evacuate guests and reboot, -1 file unreadable by the agent.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.auto_mesh_reboot"
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+          master_item:
+            key: custom.tbmesh.status
+          tags:
+            - tag: component
+              value: tbmesh
+        - uuid: b0b1433b7aab4ae3996d20549288b755
+          name: 'TB3 mesh: test marker present'
+          type: DEPENDENT
+          key: 'custom.tbmesh.test'
+          description: '1 while /etc/zabbix/homelab-test/tbmesh exists (dry-run input for the triggers).'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.test"
+          master_item:
+            key: custom.tbmesh.status
+          tags:
+            - tag: component
+              value: tbmesh
+          triggers:
+            - uuid: 26702ffed3934c44aa2b1f52f74d4cc7
+              expression: 'min(/Homelab TB3 mesh/custom.tbmesh.test,1h)=1'
+              name: 'Homelab TB3 mesh: test marker left in place on {HOST.NAME}'
+              priority: WARNING
+              description: 'The dry-run marker /etc/zabbix/homelab-test/tbmesh has existed for over an hour; the mesh triggers on this host are showing synthetic state. Remove it: sudo rm -f /etc/zabbix/homelab-test/tbmesh'
+              tags:
+                - tag: scope
+                  value: availability
+      discovery_rules:
+        - uuid: 43bb55558f174a0fad1c7d8dec2af58f
+          name: 'TB3 mesh interface discovery'
+          type: DEPENDENT
+          key: custom.tbmesh.if.discovery
+          lifetime: 7d
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
+          description: 'One row per mesh interface that has a reset script (en02, en03).'
+          item_prototypes:
+            - uuid: bf621dd2ca1d4fa0884930b9d3aca058
+              name: 'TB3 mesh [{#IFNAME}]: netdev present'
+              type: DEPENDENT
+              key: 'custom.tbmesh.if.present[{#IFNAME}]'
+              description: '1 when /sys/class/net/{#IFNAME} exists. 0 while the Thunderbolt netdev is missing (boot race, disconnect bug, or a stale-tunnel wedge); the heal is working on it.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['ifaces']['{#IFNAME}']['present']"
+              master_item:
+                key: custom.tbmesh.status
+              tags:
+                - tag: component
+                  value: tbmesh
+            - uuid: f95490a7431a4f31b87cf9ddf941c7fd
+              name: 'TB3 mesh [{#IFNAME}]: single-ended resets'
+              type: DEPENDENT
+              key: 'custom.tbmesh.if.resets[{#IFNAME}]'
+              description: 'Delta of the monotonic reset counter: PCI resets of this controller by the heal (missing netdev or lost adjacency), including the quiet repeats of the missing-netdev ladder.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['ifaces']['{#IFNAME}']['resets']"
+                - type: SIMPLE_CHANGE
+              master_item:
+                key: custom.tbmesh.status
+              tags:
+                - tag: component
+                  value: tbmesh
+              trigger_prototypes:
+                - uuid: 9bb74180123c43889a73ce842f8d2778
+                  expression: 'sum(/Homelab TB3 mesh/custom.tbmesh.if.resets[{#IFNAME}],1h)>=3'
+                  name: 'Homelab TB3 mesh: {#IFNAME} reset 3 or more times in 1 h on {HOST.NAME}'
+                  priority: WARNING
+                  description: 'The heal keeps resetting this controller: the netdev or the openfabric adjacency does not stay up. On the missing-netdev ladder it tries 6 single-ended resets (10 min apart), then one coordinated both-ends reset, then declares the edge stuck (High). Watch, do nothing yet; check the far end ({ITEM.LASTVALUE1} is the last delta) with `journalctl -t tb-mesh-heal`.'
+                  dependencies:
+                    - name: 'Homelab TB3 mesh: whole mesh down on {HOST.NAME} for {ITEM.LASTVALUE1}'
+                      expression: 'last(/Homelab TB3 mesh/custom.tbmesh.mesh_down_for)>={$TBMESH_DOWN_GRACE}'
+                  tags:
+                    - tag: scope
+                      value: availability
+            - uuid: b6ed8dc628f04eebb6d81f4fe1a2f42b
+              name: 'TB3 mesh [{#IFNAME}]: last heal reason'
+              type: DEPENDENT
+              key: 'custom.tbmesh.if.last_reason[{#IFNAME}]'
+              value_type: CHAR
+              trends: '0'
+              description: 'Reason of the newest heal action on this interface this boot (missing, noadj, rescan, back, reboot, guests, nobus, coordreset, linkstuck).'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['ifaces']['{#IFNAME}']['last_reason']"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.tbmesh.status
+              tags:
+                - tag: component
+                  value: tbmesh
+            - uuid: 630f8e9a39fb40d0b8ec764f002a5aef
+              name: 'TB3 mesh [{#IFNAME}]: edge stuck'
+              type: DEPENDENT
+              key: 'custom.tbmesh.if.linkstuck[{#IFNAME}]'
+              description: '1 while the heal has given up on this edge: 6 single-ended resets and one coordinated both-ends reset did not bring the netdev back. Cleared by the heal when the netdev returns or on the next boot.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['ifaces']['{#IFNAME}']['linkstuck']"
+              master_item:
+                key: custom.tbmesh.status
+              tags:
+                - tag: component
+                  value: tbmesh
+              trigger_prototypes:
+                - uuid: 06896cc25fbe462c83e95588c1f57211
+                  expression: 'last(/Homelab TB3 mesh/custom.tbmesh.if.linkstuck[{#IFNAME}])=1'
+                  name: 'Homelab TB3 mesh: edge {#IFNAME} stuck on {HOST.NAME}, needs a simultaneous cold cycle of both ends'
+                  priority: HIGH
+                  description: 'A stale Thunderbolt tunnel: one end holds its half and no warm reset clears it (proven 2026-09-04 on pve3-pve4). The fix is a cold power cycle of BOTH end nodes at the same time, never one end alone; migrate guests first. The mesh keeps working over the third node meanwhile (routed, not direct). Clears on its own when the edge re-forms. Runbooks: TB3 mesh page link/129, outage runbook link/358.'
+                  dependencies:
+                    - name: 'Homelab TB3 mesh: whole mesh down on {HOST.NAME} for {ITEM.LASTVALUE1}'
+                      expression: 'last(/Homelab TB3 mesh/custom.tbmesh.mesh_down_for)>={$TBMESH_DOWN_GRACE}'
+                  tags:
+                    - tag: scope
+                      value: availability
+            - uuid: 8e85d1e31d904fe7b4aaf9cbec255c53
+              name: 'TB3 mesh [{#IFNAME}]: controller off the PCI bus'
+              type: DEPENDENT
+              key: 'custom.tbmesh.if.nobus[{#IFNAME}]'
+              description: '1 while the Thunderbolt domain behind this interface is gone from the PCI bus and the heal cannot reboot the node (guests running, guest check failed, or 3 auto-reboots already tried). Cleared when the domain is back.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['ifaces']['{#IFNAME}']['nobus']"
+              master_item:
+                key: custom.tbmesh.status
+              tags:
+                - tag: component
+                  value: tbmesh
+              trigger_prototypes:
+                - uuid: b7e77ed3662a431f98a7f10c7cac0dae
+                  expression: 'last(/Homelab TB3 mesh/custom.tbmesh.if.nobus[{#IFNAME}])=1'
+                  name: 'Homelab TB3 mesh: controller {#IFNAME} gone from the PCI bus on {HOST.NAME}, reboot needed'
+                  priority: HIGH
+                  description: 'The Thunderbolt controller dropped off PCIe and 3 bus rescans did not resurrect it. The heal only auto-reboots a node with zero running guests (never after 3 tries): migrate the guests off and reboot this node at a good time. If it happens again after a reboot, hardware (controller or cable seat). Clears when the domain is back on the bus. Runbooks: TB3 mesh page link/129, outage runbook link/358.'
+                  dependencies:
+                    - name: 'Homelab TB3 mesh: whole mesh down on {HOST.NAME} for {ITEM.LASTVALUE1}'
+                      expression: 'last(/Homelab TB3 mesh/custom.tbmesh.mesh_down_for)>={$TBMESH_DOWN_GRACE}'
+                  tags:
+                    - tag: scope
+                      value: availability
+            - uuid: 32fedaa907e8407da1699f0425230979
+              name: 'TB3 mesh [{#IFNAME}]: far-end peer'
+              type: DEPENDENT
+              key: 'custom.tbmesh.if.peer[{#IFNAME}]'
+              value_type: CHAR
+              trends: '0'
+              description: 'Node at the far end of this link, learned by the heal while the openfabric adjacency was up.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['ifaces']['{#IFNAME}']['peer']"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1d
+              master_item:
+                key: custom.tbmesh.status
+              tags:
+                - tag: component
+                  value: tbmesh
+          master_item:
+            key: custom.tbmesh.status
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.lld_ifaces
+      tags:
+        - tag: class
+          value: custom
+      macros:
+        - macro: '{$TBMESH_ACTED_WINDOW}'
+          value: 10m
+          description: 'How long the Information "heal acted" problem stays open after the last heal action.'
+        - macro: '{$TBMESH_DOWN_GRACE}'
+          value: 5m
+          description: 'Whole-mesh-down time before the High opens. Matches MESH_GRACE in tb-mesh-heal.sh (300 s), so the trigger and the heal act together.'
+        - macro: '{$TBMESH_HEAL_STALE}'
+          value: 10m
+          description: 'Warning when the heal cron has not started a run for this long (it runs every minute; one run can legitimately take a few minutes during a coordinated reset).'
