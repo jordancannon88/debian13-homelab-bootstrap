@@ -47,7 +47,7 @@ zabbix_export:
               value: internet
           triggers:
             - uuid: db35575c1c8c4bb397d894ca0637fa50
-              expression: 'max(/Homelab internet/isp.gw.ping,3m)=0'
+              expression: 'max(/Homelab internet/isp.gw.ping,5m)=0'
               name: 'Internet: ISP router {$ISP_ROUTER} unreachable from opn1'
               priority: WARNING
               description: 'The firewall itself cannot ping its gateway although the Zabbix server can (otherwise the High above is open and this one is suppressed): the WAN side of opn1, its VLAN or a firewall rule. Reading the three layers: router unreachable = power, cable or the modem; router up but no internet = the ISP or the WAN link; internet up but DNS failing = the resolver. Runbook: BookStack link/332 (OPNsense notes), card 9yfu635gx2y4.'
