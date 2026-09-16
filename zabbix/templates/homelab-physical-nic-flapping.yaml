@@ -81,7 +81,7 @@ zabbix_export:
                   - macro: '{#ROLE}'
                     value: '^wan$'
               operations:
-                - object: TRIGGER_PROTOTYPE
+                - operationobject: TRIGGER_PROTOTYPE
                   operator: REGEXP
                   value: '^NIC '
                   discover: NO_DISCOVER
@@ -93,7 +93,7 @@ zabbix_export:
                     value: '^wan$'
                     operator: NOT_MATCHES_REGEX
               operations:
-                - object: TRIGGER_PROTOTYPE
+                - operationobject: TRIGGER_PROTOTYPE
                   operator: REGEXP
                   value: '^WAN-side'
                   discover: NO_DISCOVER
