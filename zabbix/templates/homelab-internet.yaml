@@ -33,6 +33,8 @@ zabbix_export:
                   value: availability
                 - tag: layer
                   value: isp-router
+                - tag: layer
+                  value: internet
         - uuid: 70f567161883406297b9bec3996a768b
           name: 'ISP router reachable from opn1 (snmpd extend ispgw)'
           type: SNMP_AGENT
@@ -79,6 +81,8 @@ zabbix_export:
               tags:
                 - tag: scope
                   value: availability
+                - tag: layer
+                  value: internet
         - uuid: 1f4ba06d271a4bf4a6305da675d6bb20
           name: 'Internet reachable (ICMP to Quad9)'
           type: SIMPLE
