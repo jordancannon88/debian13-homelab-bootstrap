@@ -7,7 +7,7 @@ zabbix_export:
     - uuid: 0283ca7f1f89408e8c9fd28f4e643367
       template: 'Homelab physical NIC flapping'
       name: 'Homelab physical NIC flapping'
-      description: 'Physical-NIC failure family on bare-metal nodes. (1) Link flapping: LLD of real, non-wireless NICs (custom.physnic.discovery) and the kernel carrier_down_count per interface (custom.nic.carrier_down), High on 3+ link-downs in 5 min; a bouncing corosync cable self-fences a Proxmox node within a minute. (2) PCIe detach: custom.nic.pcie_detach counts "PCIe link lost, device now detached" kernel-journal lines this boot (the I225-V fault of 2026-09-05), High on any increase, manual close. Host side: physnic-discovery.sh, nic-carrier-down.sh, nic-pcie-detach.sh + physnic.conf, zabbix user in systemd-journal; installed by debian13-homelab-bootstrap monitoring.sh (ZABBIX_NIC_FLAP). Source of truth: zabbix/templates/homelab-physical-nic-flapping.yaml in that repo. Docs: BookStack link/375, catalog link/376.'
+      description: 'Physical-NIC failure family on bare-metal nodes. (1) Link flapping: LLD of real, non-wireless NICs (custom.physnic.discovery, with {#ROLE} wan|lan|mesh from /etc/zabbix/homelab-nic-roles) and the kernel carrier_down_count per interface (custom.nic.carrier_down): High on 3+ link-downs in 5 min for our-side NICs (a bouncing corosync cable self-fences a Proxmox node within a minute), Warning "WAN-side NIC ... (ISP router side)" for NICs that face the ISP router. (2) PCIe detach: custom.nic.pcie_detach counts "PCIe link lost, device now detached" kernel-journal lines this boot (the I225-V fault of 2026-09-05), High on any increase, manual close. Host side: physnic-discovery.sh, nic-carrier-down.sh, nic-pcie-detach.sh + physnic.conf, zabbix user in systemd-journal; installed by debian13-homelab-bootstrap monitoring.sh (ZABBIX_NIC_FLAP). Source of truth: zabbix/templates/homelab-physical-nic-flapping.yaml in that repo. Docs: BookStack link/375, catalog link/376.'
       groups:
         - name: Templates/Custom
       items:
@@ -45,12 +45,58 @@ zabbix_export:
               key: 'custom.nic.carrier_down[{#IFNAME}]'
               preprocessing:
                 - type: SIMPLE_CHANGE
+              tags:
+                - tag: component
+                  value: network
+                - tag: role
+                  value: '{#ROLE}'
               trigger_prototypes:
                 - uuid: 149de243dc604e168653477f1d50e49d
                   expression: 'sum(/Homelab physical NIC flapping/custom.nic.carrier_down[{#IFNAME}],5m)>2'
-                  name: 'NIC {#IFNAME} ({#DRIVER}) flapping on {HOST.NAME}'
+                  name: 'NIC {#IFNAME} ({#DRIVER}, {#ROLE}) flapping on {HOST.NAME}'
                   priority: HIGH
+                  description: 'A physical NIC on our side (LAN or mesh) lost link 3 or more times in 5 minutes. Cable first, then switch port, then the NIC; on a corosync NIC this self-fences the node within a minute. Close by hand once the cause is known.'
                   manual_close: 'YES'
+                  tags:
+                    - tag: scope
+                      value: availability
+                    - tag: role
+                      value: '{#ROLE}'
+                - uuid: 554927dccc9947b4a91b149dfb7a9668
+                  expression: 'sum(/Homelab physical NIC flapping/custom.nic.carrier_down[{#IFNAME}],5m)>2'
+                  name: 'WAN-side NIC {#IFNAME} ({#DRIVER}) flapping on {HOST.NAME} (ISP router side)'
+                  priority: WARNING
+                  description: 'The NIC that faces the ISP router lost link 3 or more times in 5 minutes. Usually the router rebooting or its port bouncing, not our cable. Once the Homelab internet template exists, a global correlation rule closes this automatically while "ISP router unreachable" is open (Kan 9yfu635gx2y4). Close by hand otherwise.'
+                  manual_close: 'YES'
+                  tags:
+                    - tag: scope
+                      value: availability
+                    - tag: role
+                      value: '{#ROLE}'
+          overrides:
+            - name: 'WAN-side NICs'
+              step: '1'
+              filter:
+                conditions:
+                  - macro: '{#ROLE}'
+                    value: '^wan$'
+              operations:
+                - object: TRIGGER_PROTOTYPE
+                  operator: REGEXP
+                  value: '^NIC '
+                  discover: NO_DISCOVER
+            - name: 'Our-side NICs'
+              step: '2'
+              filter:
+                conditions:
+                  - macro: '{#ROLE}'
+                    value: '^wan$'
+                    operator: NOT_MATCHES_REGEX
+              operations:
+                - object: TRIGGER_PROTOTYPE
+                  operator: REGEXP
+                  value: '^WAN-side'
+                  discover: NO_DISCOVER
           graph_prototypes:
             - uuid: 1644c479543942d3bdf48a458cba2ad5
               name: 'NIC {#IFNAME} link-down events per minute'
