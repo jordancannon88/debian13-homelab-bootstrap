@@ -117,10 +117,28 @@ zabbix_export:
           tags:
             - tag: component
               value: tbmesh
+        - uuid: b655562906b34100905c6c6d64149aa6
+          name: 'TB3 mesh: whole mesh auto recovery gave up, reason'
+          type: DEPENDENT
+          key: 'custom.tbmesh.paging_reason'
+          value_type: CHAR
+          trends: '0'
+          description: 'Why the heal gave up on a whole-mesh episode: manual (resets ineffective after MESH_REBOOT_AFTER, AUTO_MESH_REBOOT off), or notarget, noquorum, evac_failed (an evacuate-and-reboot guard refused). Empty when not paging. The trigger keys on this one item so the problem name always carries the reason.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.paging_reason"
+              error_handler: CUSTOM_VALUE
+              error_handler_params: ''
+          master_item:
+            key: custom.tbmesh.status
+          tags:
+            - tag: component
+              value: tbmesh
           triggers:
-            - uuid: 77160ef8fa344430a2bcc513e1ee220c
-              expression: 'last(/Homelab TB3 mesh/custom.tbmesh.mesh_paging)=1 and length(last(/Homelab TB3 mesh/custom.tbmesh.last_meshwide))>=0'
-              name: 'Homelab TB3 mesh: whole mesh down, auto recovery gave up on {HOST.NAME} ({ITEM.LASTVALUE2})'
+            - uuid: f39219f17bb0418e83245a21158009ad
+              expression: 'length(last(/Homelab TB3 mesh/custom.tbmesh.paging_reason))>0'
+              name: 'Homelab TB3 mesh: whole mesh down, auto recovery gave up on {HOST.NAME} ({ITEM.LASTVALUE1})'
               priority: HIGH
               description: 'Coordinated resets did not bring the mesh back and the heal will not reboot on its own (AUTO_MESH_REBOOT is off, or its guards refused: no quorum, no reachable target, evacuation incomplete). A human reboots the nodes one at a time, or cold-cycles both ends of a stuck edge together. Clears when a peer is reachable again. Runbooks: TB3 mesh page link/129, outage runbook link/358.'
               tags:
