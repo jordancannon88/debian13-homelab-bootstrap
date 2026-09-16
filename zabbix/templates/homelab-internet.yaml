@@ -1,0 +1,225 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: bf6177b54b3f4fe39b327f18494c3001
+      name: Templates/Custom
+  templates:
+    - uuid: 6b94c64476db4c779cad666ff2843cc9
+      template: 'Homelab internet'
+      name: 'Homelab internet'
+      description: 'Internet reachability and the ISP router, with the cause told apart in three layers. Linked to opn1 (the host closest to the router) so the triggers can depend on each other: ISP router unreachable (root, High), WAN link down on opn1 (High), no internet reachability (High), router unreachable from opn1 (Warning), latency (Warning). Simple checks run from the Zabbix server through opn1 like every LAN client; the WAN link and the firewall-side ping come over SNMPv3 (dynamic ifDescr index, snmpd extend ispgw). Name resolution is the sibling template Homelab DNS on the Zabbix server host, tied in by an event correlation rule. A second correlation rule closes the WAN-side NIC flap Warnings (tag role=wan) while the router is unreachable (tag layer=isp-router). Source of truth: zabbix/templates/homelab-internet.yaml in debian13-homelab-bootstrap. Kan 9yfu635gx2y4. Docs: catalog link/376.'
+      groups:
+        - name: Templates/Custom
+      items:
+        - uuid: dcbfbef08ae84833aef0b374f5e7dc8a
+          name: 'ISP router reachable (ICMP from the Zabbix server)'
+          type: SIMPLE
+          key: 'icmpping[{$ISP_ROUTER},3,,,]'
+          delay: 30s
+          description: 'fping from the Zabbix server to the ISP router (opn1 default gateway), 3 packets, 1 = at least one answer. Runs from inside the LAN through opn1 like every client.'
+          valuemap:
+            name: 'Service state'
+          tags:
+            - tag: component
+              value: internet
+          triggers:
+            - uuid: 1a149664178e4b83a634012b8f43a126
+              expression: 'max(/Homelab internet/icmpping[{$ISP_ROUTER},3,,,],3m)=0'
+              name: 'Internet: ISP router {$ISP_ROUTER} unreachable'
+              priority: HIGH
+              description: 'No answer from the ISP router for 3 minutes (3-minute window so a single lost ping never pages). Power, cable or the modem itself; a router power cycle also bounces the WAN-side NICs on pve1 and pve2, whose flap Warnings are auto-closed by the event correlation rule while this is open. Everything downstream (WAN link, internet, DNS) depends on this trigger. Reading the three layers: router unreachable = power, cable or the modem; router up but no internet = the ISP or the WAN link; internet up but DNS failing = the resolver. Runbook: BookStack link/332 (OPNsense notes), card 9yfu635gx2y4.'
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: layer
+                  value: isp-router
+        - uuid: 70f567161883406297b9bec3996a768b
+          name: 'ISP router reachable from opn1 (snmpd extend ispgw)'
+          type: SNMP_AGENT
+          snmp_oid: '.1.3.6.1.4.1.8072.1.3.2.3.1.1.5.105.115.112.103.119'
+          key: 'isp.gw.ping'
+          delay: 1m
+          description: '`extend ispgw /usr/local/bin/isp-gw-ping.sh` in /usr/local/etc/snmp/snmpd.conf on opn1: one ping from the firewall itself to its default gateway, 1 = answered.'
+          valuemap:
+            name: 'Service state'
+          tags:
+            - tag: component
+              value: internet
+          triggers:
+            - uuid: db35575c1c8c4bb397d894ca0637fa50
+              expression: 'max(/Homelab internet/isp.gw.ping,3m)=0'
+              name: 'Internet: ISP router {$ISP_ROUTER} unreachable from opn1'
+              priority: WARNING
+              description: 'The firewall itself cannot ping its gateway although the Zabbix server can (otherwise the High above is open and this one is suppressed): the WAN side of opn1, its VLAN or a firewall rule. Reading the three layers: router unreachable = power, cable or the modem; router up but no internet = the ISP or the WAN link; internet up but DNS failing = the resolver. Runbook: BookStack link/332 (OPNsense notes), card 9yfu635gx2y4.'
+              dependencies:
+                - name: 'Internet: ISP router {$ISP_ROUTER} unreachable'
+                  expression: 'max(/Homelab internet/icmpping[{$ISP_ROUTER},3,,,],3m)=0'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: a2945cf5aa544da7a92af761a04e2f74
+          name: 'WAN link state on opn1'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.2.1.2.2.1.8["index","1.3.6.1.2.1.2.2.1.2","{$WAN_IF}"]'
+          key: 'net.if.wan.status'
+          delay: 1m
+          description: 'ifOperStatus of the WAN interface, index resolved at poll time from ifDescr = {$WAN_IF} (vtnet0 today; the HA-fw plan may change it). 1 = up, 2 = down, 7 = lowerLayerDown.'
+          tags:
+            - tag: component
+              value: internet
+          triggers:
+            - uuid: 0dfacad506dd4687a6c8cdcb9c05a83f
+              expression: 'last(/Homelab internet/net.if.wan.status)<>1'
+              name: 'Internet: WAN link {$WAN_IF} down on opn1'
+              priority: HIGH
+              description: 'The WAN interface on the firewall is not operationally up: the virtio NIC in the opn1 VM, the RTL8156 dongle on pve2 (its flap Warning says so), or the cable to the ISP router. Suppressed while the router is unreachable. Reading the three layers: router unreachable = power, cable or the modem; router up but no internet = the ISP or the WAN link; internet up but DNS failing = the resolver. Runbook: BookStack link/332 (OPNsense notes), card 9yfu635gx2y4.'
+              dependencies:
+                - name: 'Internet: ISP router {$ISP_ROUTER} unreachable'
+                  expression: 'max(/Homelab internet/icmpping[{$ISP_ROUTER},3,,,],3m)=0'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 1f4ba06d271a4bf4a6305da675d6bb20
+          name: 'Internet reachable (ICMP to Quad9)'
+          type: SIMPLE
+          key: 'icmpping[9.9.9.9,3,,,]'
+          delay: 30s
+          description: 'fping from the Zabbix server to 9.9.9.9 (house rule: Quad9 for public reachability tests), 3 packets.'
+          valuemap:
+            name: 'Service state'
+          tags:
+            - tag: component
+              value: internet
+        - uuid: de0b917f11174e9eac11ae4e814777aa
+          name: 'Internet reachable (TCP 443 to ghcr.io)'
+          type: SIMPLE
+          key: 'net.tcp.service[https,ghcr.io,443]'
+          delay: 1m
+          description: 'TCP connect to a real host on port 443 from the Zabbix server. Resolver IPs are blocked for DoH/DoT and can mislead; a container registry is used every day.'
+          valuemap:
+            name: 'Service state'
+          tags:
+            - tag: component
+              value: internet
+          triggers:
+            - uuid: 92d6b334b4bb47038c405a02aca8f9a6
+              expression: 'max(/Homelab internet/icmpping[9.9.9.9,3,,,],3m)=0 and max(/Homelab internet/net.tcp.service[https,ghcr.io,443],3m)=0'
+              name: 'Internet: no internet reachability'
+              priority: HIGH
+              description: 'Neither ICMP to Quad9 nor TCP 443 to ghcr.io worked for 3 minutes while the ISP router answers and the WAN link is up: the ISP, or the path beyond the router. Nothing to fix in the lab; wait, or check the ISP status page from a phone. Delivery note: during an internet outage only a LAN-side sink can deliver this. Reading the three layers: router unreachable = power, cable or the modem; router up but no internet = the ISP or the WAN link; internet up but DNS failing = the resolver. Runbook: BookStack link/332 (OPNsense notes), card 9yfu635gx2y4.'
+              dependencies:
+                - name: 'Internet: ISP router {$ISP_ROUTER} unreachable'
+                  expression: 'max(/Homelab internet/icmpping[{$ISP_ROUTER},3,,,],3m)=0'
+                - name: 'Internet: WAN link {$WAN_IF} down on opn1'
+                  expression: 'last(/Homelab internet/net.if.wan.status)<>1'
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: layer
+                  value: internet
+        - uuid: 2987fe98ff3040a9bb13dc55207ddd30
+          name: 'Internet latency to Quad9'
+          type: SIMPLE
+          key: 'icmppingsec[9.9.9.9,3,,,,avg]'
+          delay: 1m
+          value_type: FLOAT
+          units: s
+          description: 'Average round trip of 3 pings from the Zabbix server to 9.9.9.9. Baseline about 15 ms.'
+          tags:
+            - tag: component
+              value: internet
+          triggers:
+            - uuid: 85b353a297a943ea8def68d493a83041
+              expression: 'min(/Homelab internet/icmppingsec[9.9.9.9,3,,,,avg],5m)>{$INTERNET_LATENCY_MAX}'
+              name: 'Internet: latency to Quad9 above {$INTERNET_LATENCY_MAX} for 5m'
+              priority: WARNING
+              description: 'Every ping in the last 5 minutes was slower than the threshold: a saturated uplink (a backup or a large upload) or ISP trouble. Informational unless it lasts. Reading the three layers: router unreachable = power, cable or the modem; router up but no internet = the ISP or the WAN link; internet up but DNS failing = the resolver. Runbook: BookStack link/332 (OPNsense notes), card 9yfu635gx2y4.'
+              dependencies:
+                - name: 'Internet: no internet reachability'
+                  expression: 'max(/Homelab internet/icmpping[9.9.9.9,3,,,],3m)=0 and max(/Homelab internet/net.tcp.service[https,ghcr.io,443],3m)=0'
+              tags:
+                - tag: scope
+                  value: availability
+      tags:
+        - tag: class
+          value: custom
+      macros:
+        - macro: '{$INTERNET_LATENCY_MAX}'
+          value: 0.2
+          description: 'Warning when every ping to Quad9 in 5 minutes is slower than this (seconds).'
+        - macro: '{$ISP_ROUTER}'
+          value: 192.168.0.1
+          description: 'The ISP router: opn1 default gateway (netstat -rn on opn1). Change here if the modem is replaced or the WAN is renumbered.'
+        - macro: '{$WAN_IF}'
+          value: vtnet0
+          description: 'ifDescr of the WAN interface on opn1, used to resolve the SNMP index at poll time.'
+      valuemaps:
+        - uuid: c681fcbe34d94bfab7defd9596a8934a
+          name: 'Service state'
+          mappings:
+            - value: '0'
+              newvalue: Down
+            - value: '1'
+              newvalue: Up
+    - uuid: 22e379665bd24e2a8d9660c125e01d3b
+      template: 'Homelab DNS'
+      name: 'Homelab DNS'
+      description: 'Name resolution seen from the Zabbix server host (agent net.dns): internal names through opn1 Unbound (High) and an external name straight from Quad9 (Warning, closed by correlation while Homelab internet reports no internet reachability). Linked to the Zabbix server host only. Source of truth: zabbix/templates/homelab-internet.yaml (same file as Homelab internet). Kan 9yfu635gx2y4.'
+      groups:
+        - name: Templates/Custom
+      items:
+        - uuid: e486a945062c4058b8b7b9ffd5c12e01
+          name: 'DNS: internal name resolves (through opn1 Unbound)'
+          type: ZABBIX_ACTIVE
+          key: 'net.dns[,bookstack.local.cannon.dev]'
+          delay: 1m
+          description: 'The Zabbix agent on the server resolves an internal name through its normal resolver (opn1, 192.168.5.1). 1 = answer received.'
+          valuemap:
+            name: 'Service state'
+          tags:
+            - tag: component
+              value: internet
+          triggers:
+            - uuid: f4032cf026654078a24d2821af2e361e
+              expression: 'max(/Homelab DNS/net.dns[,bookstack.local.cannon.dev],3m)=0'
+              name: 'DNS: internal names not resolving (opn1 Unbound)'
+              priority: HIGH
+              description: 'The LAN resolver on opn1 is not answering for internal names for 3 minutes: Unbound stopped or its config broke (the 2026-09-05 renumber incident class). Every internal service name fails while this is open, independent of the internet. Check `configctl unbound status` on opn1, then System > Gateways and the DNS redirect rules. Runbook: BookStack link/332.'
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: layer
+                  value: dns-internal
+        - uuid: d757b17f45fa4c28a2bb7954ecbc6fdd
+          name: 'DNS: external name resolves (Quad9 direct)'
+          type: ZABBIX_ACTIVE
+          key: 'net.dns[9.9.9.9,ghcr.io]'
+          delay: 1m
+          description: 'The Zabbix agent asks 9.9.9.9 directly for an external name. 1 = answer received. Fails during any internet outage, so its trigger is closed by the correlation rule while "no internet reachability" is open.'
+          valuemap:
+            name: 'Service state'
+          tags:
+            - tag: component
+              value: internet
+          triggers:
+            - uuid: 22428a30dab1453c84c47824ea8a1621
+              expression: 'max(/Homelab DNS/net.dns[9.9.9.9,ghcr.io],3m)=0'
+              name: 'DNS: external names not resolving (Quad9 direct)'
+              priority: WARNING
+              description: 'Quad9 did not answer a direct query for 3 minutes while the internet is otherwise reachable (the correlation rule closes this while "Internet: no internet reachability" is open): UDP 53 blocked or rate-limited upstream, or Quad9 itself. Try `dig @149.112.112.112 ghcr.io`. Card 9yfu635gx2y4.'
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: layer
+                  value: dns-external
+      tags:
+        - tag: class
+          value: custom
+      valuemaps:
+        - uuid: 8dc6a033d3a54e7196cbd767d43ff46e
+          name: 'Service state'
+          mappings:
+            - value: '0'
+              newvalue: Down
+            - value: '1'
+              newvalue: Up
