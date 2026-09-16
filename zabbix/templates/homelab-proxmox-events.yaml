@@ -7,7 +7,7 @@ zabbix_export:
     - uuid: 70c85608cc684203b91ef91082f0359c
       template: 'Homelab Proxmox events'
       name: 'Homelab Proxmox events'
-      description: 'Proxmox VE events that used to post to buzz #Alerts. Replication: every pvesr job as an LLD row (fails, state, last sync, enabled) from custom.pve.replication (pve-replication-json.sh via a sudoers line limited to `pvesr status`), failing High, missed-schedule Warning (2 h past the job''s own next sync), script-error High. Backups: failed vzdump tasks as a sticky High from custom.pve.backup (pve-backup-json.py, pvesh through sudo; test marker /etc/zabbix/homelab-test/backup). HA events join on card a89gxf9oi0fc. Host side installed by debian13-homelab-bootstrap monitoring.sh (ZABBIX_PVE_EVENTS). Source of truth: zabbix/templates/homelab-proxmox-events.yaml in that repo. Kan q7wzccj15ypp, tracker a25kba4yp866.'
+      description: 'Proxmox VE events that used to post to buzz #Alerts. Replication: every pvesr job as an LLD row (fails, state, last sync, enabled) from custom.pve.replication (pve-replication-json.sh via a sudoers line limited to `pvesr status`), failing High, missed-schedule Warning (2 h past the job''s own next sync), script-error High. Backups: failed vzdump tasks as a sticky High from custom.pve.backup (pve-backup-json.py, pvesh through sudo; test marker /etc/zabbix/homelab-test/backup). HA events: recover (High, sticky) and migrate/relocate (Information, sticky) from the pve-ha-crm journal via custom.pve.ha (pve-ha-events-json.sh, no sudo; test marker /etc/zabbix/homelab-test/ha-event). Host side installed by debian13-homelab-bootstrap monitoring.sh (ZABBIX_PVE_EVENTS). Source of truth: zabbix/templates/homelab-proxmox-events.yaml in that repo. Kan q7wzccj15ypp, tracker a25kba4yp866.'
       groups:
         - name: Templates/Custom
       items:
@@ -245,6 +245,144 @@ zabbix_export:
           tags:
             - tag: component
               value: backup
+        - uuid: d9d406c5dbe045a6b0f69beadc5f58e7
+          name: 'HA events (raw)'
+          type: ZABBIX_ACTIVE
+          key: custom.pve.ha
+          delay: 1m
+          history: '0'
+          value_type: TEXT
+          timeout: 15s
+          description: 'JSON from pve-ha-events-json.sh (pve-ha-crm journal through a cursor; only the CRM master logs HA events). Master for every HA item.'
+          tags:
+            - tag: component
+              value: raw
+            - tag: component
+              value: ha
+        - uuid: 2e47afe5681d4a99ad3c390600c8d8d7
+          name: 'HA: event script error'
+          type: DEPENDENT
+          key: custom.pve.ha.error
+          value_type: CHAR
+          trends: '0'
+          description: 'Non-empty when pve-ha-events-json.sh could not read the pve-ha-crm journal (journal group, cursor file). Empty is healthy.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.error
+              error_handler: CUSTOM_VALUE
+              error_handler_params: ''
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.pve.ha
+          tags:
+            - tag: component
+              value: ha
+          triggers:
+            - uuid: 7f82204f50584978a261ba7dca744f62
+              expression: 'length(last(/Homelab Proxmox events/custom.pve.ha.error))>0'
+              name: 'Homelab HA: event script failed on {{HOST.NAME}}'
+              priority: HIGH
+              description: 'The HA event collector cannot read the journal on this node; recover events would go unseen while it is CRM master. Value: {{ITEM.LASTVALUE1}}'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: db378dbdf06c4989aa20daf7a929810d
+          name: 'HA: guests recovered from fenced nodes (total since install)'
+          type: DEPENDENT
+          key: custom.pve.ha.recover_total
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.recover_total
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.pve.ha
+          tags:
+            - tag: component
+              value: ha
+        - uuid: aeb008ff9bdf4a73b842221d073d093f
+          name: 'HA: guests moved (total since install)'
+          type: DEPENDENT
+          key: custom.pve.ha.move_total
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.move_total
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.pve.ha
+          tags:
+            - tag: component
+              value: ha
+        - uuid: 26c067edf86447cf91e670a12388c439
+          name: 'HA: last recover'
+          type: DEPENDENT
+          key: custom.pve.ha.last_recover
+          value_type: CHAR
+          trends: '0'
+          description: 'Newest "recover service ... from fenced node" event: guest, from, to, time.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.last_recover
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.pve.ha
+          tags:
+            - tag: component
+              value: ha
+          triggers:
+            - uuid: 068c56fcf32f472aa432f1e0a3a0e513
+              expression: 'last(/Homelab Proxmox events/custom.pve.ha.last_recover,#1)<>last(/Homelab Proxmox events/custom.pve.ha.last_recover,#2) and length(last(/Homelab Proxmox events/custom.pve.ha.last_recover))>0'
+              recovery_mode: NONE
+              name: 'Homelab HA: guest recovered from a fenced node: {{ITEM.LASTVALUE1}}'
+              type: MULTIPLE
+              priority: HIGH
+              description: 'HA recovered a guest because its node fenced itself (watchdog reboot after lost quorum). The guest now runs from its last replication sync. Find out why the node fenced before moving guests back (report link/357, pve3 link/374). Never recovers on its own, one problem per event; close by hand.'
+              manual_close: 'YES'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: ceaddbbfa6844877ac6b76cf4e5f882c
+          name: 'HA: last move'
+          type: DEPENDENT
+          key: custom.pve.ha.last_move
+          value_type: CHAR
+          trends: '0'
+          description: 'Newest migrate or relocate event: action, guest, target node, time.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.last_move
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.pve.ha
+          tags:
+            - tag: component
+              value: ha
+          triggers:
+            - uuid: 6fe6ebd84730490e82a5e78042637e5a
+              expression: 'last(/Homelab Proxmox events/custom.pve.ha.last_move,#1)<>last(/Homelab Proxmox events/custom.pve.ha.last_move,#2) and length(last(/Homelab Proxmox events/custom.pve.ha.last_move))>0'
+              recovery_mode: NONE
+              name: 'Homelab HA: guest moved: {{ITEM.LASTVALUE1}}'
+              type: MULTIPLE
+              priority: INFO
+              description: 'An HA-managed guest was migrated or relocated (audit trail). Close by hand.'
+              manual_close: 'YES'
+              tags:
+                - tag: scope
+                  value: availability
       discovery_rules:
         - uuid: 9f1e39ea9f514f7a95cba80847997e91
           name: 'Replication job discovery'
