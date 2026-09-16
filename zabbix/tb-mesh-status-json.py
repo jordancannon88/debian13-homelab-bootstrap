@@ -13,6 +13,7 @@ Fields:
   mesh_down_for       seconds this node has reached no mesh peer on any link (0 = fine)
   mesh_paging         1 when the heal gave up on a whole-mesh episode (mesh_page file, or
                       an evacuate-and-reboot guard failed while the mesh is still down)
+  paging_reason       why (manual, notarget, noquorum, evac_failed), empty when not paging
   events_this_boot    heal actions logged since boot
   last_event          newest action ("tbmesh en03 reason=noadj", "meshwide host=pve4
                       event=creset downfor=420")
@@ -75,7 +76,7 @@ def auto_mesh_reboot():
 def main():
     now = int(time.time())
     out = {"boot_id": read("/proc/sys/kernel/random/boot_id"), "heal_last_run_age": 999999,
-           "auto_mesh_reboot": auto_mesh_reboot(), "mesh_down_for": 0, "mesh_paging": 0,
+           "auto_mesh_reboot": auto_mesh_reboot(), "mesh_down_for": 0, "mesh_paging": 0, "paging_reason": "",
            "events_this_boot": 0, "last_event": "", "last_event_age": 999999, "last_meshwide": "",
            "test": 0, "ifaces": {}, "lld_ifaces": [{"{#IFNAME}": i} for i in IFACES], "error": ""}
     if not os.path.isdir(STATE) or not os.access(STATE, os.R_OK | os.X_OK):
@@ -90,6 +91,7 @@ def main():
     if since:
         out["mesh_down_for"] = max(0, now - since)
     paging = os.path.exists(os.path.join(STATE, "mesh_page"))
+    reason = "manual" if paging else ""
 
     boot = btime()
     events = []
@@ -107,8 +109,9 @@ def main():
     if meshwide:
         out["last_meshwide"] = meshwide[-1][1][:200]
         # the evacuate-and-reboot guards page without writing mesh_page
-        if out["mesh_down_for"] > 0 and re.search(r"event=(notarget|noquorum|evac_failed)", meshwide[-1][1]):
-            paging = True
+        g = re.search(r"event=(notarget|noquorum|evac_failed)", meshwide[-1][1])
+        if out["mesh_down_for"] > 0 and g:
+            paging, reason = True, g.group(1)
 
     for i in IFACES:
         last_reason = ""
@@ -141,12 +144,13 @@ def main():
             elif w[0] == "meshdown" and len(w) > 1 and w[1].isdigit():
                 out["mesh_down_for"] = int(w[1])
             elif w[0] == "paging":
-                paging = True
+                paging, reason = True, "TEST manual"
                 out["last_meshwide"] = "meshwide host=TEST event=manual"
             elif w[0] == "stale":
                 out["heal_last_run_age"] = 9999
 
     out["mesh_paging"] = 1 if paging else 0
+    out["paging_reason"] = reason if paging else ""
     print(json.dumps(out, separators=(",", ":")))
 
 
