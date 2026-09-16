@@ -283,9 +283,9 @@ zabbix_export:
           triggers:
             - uuid: 7f82204f50584978a261ba7dca744f62
               expression: 'length(last(/Homelab Proxmox events/custom.pve.ha.error))>0'
-              name: 'Homelab HA: event script failed on {{HOST.NAME}}'
+              name: 'Homelab HA: event script failed on {HOST.NAME}'
               priority: HIGH
-              description: 'The HA event collector cannot read the journal on this node; recover events would go unseen while it is CRM master. Value: {{ITEM.LASTVALUE1}}'
+              description: 'The HA event collector cannot read the journal on this node; recover events would go unseen while it is CRM master. Value: {ITEM.LASTVALUE1}'
               tags:
                 - tag: scope
                   value: availability
@@ -344,7 +344,7 @@ zabbix_export:
             - uuid: 068c56fcf32f472aa432f1e0a3a0e513
               expression: 'last(/Homelab Proxmox events/custom.pve.ha.last_recover,#1)<>last(/Homelab Proxmox events/custom.pve.ha.last_recover,#2) and length(last(/Homelab Proxmox events/custom.pve.ha.last_recover))>0'
               recovery_mode: NONE
-              name: 'Homelab HA: guest recovered from a fenced node: {{ITEM.LASTVALUE1}}'
+              name: 'Homelab HA: guest recovered from a fenced node: {ITEM.LASTVALUE1}'
               type: MULTIPLE
               priority: HIGH
               description: 'HA recovered a guest because its node fenced itself (watchdog reboot after lost quorum). The guest now runs from its last replication sync. Find out why the node fenced before moving guests back (report link/357, pve3 link/374). Never recovers on its own, one problem per event; close by hand.'
@@ -375,7 +375,7 @@ zabbix_export:
             - uuid: 6fe6ebd84730490e82a5e78042637e5a
               expression: 'last(/Homelab Proxmox events/custom.pve.ha.last_move,#1)<>last(/Homelab Proxmox events/custom.pve.ha.last_move,#2) and length(last(/Homelab Proxmox events/custom.pve.ha.last_move))>0'
               recovery_mode: NONE
-              name: 'Homelab HA: guest moved: {{ITEM.LASTVALUE1}}'
+              name: 'Homelab HA: guest moved: {ITEM.LASTVALUE1}'
               type: MULTIPLE
               priority: INFO
               description: 'An HA-managed guest was migrated or relocated (audit trail). Close by hand.'
