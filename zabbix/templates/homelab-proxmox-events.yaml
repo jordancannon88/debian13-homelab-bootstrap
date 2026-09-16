@@ -148,18 +148,6 @@ zabbix_export:
           tags:
             - tag: component
               value: backup
-          triggers:
-            - uuid: 0e54983e2cbf499c821afb225b622573
-              expression: 'change(/Homelab Proxmox events/custom.pve.backup.failed_total)>0 and length(last(/Homelab Proxmox events/custom.pve.backup.last_failed))>0'
-              recovery_mode: NONE
-              name: 'Homelab backup: vzdump task failed on {HOST.NAME}: {ITEM.LASTVALUE2}'
-              type: MULTIPLE
-              priority: HIGH
-              description: 'A backup task finished with an error (job errors, storage unreachable, guest lock...). Read the task log in PVE > node > Task History, then the PBS datastore. Never recovers on its own and each further failure opens a new problem; close by hand once acted on.'
-              manual_close: 'YES'
-              tags:
-                - tag: scope
-                  value: availability
         - uuid: 6c88e6782bf4409fbb8855f920efe042
           name: 'Backup: last failed task'
           type: DEPENDENT
@@ -179,6 +167,18 @@ zabbix_export:
           tags:
             - tag: component
               value: backup
+          triggers:
+            - uuid: 0e54983e2cbf499c821afb225b622573
+              expression: 'last(/Homelab Proxmox events/custom.pve.backup.last_failed,#1)<>last(/Homelab Proxmox events/custom.pve.backup.last_failed,#2) and length(last(/Homelab Proxmox events/custom.pve.backup.last_failed))>0'
+              recovery_mode: NONE
+              name: 'Homelab backup: vzdump task failed on {HOST.NAME}: {ITEM.LASTVALUE1}'
+              type: MULTIPLE
+              priority: HIGH
+              description: 'A backup task finished with an error (job errors, storage unreachable, guest lock...). Fires when the newest failed task changes, once per failure. Read the task log in PVE > node > Task History, then the PBS datastore. Never recovers on its own; close by hand once acted on.'
+              manual_close: 'YES'
+              tags:
+                - tag: scope
+                  value: availability
         - uuid: 88f65a0ed8384d4f827bf4babc5b130c
           name: 'Backup: last successful task'
           type: DEPENDENT
