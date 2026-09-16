@@ -1,0 +1,341 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: bf6177b54b3f4fe39b327f18494c3001
+      name: Templates/Custom
+  templates:
+    - uuid: c9970bcb375147f980314604eaac2bf4
+      template: 'Homelab boot check'
+      name: 'Homelab boot check'
+      description: 'Post-outage boot check (pve-outage-runbook.sh, run once per boot by pve-outage-boot-check.service on the mesh nodes) as Zabbix state, replacing the direct node-to-buzz post. One master JSON custom.bootcheck.status from bootcheck-status-json.py, which reads /var/lib/pve-outage-runbook/latest.json as the zabbix user (dir 0755, file 0644, no sudo). Triggers: came back with N checks needing eyes (High, keyed on one text item, recovers on the next GREEN run), recovered clean (Information, one hour), boot check did not run this boot (Warning), JSON missing (High), test marker (Warning). Per-check discovery rows hold state and detail for history, no triggers. Host side installed by debian13-homelab-bootstrap monitoring.sh (ZABBIX_BOOTCHECK, where the boot service exists). Source of truth: zabbix/templates/homelab-boot-check.yaml in that repo. Dry run: a synthetic latest.json and the marker /etc/zabbix/homelab-test/bootcheck (stale). Kan 5p9iipr7q21b, tracker a25kba4yp866. Docs: BookStack link/358, catalog link/376.'
+      groups:
+        - name: Templates/Custom
+      items:
+        - uuid: fb276ba9cfdd4810a72a03c47524bfb6
+          name: 'Boot check status (raw)'
+          type: ZABBIX_ACTIVE
+          key: custom.bootcheck.status
+          delay: 2m
+          history: '0'
+          value_type: TEXT
+          timeout: 10s
+          description: 'JSON from bootcheck-status-json.py. Master for every boot check item and the per-check discovery.'
+          tags:
+            - tag: component
+              value: raw
+            - tag: component
+              value: bootcheck
+        - uuid: b0f00848da72415f82d8950f37b8fe68
+          name: 'Boot check: status script error'
+          type: DEPENDENT
+          key: 'custom.bootcheck.error'
+          value_type: CHAR
+          trends: '0'
+          description: 'Non-empty when bootcheck-status-json.py could not read /var/lib/pve-outage-runbook/latest.json. Empty is healthy.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.error"
+              error_handler: CUSTOM_VALUE
+              error_handler_params: ''
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.bootcheck.status
+          tags:
+            - tag: component
+              value: bootcheck
+          triggers:
+            - uuid: b84c221ee53d46948e1297f599f9542a
+              expression: 'length(last(/Homelab boot check/custom.bootcheck.error))>0 and last(/Homelab boot check/custom.bootcheck.uptime)>{$BOOTCHECK_SETTLE}'
+              name: 'Homelab boot check: boot check JSON missing or unreadable on {HOST.NAME}'
+              priority: HIGH
+              description: 'The boot check result file is missing or unreadable by the agent, more than {$BOOTCHECK_SETTLE} after boot: the runbook never ran on this host, the file is not 0644 (a manual run under a 027 umask before the umask fix), or the dir is not 0755. Value: {ITEM.LASTVALUE1}. Outage runbook: BookStack link/358.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: ac302629415948a7ac780b57965967c2
+          name: 'Boot check: needs eyes'
+          type: DEPENDENT
+          key: 'custom.bootcheck.attention'
+          value_type: CHAR
+          trends: '0'
+          description: '"<n> check(s) need eyes: <list>" while the run for this boot ended ATTENTION; empty otherwise. The High trigger keys on this one item so the problem name always carries the list.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.attention"
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.bootcheck.status
+          tags:
+            - tag: component
+              value: bootcheck
+          triggers:
+            - uuid: 44362db7a7684e4786b7c5d7fdaa5331
+              expression: 'length(last(/Homelab boot check/custom.bootcheck.attention))>0'
+              name: 'Homelab boot check: {HOST.NAME} came back with {ITEM.LASTVALUE1}'
+              priority: HIGH
+              description: 'The post-boot self-check found something wrong: cluster-quorum, ha-services, zfs-pools, smart-health, replication, tb3-mesh or core-services (the list is in the name). Read the section of the full log (item "Boot check: log path") and follow the outage runbook. Recovery is a GREEN run: the next boot, or `sudo /usr/local/sbin/pve-outage-runbook.sh` after the fix. Outage runbook: BookStack link/358.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 95a9a25dda04479e8d7453137f1a422f
+          name: 'Boot check: recovered clean'
+          type: DEPENDENT
+          key: 'custom.bootcheck.clean_recent'
+          value_type: CHAR
+          trends: '0'
+          description: '"<n> checks OK" for one hour after a GREEN run this boot; empty otherwise.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.clean_recent"
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.bootcheck.status
+          tags:
+            - tag: component
+              value: bootcheck
+          triggers:
+            - uuid: 38b5b964ae3f4073a519c867fa1fa77b
+              expression: 'length(last(/Homelab boot check/custom.bootcheck.clean_recent))>0'
+              name: 'Homelab boot check: {HOST.NAME} recovered clean ({ITEM.LASTVALUE1})'
+              priority: INFO
+              description: 'The post-boot self-check passed every check. The green all-clear that buzz used to post; no action. Closes on its own one hour after the run (a manual run gives the same confirmation).'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 2b367ddbc6234de38ef2bb82da275625
+          name: 'Boot check: ran this boot'
+          type: DEPENDENT
+          key: 'custom.bootcheck.current_boot'
+          description: '1 when latest.json carries the current boot id.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.current_boot"
+          master_item:
+            key: custom.bootcheck.status
+          tags:
+            - tag: component
+              value: bootcheck
+          triggers:
+            - uuid: 7325868ab4d1417697eb331630f6aa54
+              expression: 'last(/Homelab boot check/custom.bootcheck.current_boot)=0 and last(/Homelab boot check/custom.bootcheck.uptime)>{$BOOTCHECK_SETTLE}'
+              name: 'Homelab boot check: boot check did not run this boot on {HOST.NAME}'
+              priority: WARNING
+              description: 'The node has been up for more than {$BOOTCHECK_SETTLE} and pve-outage-boot-check.service has not written a result for this boot: unit disabled (`systemctl is-enabled pve-outage-boot-check`), wrapper stuck waiting for quorum or on the dev-box fetch, or collector missing. `journalctl -u pve-outage-boot-check -b`. Run `sudo /usr/local/sbin/pve-outage-runbook.sh` by hand to clear it. New: buzz could never report this.'
+              dependencies:
+                - name: 'Homelab boot check: boot check JSON missing or unreadable on {HOST.NAME}'
+                  expression: 'length(last(/Homelab boot check/custom.bootcheck.error))>0 and last(/Homelab boot check/custom.bootcheck.uptime)>{$BOOTCHECK_SETTLE}'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: a2c46c609f3c41c694baa4fb084a3853
+          name: 'Boot check: overall'
+          type: DEPENDENT
+          key: 'custom.bootcheck.overall'
+          value_type: CHAR
+          trends: '0'
+          description: 'GREEN or ATTENTION from the last run (any boot).'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.overall"
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.bootcheck.status
+          tags:
+            - tag: component
+              value: bootcheck
+        - uuid: 4de203650bc843e29512d9f179a01b04
+          name: 'Boot check: checks needing eyes'
+          type: DEPENDENT
+          key: 'custom.bootcheck.attn'
+          description: 'Count of CHECK rows in the last run.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.attn"
+          master_item:
+            key: custom.bootcheck.status
+          tags:
+            - tag: component
+              value: bootcheck
+        - uuid: 664ad6d2816845698c1529b49c452b53
+          name: 'Boot check: checks OK'
+          type: DEPENDENT
+          key: 'custom.bootcheck.ok'
+          description: 'Count of OK rows in the last run.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.ok"
+          master_item:
+            key: custom.bootcheck.status
+          tags:
+            - tag: component
+              value: bootcheck
+        - uuid: acd227c6fe41441f8fb51789ac64dcc6
+          name: 'Boot check: failing checks'
+          type: DEPENDENT
+          key: 'custom.bootcheck.fail'
+          value_type: CHAR
+          trends: '0'
+          description: 'Kebab list of CHECK rows (cluster-quorum, ha-services, zfs-pools, smart-health, replication, tb3-mesh, core-services).'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.fail"
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.bootcheck.status
+          tags:
+            - tag: component
+              value: bootcheck
+        - uuid: b99b8db7abbf452489c970a02a62e4f2
+          name: 'Boot check: run age'
+          type: DEPENDENT
+          key: 'custom.bootcheck.age'
+          units: s
+          description: 'Seconds since the last run.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.age"
+          master_item:
+            key: custom.bootcheck.status
+          tags:
+            - tag: component
+              value: bootcheck
+        - uuid: 935bd67320794a7aa98562fcdab0cb0b
+          name: 'Boot check: uptime'
+          type: DEPENDENT
+          key: 'custom.bootcheck.uptime'
+          units: s
+          description: 'Seconds since boot, from /proc/uptime (a trigger here cannot reference the stock system.uptime item).'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.uptime"
+          master_item:
+            key: custom.bootcheck.status
+          tags:
+            - tag: component
+              value: bootcheck
+        - uuid: 4fd0514c4d244a1f92d9b59380a15273
+          name: 'Boot check: log path'
+          type: DEPENDENT
+          key: 'custom.bootcheck.log'
+          value_type: CHAR
+          trends: '0'
+          description: 'Full log of the last run on the node.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.log"
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.bootcheck.status
+          tags:
+            - tag: component
+              value: bootcheck
+        - uuid: eecd81150090437f81c3cb089c9844c1
+          name: 'Boot check: test marker present'
+          type: DEPENDENT
+          key: 'custom.bootcheck.test'
+          description: '1 while /etc/zabbix/homelab-test/bootcheck exists.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - "$.test"
+          master_item:
+            key: custom.bootcheck.status
+          tags:
+            - tag: component
+              value: bootcheck
+          triggers:
+            - uuid: 9ab44889a75e441eb20181ff36115a91
+              expression: 'min(/Homelab boot check/custom.bootcheck.test,1h)=1'
+              name: 'Homelab boot check: test marker left in place on {HOST.NAME}'
+              priority: WARNING
+              description: 'The dry-run marker /etc/zabbix/homelab-test/bootcheck has existed for over an hour. Remove it: sudo rm -f /etc/zabbix/homelab-test/bootcheck'
+              tags:
+                - tag: scope
+                  value: availability
+      discovery_rules:
+        - uuid: b8a01d615b814208b8ffe72060bbd0c5
+          name: 'Boot check discovery'
+          type: DEPENDENT
+          key: custom.bootcheck.check.discovery
+          lifetime: 30d
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
+          description: 'One row per check in the runbook summary (cluster quorum, HA services, zfs pools, smart health, replication, guests, tb3 mesh, core services).'
+          item_prototypes:
+            - uuid: 312092786b264f55bf85246cca2cc1a6
+              name: 'Boot check [{#CHECK}]: state'
+              type: DEPENDENT
+              key: 'custom.bootcheck.check.state[{#CHECK}]'
+              value_type: CHAR
+              trends: '0'
+              description: 'OK or CHECK for this check in the last run.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$.checks[?(@.check=='{#CHECK}')].state.first()"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.bootcheck.status
+              tags:
+                - tag: component
+                  value: bootcheck
+                - tag: check
+                  value: '{#CHECK}'
+            - uuid: 8e721084b9e6428a8a3db60b0a956cb0
+              name: 'Boot check [{#CHECK}]: detail'
+              type: DEPENDENT
+              key: 'custom.bootcheck.check.detail[{#CHECK}]'
+              value_type: CHAR
+              trends: '0'
+              description: 'Detail text of this check in the last run.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$.checks[?(@.check=='{#CHECK}')].detail.first()"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.bootcheck.status
+              tags:
+                - tag: component
+                  value: bootcheck
+                - tag: check
+                  value: '{#CHECK}'
+          master_item:
+            key: custom.bootcheck.status
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.lld_checks
+      tags:
+        - tag: class
+          value: custom
+      macros:
+        - macro: '{$BOOTCHECK_SETTLE}'
+          value: 15m
+          description: 'Uptime after which a missing result counts as "did not run" (the wrapper waits up to 5 min for quorum, then the collector takes about a minute).'

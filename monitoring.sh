@@ -79,6 +79,13 @@
 #                                       template (custom.tbmesh.status). Default: on
 #                                       when the TB reset scripts exist (mesh nodes),
 #                                       else off
+#    ZABBIX_BOOTCHECK=1|0 -> install the collector for the "Homelab boot
+#                                       check" template (custom.bootcheck.status
+#                                       reads the post-outage runbook's
+#                                       latest.json). Default: on when
+#                                       pve-outage-boot-check.service exists,
+#                                       else off. The runbook itself is not part
+#                                       of the bootstrap (get-installer channel)
 #    LOKI_URL="scheme://host:port" -> Loki base URL for Alloy to push to
 #                                       (used when alloy is selected; asked
 #                                       interactively, defaults to localhost:3100)
@@ -147,6 +154,7 @@ ZBX_NIC_FLAP="${ZABBIX_NIC_FLAP:-}"
 ZBX_SNAPRAID="${ZABBIX_SNAPRAID:-}"
 ZBX_PVE_EVENTS="${ZABBIX_PVE_EVENTS:-}"
 ZBX_TBMESH="${ZABBIX_TBMESH:-}"
+ZBX_BOOTCHECK="${ZABBIX_BOOTCHECK:-}"
 # Helper scripts shipped in zabbix/ next to this script (fetched from the repo
 # when absent), installed under /usr/local/bin.
 ZBX_HELPER_DIR="${ZBX_HELPER_DIR:-${SCRIPT_DIR}/zabbix}"
@@ -554,6 +562,26 @@ setup_tbmesh() {
   install_buzz_cron tb-mesh-heal "* * * * *" /usr/local/sbin/tb-mesh-heal.sh
   write_agent_dropin tbmesh.conf 'UserParameter=custom.tbmesh.status,/usr/local/bin/tb-mesh-status-json.py'
   record "Zabbix TB3 mesh" "installed (tb-mesh-heal cron every minute, custom.tbmesh.status)"
+}
+
+# setup_bootcheck — collector for the "Homelab boot check" template. The
+# post-outage runbook (pve-outage-runbook.sh, run once per boot by
+# pve-outage-boot-check.service; not part of this repo) writes
+# /var/lib/pve-outage-runbook/latest.json; bootcheck-status-json.py reads it as
+# the zabbix user and adds the computed fields. No sudoers line: the runbook
+# writes with umask 022 and keeps its dir 0755 since 2026-09-16.
+setup_bootcheck() {
+  if ! install_zbx_helper bootcheck-status-json.py 0755; then
+    warn "Boot check helper not available — skipped."
+    record "Zabbix boot check" "skipped (helper missing)"
+    return 0
+  fi
+  if [[ -d /var/lib/pve-outage-runbook ]]; then
+    chmod 0755 /var/lib/pve-outage-runbook 2>/dev/null || true
+    chmod 0644 /var/lib/pve-outage-runbook/*.json 2>/dev/null || true   # files from a manual run under umask 027
+  fi
+  write_agent_dropin bootcheck.conf 'UserParameter=custom.bootcheck.status,/usr/local/bin/bootcheck-status-json.py'
+  record "Zabbix boot check" "installed (custom.bootcheck.status)"
 }
 
 # detect_rootless_docker_users — print the username(s) that currently own a
@@ -1013,6 +1041,14 @@ else
     if [[ "${ZBX_TBMESH,,}" =~ ^(1|y|yes|true|on)$ ]]; then
       info "Installing the Thunderbolt mesh auto-heal and its Zabbix collector..."
       setup_tbmesh
+    fi
+    # Boot check collector: only where the post-outage boot service is installed.
+    if [[ -z "$ZBX_BOOTCHECK" ]]; then
+      [[ -f /etc/systemd/system/pve-outage-boot-check.service ]] && ZBX_BOOTCHECK=1 || ZBX_BOOTCHECK=0
+    fi
+    if [[ "${ZBX_BOOTCHECK,,}" =~ ^(1|y|yes|true|on)$ ]]; then
+      info "Installing the boot check collector..."
+      setup_bootcheck
     fi
 
     systemctl enable zabbix-agent2 >/dev/null 2>&1 || true
