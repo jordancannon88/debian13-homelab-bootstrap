@@ -82,7 +82,7 @@ zabbix_export:
         - uuid: 1f4ba06d271a4bf4a6305da675d6bb20
           name: 'Internet reachable (ICMP to Quad9)'
           type: SIMPLE
-          key: 'icmpping[9.9.9.9,3,,,]'
+          key: 'icmpping[{$INTERNET_PING_TARGET},3,,,]'
           delay: 30s
           description: 'fping from the Zabbix server to 9.9.9.9 (house rule: Quad9 for public reachability tests), 3 packets.'
           valuemap:
@@ -93,7 +93,7 @@ zabbix_export:
         - uuid: de0b917f11174e9eac11ae4e814777aa
           name: 'Internet reachable (TCP 443 to ghcr.io)'
           type: SIMPLE
-          key: 'net.tcp.service[https,ghcr.io,443]'
+          key: 'net.tcp.service[https,{$INTERNET_TCP_HOST},443]'
           delay: 1m
           description: 'TCP connect to a real host on port 443 from the Zabbix server. Resolver IPs are blocked for DoH/DoT and can mislead; a container registry is used every day.'
           valuemap:
@@ -103,7 +103,7 @@ zabbix_export:
               value: internet
           triggers:
             - uuid: 92d6b334b4bb47038c405a02aca8f9a6
-              expression: 'max(/Homelab internet/icmpping[9.9.9.9,3,,,],3m)=0 and max(/Homelab internet/net.tcp.service[https,ghcr.io,443],3m)=0'
+              expression: 'max(/Homelab internet/icmpping[{$INTERNET_PING_TARGET},3,,,],3m)=0 and max(/Homelab internet/net.tcp.service[https,{$INTERNET_TCP_HOST},443],3m)=0'
               name: 'Internet: no internet reachability'
               priority: HIGH
               description: 'Neither ICMP to Quad9 nor TCP 443 to ghcr.io worked for 3 minutes while the ISP router answers and the WAN link is up: the ISP, or the path beyond the router. Nothing to fix in the lab; wait, or check the ISP status page from a phone. Delivery note: during an internet outage only a LAN-side sink can deliver this. Reading the three layers: router unreachable = power, cable or the modem; router up but no internet = the ISP or the WAN link; internet up but DNS failing = the resolver. Runbook: BookStack link/332 (OPNsense notes), card 9yfu635gx2y4.'
@@ -120,7 +120,7 @@ zabbix_export:
         - uuid: 2987fe98ff3040a9bb13dc55207ddd30
           name: 'Internet latency to Quad9'
           type: SIMPLE
-          key: 'icmppingsec[9.9.9.9,3,,,,avg]'
+          key: 'icmppingsec[{$INTERNET_PING_TARGET},3,,,,avg]'
           delay: 1m
           value_type: FLOAT
           units: s
@@ -130,13 +130,13 @@ zabbix_export:
               value: internet
           triggers:
             - uuid: 85b353a297a943ea8def68d493a83041
-              expression: 'min(/Homelab internet/icmppingsec[9.9.9.9,3,,,,avg],5m)>{$INTERNET_LATENCY_MAX}'
+              expression: 'min(/Homelab internet/icmppingsec[{$INTERNET_PING_TARGET},3,,,,avg],5m)>{$INTERNET_LATENCY_MAX}'
               name: 'Internet: latency to Quad9 above {$INTERNET_LATENCY_MAX} for 5m'
               priority: WARNING
               description: 'Every ping in the last 5 minutes was slower than the threshold: a saturated uplink (a backup or a large upload) or ISP trouble. Informational unless it lasts. Reading the three layers: router unreachable = power, cable or the modem; router up but no internet = the ISP or the WAN link; internet up but DNS failing = the resolver. Runbook: BookStack link/332 (OPNsense notes), card 9yfu635gx2y4.'
               dependencies:
                 - name: 'Internet: no internet reachability'
-                  expression: 'max(/Homelab internet/icmpping[9.9.9.9,3,,,],3m)=0 and max(/Homelab internet/net.tcp.service[https,ghcr.io,443],3m)=0'
+                  expression: 'max(/Homelab internet/icmpping[{$INTERNET_PING_TARGET},3,,,],3m)=0 and max(/Homelab internet/net.tcp.service[https,{$INTERNET_TCP_HOST},443],3m)=0'
               tags:
                 - tag: scope
                   value: availability
@@ -147,6 +147,12 @@ zabbix_export:
         - macro: '{$INTERNET_LATENCY_MAX}'
           value: '0.2'
           description: 'Warning when every ping to Quad9 in 5 minutes is slower than this (seconds).'
+        - macro: '{$INTERNET_PING_TARGET}'
+          value: 9.9.9.9
+          description: 'Public address for the ICMP reachability and latency checks (house rule: Quad9). Dry run: override on the host with 192.0.2.1 (TEST-NET, never answers) and revert.'
+        - macro: '{$INTERNET_TCP_HOST}'
+          value: ghcr.io
+          description: 'A real public host for the TCP 443 reachability check. Dry run: override on the host with 192.0.2.1 and revert.'
         - macro: '{$ISP_ROUTER}'
           value: 192.168.0.1
           description: 'The ISP router: opn1 default gateway (netstat -rn on opn1). Change here if the modem is replaced or the WAN is renumbered.'
