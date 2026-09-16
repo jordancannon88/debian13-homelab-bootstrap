@@ -477,25 +477,30 @@ setup_snapraid() {
 
 # setup_pve_events — host side of the "Homelab Proxmox events" template:
 # pve-replication-json.sh behind custom.pve.replication (every pvesr job as an
-# LLD row), run through a sudoers line limited to `pvesr status` (pmxcfs is
-# root/www-data only). The HA-event and backup collectors join here on their
-# own cards (Kan a89gxf9oi0fc, hit98p2i8y2s). Replaces the buzz
-# repl-health-report watch.
+# LLD row) and pve-backup-json.py behind custom.pve.backup (finished vzdump
+# tasks, failures as a sticky High), both through sudoers lines limited to
+# `pvesr status` and the node's own `pvesh get /nodes/<host>/tasks`. The
+# HA-event collector joins on Kan a89gxf9oi0fc. Replaces the buzz
+# repl-health-report and backup-health-report watches.
 setup_pve_events() {
-  if ! install_zbx_helper pve-replication-json.sh 0755; then
-    warn "pve-replication-json.sh not available — Proxmox events skipped."
+  if ! install_zbx_helper pve-replication-json.sh 0755 || ! install_zbx_helper pve-backup-json.py 0755; then
+    warn "Proxmox events helpers not available — skipped."
     record "Zabbix PVE events" "skipped (helper missing)"
     return 0
   fi
-  printf 'zabbix ALL=(root) NOPASSWD: /usr/bin/pvesr status\n' > /etc/sudoers.d/zabbix-pve.tmp
+  # State for the backup collector (cursor + monotonic counter), owned by the agent user.
+  install -d -o zabbix -g zabbix -m 0750 /var/lib/zabbix/homelab
+  # Two read-only commands: pvesr status, and the node's own task list via pvesh.
+  printf 'zabbix ALL=(root) NOPASSWD: /usr/bin/pvesr status\nzabbix ALL=(root) NOPASSWD: /usr/bin/pvesh get /nodes/%s/tasks *\n' "$(hostname -s)" > /etc/sudoers.d/zabbix-pve.tmp
   if visudo -cf /etc/sudoers.d/zabbix-pve.tmp >/dev/null 2>&1; then
     install -m 0440 /etc/sudoers.d/zabbix-pve.tmp /etc/sudoers.d/zabbix-pve
   else
     warn "sudoers rule for pvesr failed validation — not installed."
   fi
   rm -f /etc/sudoers.d/zabbix-pve.tmp
-  write_agent_dropin pve-events.conf 'UserParameter=custom.pve.replication,/usr/local/bin/pve-replication-json.sh'
-  record "Zabbix PVE events" "installed (custom.pve.replication)"
+  write_agent_dropin pve-events.conf 'UserParameter=custom.pve.replication,/usr/local/bin/pve-replication-json.sh
+UserParameter=custom.pve.backup,/usr/local/bin/pve-backup-json.py'
+  record "Zabbix PVE events" "installed (custom.pve.replication, custom.pve.backup)"
 }
 
 # setup_nic_flap — physical-NIC link-flap UserParameters for the "Homelab
@@ -966,7 +971,7 @@ else
       command -v pvesr >/dev/null 2>&1 && ZBX_PVE_EVENTS=1 || ZBX_PVE_EVENTS=0
     fi
     if [[ "${ZBX_PVE_EVENTS,,}" =~ ^(1|y|yes|true|on)$ ]]; then
-      info "Installing the Proxmox events collectors (replication)..."
+      info "Installing the Proxmox events collectors (replication, backups)..."
       setup_pve_events
     fi
 
@@ -1188,9 +1193,9 @@ else
   _buzz_installed=()
   _buzz_skipped=()
 
-  if alert_selected disk || alert_selected repl; then
-    note "The disk and repl buzz watches were retired on 2026-09-15: Zabbix covers them (SMART/ZFS templates, Homelab Proxmox events). Nothing installed for them."
-    _buzz_skipped+=("disk/repl (retired, now Zabbix)")
+  if alert_selected disk || alert_selected repl || alert_selected backup; then
+    note "The disk, repl and backup buzz watches were retired on 2026-09-15: Zabbix covers them (SMART/ZFS templates, Homelab Proxmox events). Nothing installed for them."
+    _buzz_skipped+=("disk/repl/backup (retired, now Zabbix)")
   fi
 
   if alert_selected ha; then
@@ -1207,23 +1212,6 @@ else
     else
       note "ha watch skipped — no pve-ha-crm here (Proxmox VE cluster hosts only)."
       _buzz_skipped+=("ha (no pve-ha-crm)")
-    fi
-  fi
-
-  if alert_selected backup; then
-    if [[ -r /var/log/pve/tasks/index ]]; then
-      info "Installing the backup-failure watch (vzdump/PBS tasks, every 30 min)..."
-      if write_watch_script backup-health-report.sh /usr/local/sbin/backup-health-report.sh; then
-        install_buzz_cron backup-health-report "*/30 * * * *" /usr/local/sbin/backup-health-report.sh
-        # Prime the task cursor now so the first cron run never replays history.
-        /usr/local/sbin/backup-health-report.sh || true
-        _buzz_installed+=("backup (*/30, cursor primed)")
-      else
-        _buzz_skipped+=("backup (template missing)")
-      fi
-    else
-      note "backup watch skipped — no PVE task index here (Proxmox VE hosts only)."
-      _buzz_skipped+=("backup (no PVE task index)")
     fi
   fi
 

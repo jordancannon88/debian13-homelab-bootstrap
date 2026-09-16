@@ -7,7 +7,7 @@ zabbix_export:
     - uuid: 70c85608cc684203b91ef91082f0359c
       template: 'Homelab Proxmox events'
       name: 'Homelab Proxmox events'
-      description: 'Proxmox VE events that used to post to buzz #Alerts. Replication: every pvesr job as an LLD row (fails, state, last sync, enabled) from custom.pve.replication (pve-replication-json.sh via a sudoers line limited to `pvesr status`), failing High, missed-schedule Warning (2 h past the job''s own next sync), script-error High. HA events and backup failures join this template on their own cards (a89gxf9oi0fc, hit98p2i8y2s). Host side installed by debian13-homelab-bootstrap monitoring.sh (ZABBIX_PVE_EVENTS). Source of truth: zabbix/templates/homelab-proxmox-events.yaml in that repo. Kan q7wzccj15ypp, tracker a25kba4yp866.'
+      description: 'Proxmox VE events that used to post to buzz #Alerts. Replication: every pvesr job as an LLD row (fails, state, last sync, enabled) from custom.pve.replication (pve-replication-json.sh via a sudoers line limited to `pvesr status`), failing High, missed-schedule Warning (2 h past the job''s own next sync), script-error High. Backups: failed vzdump tasks as a sticky High from custom.pve.backup (pve-backup-json.py, pvesh through sudo; test marker /etc/zabbix/homelab-test/backup). HA events join on card a89gxf9oi0fc. Host side installed by debian13-homelab-bootstrap monitoring.sh (ZABBIX_PVE_EVENTS). Source of truth: zabbix/templates/homelab-proxmox-events.yaml in that repo. Kan q7wzccj15ypp, tracker a25kba4yp866.'
       groups:
         - name: Templates/Custom
       items:
@@ -87,6 +87,164 @@ zabbix_export:
           tags:
             - tag: component
               value: replication
+        - uuid: 47554f0d02bd4d0fb944a3a2325da81a
+          name: 'Backup tasks (raw)'
+          type: ZABBIX_ACTIVE
+          key: custom.pve.backup
+          delay: 5m
+          history: '0'
+          value_type: TEXT
+          timeout: 30s
+          description: 'JSON from pve-backup-json.py (finished vzdump tasks since the last run, via pvesh through sudo). Master for every backup item.'
+          tags:
+            - tag: component
+              value: raw
+            - tag: component
+              value: backup
+        - uuid: c4588652f2ed44818a6c458d6bec0354
+          name: 'Backup: task script error'
+          type: DEPENDENT
+          key: custom.pve.backup.error
+          value_type: CHAR
+          trends: '0'
+          description: 'Non-empty when pve-backup-json.py could not read the task list (pvesh, sudoers). Empty is healthy.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.error
+              error_handler: CUSTOM_VALUE
+              error_handler_params: ''
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.pve.backup
+          tags:
+            - tag: component
+              value: backup
+          triggers:
+            - uuid: 38ee1c8e63de4031b9fa6fcf2adeaeec
+              expression: 'length(last(/Homelab Proxmox events/custom.pve.backup.error))>0'
+              name: 'Homelab backup: task script failed on {HOST.NAME}'
+              priority: HIGH
+              description: 'pvesh get /nodes/<host>/tasks did not run; backup failures on this host are invisible until fixed. Value: {ITEM.LASTVALUE1}'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 00ec384619404e0f812ab03075708f15
+          name: 'Backup: failed vzdump tasks (total since install)'
+          type: DEPENDENT
+          key: custom.pve.backup.failed_total
+          description: 'Monotonic count of vzdump tasks that finished with a status other than OK. Rises by the number of new failures per poll.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.failed_total
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.pve.backup
+          tags:
+            - tag: component
+              value: backup
+          triggers:
+            - uuid: 0e54983e2cbf499c821afb225b622573
+              expression: 'change(/Homelab Proxmox events/custom.pve.backup.failed_total)>0 and length(last(/Homelab Proxmox events/custom.pve.backup.last_failed))>0'
+              recovery_mode: NONE
+              name: 'Homelab backup: vzdump task failed on {HOST.NAME}: {ITEM.LASTVALUE2}'
+              type: MULTIPLE
+              priority: HIGH
+              description: 'A backup task finished with an error (job errors, storage unreachable, guest lock...). Read the task log in PVE > node > Task History, then the PBS datastore. Never recovers on its own and each further failure opens a new problem; close by hand once acted on.'
+              manual_close: 'YES'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 6c88e6782bf4409fbb8855f920efe042
+          name: 'Backup: last failed task'
+          type: DEPENDENT
+          key: custom.pve.backup.last_failed
+          value_type: CHAR
+          trends: '0'
+          description: 'Newest failed vzdump task: guest id, end time, status text.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.last_failed
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.pve.backup
+          tags:
+            - tag: component
+              value: backup
+        - uuid: 88f65a0ed8384d4f827bf4babc5b130c
+          name: 'Backup: last successful task'
+          type: DEPENDENT
+          key: custom.pve.backup.last_ok_epoch
+          units: 'unixtime'
+          description: 'End time of the newest vzdump task that finished OK on this node.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.last_ok_epoch
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.pve.backup
+          tags:
+            - tag: component
+              value: backup
+        - uuid: e286be4da5814dd29c94cd16139c007d
+          name: 'Backup: failed tasks in 24 h'
+          type: DEPENDENT
+          key: custom.pve.backup.failed_24h
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.failed_24h
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.pve.backup
+          tags:
+            - tag: component
+              value: backup
+        - uuid: 99b56ebc2a3242b1ac6dabf039d96769
+          name: 'Backup: successful tasks in 24 h'
+          type: DEPENDENT
+          key: custom.pve.backup.ok_24h
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.ok_24h
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.pve.backup
+          tags:
+            - tag: component
+              value: backup
+        - uuid: 164dd28d0a2846e59b00d2e37aa4bc19
+          name: 'Backup: vzdump tasks running'
+          type: DEPENDENT
+          key: custom.pve.backup.running
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.running
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          master_item:
+            key: custom.pve.backup
+          tags:
+            - tag: component
+              value: backup
       discovery_rules:
         - uuid: 9f1e39ea9f514f7a95cba80847997e91
           name: 'Replication job discovery'
