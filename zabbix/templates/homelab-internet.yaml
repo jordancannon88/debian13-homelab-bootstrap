@@ -145,7 +145,7 @@ zabbix_export:
           value: custom
       macros:
         - macro: '{$INTERNET_LATENCY_MAX}'
-          value: 0.2
+          value: '0.2'
           description: 'Warning when every ping to Quad9 in 5 minutes is slower than this (seconds).'
         - macro: '{$ISP_ROUTER}'
           value: 192.168.0.1
