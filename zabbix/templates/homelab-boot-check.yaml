@@ -76,11 +76,11 @@ zabbix_export:
               value: bootcheck
           triggers:
             - uuid: 44362db7a7684e4786b7c5d7fdaa5331
-              expression: 'length(last(/Homelab boot check/custom.bootcheck.attention))>0'
+              expression: 'length(last(/Homelab boot check/custom.bootcheck.attention))>0 and last(/Homelab boot check/custom.bootcheck.uptime)<{$BOOTCHECK_WINDOW}'
               name: 'Homelab boot check: {HOST.NAME} came back with checks needing eyes'
               opdata: '{ITEM.LASTVALUE1}'
               priority: HIGH
-              description: 'The post-boot self-check found something wrong: cluster-quorum, ha-services, zfs-pools, smart-health, replication, tb3-mesh or core-services (the list is in the name). Read the section of the full log (item "Boot check: log path") and follow the outage runbook. Recovery is a GREEN run: the next boot, or `sudo /usr/local/sbin/pve-outage-runbook.sh` after the fix. The list is in the operational data column, refreshed live (a stale name was the first design). A known long-running CHECK, such as a DEGRADED pool waiting on a disk swap, can be closed by hand; it reopens only after a GREEN run and a new ATTENTION. Outage runbook: BookStack link/358.'
+              description: 'The post-boot self-check found something wrong: cluster-quorum, ha-services, zfs-pools, smart-health, replication, tb3-mesh or core-services (the list is in the name). Read the section of the full log (item "Boot check: log path") and follow the outage runbook. Recovery is a GREEN run: the next boot, or `sudo /usr/local/sbin/pve-outage-runbook.sh` after the fix. Scoped to the first {$BOOTCHECK_WINDOW} after boot: after that the dedicated triggers (ZFS pools, SMART, replication, HA, TB3 mesh) own any lasting problem and this one clears on its own. The list is in the operational data column, refreshed live (a stale name was the first design). A known long-running CHECK, such as a DEGRADED pool waiting on a disk swap, can be closed by hand; it reopens only after a GREEN run and a new ATTENTION. Outage runbook: BookStack link/358.'
               manual_close: 'YES'
               tags:
                 - tag: scope
@@ -341,3 +341,6 @@ zabbix_export:
         - macro: '{$BOOTCHECK_SETTLE}'
           value: 15m
           description: 'Uptime after which a missing result counts as "did not run" (the wrapper waits up to 5 min for quorum, then the collector takes about a minute).'
+        - macro: '{$BOOTCHECK_WINDOW}'
+          value: 6h
+          description: 'How long after boot the "came back with checks needing eyes" High stays relevant. Beyond it the dedicated continuous triggers own the problem (found on pve2: a DEGRADED pool kept the boot High open for days next to the ZFS pool High).'
