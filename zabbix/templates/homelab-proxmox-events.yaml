@@ -7,7 +7,7 @@ zabbix_export:
     - uuid: 70c85608cc684203b91ef91082f0359c
       template: 'Homelab Proxmox events'
       name: 'Homelab Proxmox events'
-      description: 'Proxmox VE events that used to post to buzz #Alerts. Replication: every pvesr job as an LLD row (fails, state, last sync, enabled) from custom.pve.replication (pve-replication-json.sh via a sudoers line limited to `pvesr status`), failing High, stale-sync Warning, script-error High. HA events and backup failures join this template on their own cards (a89gxf9oi0fc, hit98p2i8y2s). Host side installed by debian13-homelab-bootstrap monitoring.sh (ZABBIX_PVE_EVENTS). Source of truth: zabbix/templates/homelab-proxmox-events.yaml in that repo. Kan q7wzccj15ypp, tracker a25kba4yp866.'
+      description: 'Proxmox VE events that used to post to buzz #Alerts. Replication: every pvesr job as an LLD row (fails, state, last sync, enabled) from custom.pve.replication (pve-replication-json.sh via a sudoers line limited to `pvesr status`), failing High, missed-schedule Warning (2 h past the job''s own next sync), script-error High. HA events and backup failures join this template on their own cards (a89gxf9oi0fc, hit98p2i8y2s). Host side installed by debian13-homelab-bootstrap monitoring.sh (ZABBIX_PVE_EVENTS). Source of truth: zabbix/templates/homelab-proxmox-events.yaml in that repo. Kan q7wzccj15ypp, tracker a25kba4yp866.'
       groups:
         - name: Templates/Custom
       items:
@@ -177,15 +177,6 @@ zabbix_export:
                   value: '{#GUEST}'
                 - tag: target
                   value: '{#TARGET}'
-              trigger_prototypes:
-                - uuid: 6b239c802f494da18cd4ed6c9970e30d
-                  expression: 'now()-last(/Homelab Proxmox events/custom.pve.replication.last_sync[{#JOB}])>{$REPL_MAX_SYNC_AGE} and last(/Homelab Proxmox events/custom.pve.replication.enabled[{#JOB}])=1'
-                  name: 'Homelab replication: job {#JOB} to {#TARGET} not synced for over {$REPL_MAX_SYNC_AGE}'
-                  priority: WARNING
-                  description: 'An enabled job has not completed a sync within {$REPL_MAX_SYNC_AGE} (3x the longest schedule). Either the schedule stopped, the node was down, or syncs are failing without a FailCount. Check `pvesr status` and the job schedule.'
-                  tags:
-                    - tag: scope
-                      value: availability
             - uuid: e8bebd1756e24a8f9e05ce21aa6fb56d
               name: 'Replication [{#JOB}] guest {#GUEST} to {#TARGET}: enabled'
               type: DEPENDENT
@@ -208,6 +199,39 @@ zabbix_export:
                   value: '{#GUEST}'
                 - tag: target
                   value: '{#TARGET}'
+            - uuid: a9ea496211f54282b89b5275ed026df0
+              name: 'Replication [{#JOB}] guest {#GUEST} to {#TARGET}: next scheduled sync'
+              type: DEPENDENT
+              key: 'custom.pve.replication.next_sync[{#JOB}]'
+              units: 'unixtime'
+              description: 'Next sync time pvesr has scheduled for the job. 0 when pending or unknown. The schedule-aware lateness trigger hangs off this item.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['jobs']['{#JOB}']['next_sync']"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.pve.replication
+              tags:
+                - tag: component
+                  value: replication
+                - tag: job
+                  value: '{#JOB}'
+                - tag: guest
+                  value: '{#GUEST}'
+                - tag: target
+                  value: '{#TARGET}'
+              trigger_prototypes:
+                - uuid: 6b239c802f494da18cd4ed6c9970e30d
+                  expression: 'last(/Homelab Proxmox events/custom.pve.replication.next_sync[{#JOB}])>0 and now()-last(/Homelab Proxmox events/custom.pve.replication.next_sync[{#JOB}])>{$REPL_LATE_GRACE} and last(/Homelab Proxmox events/custom.pve.replication.enabled[{#JOB}])=1'
+                  name: 'Homelab replication: job {#JOB} to {#TARGET} missed its schedule (over {$REPL_LATE_GRACE} past the next sync)'
+                  priority: WARNING
+                  description: 'An enabled job is more than {$REPL_LATE_GRACE} past the next sync time pvesr scheduled for it: the schedule stopped or syncs are not completing. Judged by each job''s own schedule, so 15-minute and nightly jobs share one value. Check `pvesr status` and the job schedule on the node.'
+                  tags:
+                    - tag: scope
+                      value: availability
           master_item:
             key: custom.pve.replication
           preprocessing:
@@ -218,6 +242,6 @@ zabbix_export:
         - tag: class
           value: custom
       macros:
-        - macro: '{$REPL_MAX_SYNC_AGE}'
-          value: 6h
-          description: 'Warning when an enabled replication job has not completed a sync for this long (3x the longest job schedule). Override per host if a job runs less often.'
+        - macro: '{$REPL_LATE_GRACE}'
+          value: 2h
+          description: 'Warning when an enabled replication job is this long past the next sync time pvesr scheduled for it. Schedule-aware, so 15-minute and nightly jobs share one value.'
