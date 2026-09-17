@@ -49,7 +49,7 @@ zabbix_export:
           triggers:
             - uuid: 9958cda3d53141bc82cd84edfa4efca5
               expression: 'length(last(/Homelab ZFS pools/custom.zfs.error))>0'
-              name: 'Homelab ZFS: status script failed on {HOST.NAME}'
+              name: 'ZFS: status script failed on {HOST.NAME}'
               priority: HIGH
               description: 'zfs-status-json.py returned an error instead of pool data; every ZFS trigger on this host is blind until fixed. Value: {ITEM.LASTVALUE1}'
               tags:
@@ -88,7 +88,7 @@ zabbix_export:
             trigger_prototypes:
               - uuid: 1b0e594b180443a68ad0f6736eaadfea
                 expression: 'last(/Homelab ZFS pools/custom.zfs.pool.health[{#POOL}])<>"ONLINE"'
-                name: 'Homelab ZFS: [{#POOL}]: pool is {ITEM.LASTVALUE1}'
+                name: 'ZFS: [{#POOL}]: pool is {ITEM.LASTVALUE1}'
                 priority: HIGH
                 description: 'ZFS has marked the pool unhealthy. Check the vdev rows for which device, and do not zpool clear a device with a rising error count.'
                 tags:
@@ -135,7 +135,7 @@ zabbix_export:
             trigger_prototypes:
               - uuid: 3d7df97358e14bb4b6713368455541cd
                 expression: 'last(/Homelab ZFS pools/custom.zfs.pool.error_count[{#POOL}])>0'
-                name: 'Homelab ZFS: [{#POOL}]: {ITEM.LASTVALUE1} permanent errors'
+                name: 'ZFS: [{#POOL}]: {ITEM.LASTVALUE1} permanent errors'
                 priority: HIGH
                 description: 'zpool status -v lists files or zvols with unrecoverable blocks. Restore them from a replica or backup; on a single-disk pool this is the disk failing.'
                 tags:
@@ -163,7 +163,7 @@ zabbix_export:
             trigger_prototypes:
               - uuid: 623f1df1dec74cfa9c2d5b11f6e34a06
                 expression: 'last(/Homelab ZFS pools/custom.zfs.pool.cap[{#POOL}])>90'
-                name: 'Homelab ZFS: [{#POOL}]: pool over 90% full'
+                name: 'ZFS: [{#POOL}]: pool over 90% full'
                 priority: HIGH
                 description: 'ZFS performance collapses and snapshots/replication start failing near full. Free space or grow the pool now.'
                 tags:
@@ -171,7 +171,7 @@ zabbix_export:
                     value: availability
               - uuid: 70b0d258bf9844a998fbab683d13f941
                 expression: 'last(/Homelab ZFS pools/custom.zfs.pool.cap[{#POOL}])>80 and last(/Homelab ZFS pools/custom.zfs.pool.cap[{#POOL}])<=90'
-                name: 'Homelab ZFS: [{#POOL}]: pool over 80% full'
+                name: 'ZFS: [{#POOL}]: pool over 80% full'
                 priority: WARNING
                 tags:
                   - tag: scope
@@ -277,7 +277,7 @@ zabbix_export:
             trigger_prototypes:
               - uuid: 8c0b7ec80f4a439481e44289a23e2492
                 expression: 'now()-last(/Homelab ZFS pools/custom.zfs.pool.scan_end[{#POOL}])>35d and last(/Homelab ZFS pools/custom.zfs.pool.scan_state[{#POOL}])<>"SCANNING"'
-                name: 'Homelab ZFS: [{#POOL}]: no scrub completed in 35 days'
+                name: 'ZFS: [{#POOL}]: no scrub completed in 35 days'
                 priority: WARNING
                 description: 'Silent corruption is only found by a scrub. Run zpool scrub {#POOL} in a quiet window, or check why the monthly one did not run.'
                 tags:
@@ -304,7 +304,7 @@ zabbix_export:
             trigger_prototypes:
               - uuid: 02658b334dfe45858f2a63f56d52c5f7
                 expression: 'last(/Homelab ZFS pools/custom.zfs.pool.scan_errors[{#POOL}])>0'
-                name: 'Homelab ZFS: [{#POOL}]: last scrub found {ITEM.LASTVALUE1} errors'
+                name: 'ZFS: [{#POOL}]: last scrub found {ITEM.LASTVALUE1} errors'
                 priority: HIGH
                 description: 'The scrub hit blocks it could not repair. Read zpool status -v for the affected files and see the vdev rows for the failing device.'
                 tags:
@@ -312,7 +312,7 @@ zabbix_export:
                     value: availability
           graph_prototypes:
             - uuid: d64891ac510c48a6842e80389ab87d9b
-              name: 'Homelab ZFS: [{#POOL}]: capacity and fragmentation'
+              name: 'ZFS: [{#POOL}]: capacity and fragmentation'
               graph_items:
               - sortorder: '0'
                 color: 1A7C11
@@ -365,7 +365,7 @@ zabbix_export:
             trigger_prototypes:
               - uuid: c40f932b14e24faf881b86709a7bc720
                 expression: 'last(/Homelab ZFS pools/custom.zfs.vdev.state[{#POOL},{#VDEV}])<>"ONLINE"'
-                name: 'Homelab ZFS: [{#POOL}/{#VDEV}]: vdev is {ITEM.LASTVALUE1}'
+                name: 'ZFS: [{#POOL}/{#VDEV}]: vdev is {ITEM.LASTVALUE1}'
                 priority: HIGH
                 description: 'A device or vdev group under this pool is not ONLINE. A mirror or raidz keeps running degraded; a single-disk pool has no redundancy left.'
                 tags:
@@ -486,7 +486,7 @@ zabbix_export:
             trigger_prototypes:
               - uuid: 1f17440e0d0649d1bd8973745ecccb2e
                 expression: 'last(/Homelab ZFS pools/custom.zfs.vdev.errors_total[{#POOL},{#VDEV}])>0'
-                name: 'Homelab ZFS: [{#POOL}/{#VDEV}]: vdev has {ITEM.LASTVALUE1} read/write/checksum errors'
+                name: 'ZFS: [{#POOL}/{#VDEV}]: vdev has {ITEM.LASTVALUE1} read/write/checksum errors'
                 priority: WARNING
                 description: 'ZFS counted I/O or checksum failures on this device. Compare with its SMART rows: pending/uncorrectable sectors mean the disk, CRC means the cable.'
                 tags:
@@ -494,7 +494,7 @@ zabbix_export:
                     value: availability
               - uuid: ab2154774d7a4ff188b39eb4f923a08a
                 expression: 'last(/Homelab ZFS pools/custom.zfs.vdev.errors_total[{#POOL},{#VDEV}])>min(/Homelab ZFS pools/custom.zfs.vdev.errors_total[{#POOL},{#VDEV}],24h)'
-                name: 'Homelab ZFS: [{#POOL}/{#VDEV}]: vdev errors rising (24h)'
+                name: 'ZFS: [{#POOL}/{#VDEV}]: vdev errors rising (24h)'
                 priority: HIGH
                 description: 'New errors in the last 24 hours: the device is failing now, not historically. Move data off it and plan the replacement.'
                 tags:
@@ -526,7 +526,7 @@ zabbix_export:
             trigger_prototypes:
               - uuid: f660eee0def74f04b23f4b56476b217d
                 expression: 'last(/Homelab ZFS pools/custom.zfs.vdev.slow_ios[{#POOL},{#VDEV}])>min(/Homelab ZFS pools/custom.zfs.vdev.slow_ios[{#POOL},{#VDEV}],24h)'
-                name: 'Homelab ZFS: [{#POOL}/{#VDEV}]: slow IOs rising (24h)'
+                name: 'ZFS: [{#POOL}/{#VDEV}]: slow IOs rising (24h)'
                 priority: WARNING
                 description: 'The device is stalling. On USB-attached disks check the link and cable; on internal disks this often precedes read errors.'
                 tags:
@@ -534,7 +534,7 @@ zabbix_export:
                     value: availability
           graph_prototypes:
             - uuid: 0582a09a5dca413390ea390041b19590
-              name: 'Homelab ZFS: [{#POOL}/{#VDEV}]: error counters'
+              name: 'ZFS: [{#POOL}/{#VDEV}]: error counters'
               graph_items:
               - sortorder: '0'
                 color: F63100
