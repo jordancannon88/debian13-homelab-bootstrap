@@ -1,0 +1,11 @@
+[Unit]
+Description=Run seafile-keeper every 50 minutes and 2 minutes after boot
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=50min
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

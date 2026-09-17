@@ -1,0 +1,10 @@
+[Unit]
+Description=Keep the encrypted Seafile library password warm (seafile-keeper)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/seafile-keeper.sh
+StateDirectory=seafile-keeper
+StateDirectoryMode=0755

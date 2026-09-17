@@ -479,6 +479,14 @@ To add a new app: make `/opt/docker/<app>/`, drop a `docker-compose.yml`
 (plus optional `.env` and `data/`) in it, then `docker compose up -d` from that
 folder.
 
+## Extras
+
+`extras/` holds small single-purpose units that run on a host built by this bootstrap but are not part of the bootstrap itself:
+
+| Dir | What |
+|---|---|
+| `extras/seafile-keeper/` | Keeps an encrypted Seafile library's password warm on the server every 50 minutes, so background uploads from the mobile app keep working (Seafile forgets the password after one hour; the app does not re-send it). Script, oneshot service, timer, Zabbix helper (`custom.seafile.keeper_age`, template [`Homelab Seafile keeper`](zabbix/templates/homelab-seafile-keeper.yaml)) and an `install.sh`. Secrets go in `/etc/seafile-keeper/env` (0600) by hand. Built for the `seafile-keeper` CT (Kan n1d54ezp98n7). |
+
 ## Environment overrides
 
 <details open>
