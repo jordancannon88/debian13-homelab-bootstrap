@@ -9,12 +9,40 @@
 #       place — pick a step to change its options, then "Accept & install".
 #       Defaults are pre-set, so you can just Accept. This installer is
 #       TUI-ONLY: it requires an interactive terminal and whiptail (which it
-#       auto-installs if missing); there is no text-mode or unattended path.
+#       auto-installs if missing).
 #    3. on Accept, runs each chosen script NON-INTERACTIVELY (answers passed via
 #       env), so nothing stops mid-run to ask you anything
 #    4. prints ONE consolidated report (review + next steps)
 #
 #  Run as root on a terminal, e.g.:  sudo ./init.sh
+#
+#  UNATTENDED MODE (automation: cloud-init, pct exec, ansible, a one-liner):
+#    UNATTENDED=1 ./init.sh   or   ./init.sh --unattended
+#    No menu, no terminal needed. Every answer comes from the environment; the
+#    VM/LXC/PVE defaults apply first, then these overrides, then the same
+#    validation as the menu (it exits 2 with the list of what is missing).
+#      ENV_TYPE=vm|lxc|pve            (autodetected when unset)
+#      STEPS="bootstrap harden ancillary shell monitoring motd docs"
+#                                     (which steps run; default = the menu's
+#                                     defaults; add "container" to run it)
+#      PRIMARY_USER=<name>  PUBKEY="ssh-ed25519 ..."  ADMIN_PASSWORD=...
+#      SSH_PORT=<n>  ALLOW_TCP_PORTS/ALLOW_UDP_PORTS/ALLOW_SSH_CIDRS
+#      SKIP_UPGRADE DISABLE_ROOT_LOGIN BLACKLIST_USB_STORAGE ENABLE_SSH_2FA
+#      HARDEN_COMPILERS ALLOW_HTTP ALLOW_HTTPS  (1/0)
+#      HARDEN_UNATTENDED HARDEN_JOURNALD HARDEN_SSH HARDEN_FIREWALL
+#      HARDEN_FAIL2BAN HARDEN_APPARMOR HARDEN_AIDE HARDEN_SYSCTL HARDEN_EXTRA
+#      HARDEN_LYNIS  (1/0, each harden.sh component)
+#      ANCILLARY_PKGS="vim btop duf rsync qemu-guest-agent"
+#      SHELL_PKGS="fish zsh tcsh"  DEFAULT_SHELL=fish|zsh|tcsh|keep
+#      MONITORING_PKGS="zabbix-agent2 alloy alerts"  ZABBIX_SERVER_ACTIVE=host:port
+#      ZABBIX_MONITOR_ROOTLESS_DOCKER LOKI_URL ALLOY_DOCKER_LOGS
+#      BUZZ_ALERTS ALERTS_SINKS BUZZ_TARGET BUZZ_PORT NTFY_URL NTFY_TOKEN
+#      INSTALL_DOCKER INSTALL_PODMAN DISABLE_ROOTFUL CREATE_EXAMPLE_APP
+#      DOCKER_JOURNALD_LOGS  (container step)
+#      DOC_URL=<url>  (motd)
+#    Example (a Zabbix-monitored LXC, no Alloy, no alerts):
+#      UNATTENDED=1 PRIMARY_USER=jordan PUBKEY="$(cat key.pub)" ADMIN_PASSWORD=... \
+#        MONITORING_PKGS=zabbix-agent2 ZABBIX_SERVER_ACTIVE=zabbix:10051 ./init.sh
 #
 #  curl must already be present (the download fallback for remote scripts uses
 #  it). Debian ships it on all but the most minimal installs.
@@ -1305,6 +1333,127 @@ docs: generates an HTML connection guide for this host." ;;
 
 tui_wizard() { tui_env; sys_scan; compute_defaults; sys_report; tui_main; }
 
+# ==============================================================================
+#  Unattended mode — UNATTENDED=1 or --unattended: no menu, answers from env
+# ==============================================================================
+# yn_env <VAR> <default Y|N> — Y/N from a 1/0-style environment variable.
+yn_env() {
+  local v="${!1:-}"
+  [[ -z "$v" ]] && { printf '%s' "$2"; return 0; }
+  case "${v,,}" in
+    1|y|yes|true|on)   printf 'Y';;
+    0|n|no|false|off)  printf 'N';;
+    *) printf '%s' "$2";;
+  esac
+}
+# apply_unattended_overrides — after compute_defaults: the environment wins.
+apply_unattended_overrides() {
+  local s p
+  if [[ -n "${STEPS:-}" ]]; then
+    A_BOOTSTRAP=N; A_HARDEN=N; A_ANCILLARY=N; A_SHELL=N; A_MONITORING=N; A_CONTAINER=N; A_MOTD=N; A_DOC=N
+    for s in $STEPS; do
+      case "$s" in
+        bootstrap) A_BOOTSTRAP=Y;;  harden) A_HARDEN=Y;;  ancillary|packages) A_ANCILLARY=Y;;
+        shell) A_SHELL=Y;;  monitoring) A_MONITORING=Y;;  container) A_CONTAINER=Y;;
+        motd) A_MOTD=Y;;  docs|documentation) A_DOC=Y;;
+        *) err "STEPS: unknown step '$s' (bootstrap harden ancillary shell monitoring container motd docs)"; exit 2;;
+      esac
+    done
+  fi
+  if [[ -n "${ANCILLARY_PKGS:-}" ]]; then
+    A_PKG_vim=N; A_PKG_btop=N; A_PKG_duf=N; A_PKG_rsync=N; A_PKG_qemu=N
+    for p in $ANCILLARY_PKGS; do
+      case "$p" in vim) A_PKG_vim=Y;; btop) A_PKG_btop=Y;; duf) A_PKG_duf=Y;; rsync) A_PKG_rsync=Y;; qemu-guest-agent|qemu) A_PKG_qemu=Y;; none) ;;
+        *) err "ANCILLARY_PKGS: unknown package '$p'"; exit 2;; esac
+    done
+  fi
+  if [[ -n "${SHELL_PKGS:-}" ]]; then
+    A_SH_fish=N; A_SH_zsh=N; A_SH_tcsh=N
+    for p in $SHELL_PKGS; do
+      case "$p" in fish) A_SH_fish=Y;; zsh) A_SH_zsh=Y;; tcsh) A_SH_tcsh=Y;; none) ;;
+        *) err "SHELL_PKGS: unknown shell '$p'"; exit 2;; esac
+    done
+  fi
+  [[ -n "${DEFAULT_SHELL:-}" ]] && DEFAULT_SHELL_CHOICE="$DEFAULT_SHELL"
+  if [[ -n "${MONITORING_PKGS:-}" ]]; then
+    A_AGENT_zabbix=N; A_AGENT_alloy=N; A_AGENT_buzz=N
+    for p in $MONITORING_PKGS; do
+      case "$p" in zabbix-agent2|zabbix) A_AGENT_zabbix=Y;; alloy) A_AGENT_alloy=Y;; alerts|buzz) A_AGENT_buzz=Y;; none) ;;
+        *) err "MONITORING_PKGS: unknown agent '$p'"; exit 2;; esac
+    done
+  fi
+  A_ZBX_DOCKER="$(yn_env ZABBIX_MONITOR_ROOTLESS_DOCKER "$A_ZBX_DOCKER")"
+  A_ALLOY_DOCKERLOGS="$(yn_env ALLOY_DOCKER_LOGS "$A_ALLOY_DOCKERLOGS")"
+  if [[ -n "${BUZZ_ALERTS:-}" ]]; then
+    A_BUZZ_disk=N; A_BUZZ_repl=N; A_BUZZ_ha=N; A_BUZZ_backup=N; A_BUZZ_tbmesh=N
+    for p in $BUZZ_ALERTS; do case "$p" in disk) A_BUZZ_disk=Y;; repl) A_BUZZ_repl=Y;; ha) A_BUZZ_ha=Y;; backup) A_BUZZ_backup=Y;; tbmesh) A_BUZZ_tbmesh=Y;; none) ;; esac; done
+  fi
+  if [[ -n "${ALERTS_SINKS:-}" ]]; then
+    [[ "$ALERTS_SINKS" == *buzz* ]] && A_SINK_buzz=Y || A_SINK_buzz=N
+    [[ "$ALERTS_SINKS" == *ntfy* ]] && A_SINK_ntfy=Y || A_SINK_ntfy=N
+  fi
+  # harden.sh knobs (same names the script itself reads)
+  if [[ -n "${SKIP_UPGRADE:-}" ]]; then [[ "$(yn_env SKIP_UPGRADE N)" == Y ]] && A_UPGRADE=N || A_UPGRADE=Y; fi
+  A_LOCKROOT="$(yn_env DISABLE_ROOT_LOGIN "$A_LOCKROOT")"
+  A_USBBLACK="$(yn_env BLACKLIST_USB_STORAGE "$A_USBBLACK")"
+  A_SSH2FA="$(yn_env ENABLE_SSH_2FA "$A_SSH2FA")"
+  A_COMPILERS="$(yn_env HARDEN_COMPILERS "$A_COMPILERS")"
+  A_HTTP="$(yn_env ALLOW_HTTP "$A_HTTP")"; A_HTTPS="$(yn_env ALLOW_HTTPS "$A_HTTPS")"
+  A_HC_unattended="$(yn_env HARDEN_UNATTENDED "$A_HC_unattended")"; A_HC_journald="$(yn_env HARDEN_JOURNALD "$A_HC_journald")"
+  A_HC_ssh="$(yn_env HARDEN_SSH "$A_HC_ssh")"; A_HC_firewall="$(yn_env HARDEN_FIREWALL "$A_HC_firewall")"
+  A_HC_fail2ban="$(yn_env HARDEN_FAIL2BAN "$A_HC_fail2ban")"; A_HC_apparmor="$(yn_env HARDEN_APPARMOR "$A_HC_apparmor")"
+  A_HC_aide="$(yn_env HARDEN_AIDE "$A_HC_aide")"; A_HC_sysctl="$(yn_env HARDEN_SYSCTL "$A_HC_sysctl")"
+  A_HC_extra="$(yn_env HARDEN_EXTRA "$A_HC_extra")"; A_HC_lynis="$(yn_env HARDEN_LYNIS "$A_HC_lynis")"
+  # container.sh knobs
+  A_DOCKER="$(yn_env INSTALL_DOCKER "$A_DOCKER")"; A_PODMAN="$(yn_env INSTALL_PODMAN "$A_PODMAN")"
+  A_DISABLE_ROOTFUL="$(yn_env DISABLE_ROOTFUL "$A_DISABLE_ROOTFUL")"
+  A_EXAMPLE_APP="$(yn_env CREATE_EXAMPLE_APP "$A_EXAMPLE_APP")"
+  A_JOURNALD="$(yn_env DOCKER_JOURNALD_LOGS "$A_JOURNALD")"
+}
+# validate_unattended — the menu's checks, printed instead of shown; exit 2.
+validate_unattended() {
+  local m=() akf=""
+  if [[ "$A_BOOTSTRAP" == Y ]] || [[ "$A_HARDEN" == Y && "$A_HC_ssh" == Y ]]; then
+    { [[ -z "$PRIMARY_USER" ]] || ! valid_user "$PRIMARY_USER"; } && m+=("PRIMARY_USER: set a valid admin username.")
+  fi
+  if [[ -n "$PRIMARY_USER" ]] && { [[ "$ENV_TYPE" == "pve" ]] || [[ "$A_HARDEN" == Y && "$A_HC_ssh" == Y ]]; }; then
+    akf="$(getent passwd "$PRIMARY_USER" 2>/dev/null | cut -d: -f6)/.ssh/authorized_keys"
+    if [[ "$A_BOOTSTRAP" == Y ]]; then
+      if [[ -z "$PUBKEY" ]] && ! { id "$PRIMARY_USER" &>/dev/null && [[ -s "$akf" ]]; }; then
+        m+=("PUBKEY: harden.sh needs an SSH key for ${PRIMARY_USER} (none given, none on file).")
+      fi
+    else
+      if ! id "$PRIMARY_USER" &>/dev/null; then m+=("harden without bootstrap: user ${PRIMARY_USER} does not exist.")
+      elif [[ ! -s "$akf" ]]; then m+=("harden without bootstrap: ${PRIMARY_USER} has no authorized_keys."); fi
+    fi
+  fi
+  if [[ "$A_BOOTSTRAP" == Y && -n "$PRIMARY_USER" ]] && valid_user "$PRIMARY_USER" && ! id "$PRIMARY_USER" &>/dev/null && [[ -z "$ADMIN_PASSWORD" ]]; then
+    m+=("ADMIN_PASSWORD: a newly created admin needs a password (a key-only account cannot sudo).")
+  fi
+  [[ "$A_MONITORING" == Y && "$A_AGENT_zabbix" == Y && -z "${ZABBIX_SERVER_ACTIVE//[[:space:]]/}" ]] && m+=("ZABBIX_SERVER_ACTIVE: zabbix-agent2 needs a server address.")
+  [[ "$A_MONITORING" == Y && "$A_AGENT_buzz" == Y && "$(buzz_alert_list)" == "none" ]] && m+=("BUZZ_ALERTS: pick at least one alert type.")
+  [[ "$A_MONITORING" == Y && "$A_AGENT_buzz" == Y && "$A_SINK_buzz" != Y && "$A_SINK_ntfy" != Y ]] && m+=("ALERTS_SINKS: enable buzz and/or ntfy.")
+  [[ "$A_MONITORING" == Y && "$A_AGENT_buzz" == Y && -n "$(need_sink_buzz)" ]] && m+=("BUZZ_TARGET: alerts via buzz need the relay target (user@host).")
+  [[ "$A_MONITORING" == Y && "$A_AGENT_buzz" == Y && -n "$(need_sink_ntfy)" ]] && m+=("NTFY_URL: alerts via ntfy need the topic URL.")
+  [[ "$A_ANCILLARY" == Y && "$(anc_list)" == "none" ]] && m+=("ANCILLARY_PKGS: the packages step is on but no package is picked.")
+  [[ -n "$(need_shell)" ]] && m+=("DEFAULT_SHELL: '${DEFAULT_SHELL_CHOICE}' is neither installed nor in SHELL_PKGS.")
+  [[ "$A_CONTAINER" == Y && "$A_DOCKER" != Y && "$A_PODMAN" != Y ]] && m+=("INSTALL_DOCKER/INSTALL_PODMAN: the container step is on but no runtime is picked.")
+  [[ "$A_BOOTSTRAP$A_HARDEN$A_ANCILLARY$A_MONITORING$A_CONTAINER$A_MOTD$A_DOC" != *Y* ]] && m+=("STEPS: nothing selected.")
+  if ((${#m[@]})); then
+    err "Unattended run cannot start:"
+    printf '   • %s\n' "${m[@]}"
+    exit 2
+  fi
+}
+run_unattended() {
+  [[ "$ENV_TYPE" == "vm" || "$ENV_TYPE" == "lxc" || "$ENV_TYPE" == "pve" ]] || ENV_TYPE="$(detect_env_default)"
+  info "Unattended mode: environment '${ENV_TYPE}', answers from the environment, no menu."
+  sys_scan; compute_defaults; apply_unattended_overrides
+  (( ${#SYS_NOTES[@]} )) && { info "Found on this host:"; printf '   • %s\n' "${SYS_NOTES[@]}"; }
+  validate_unattended
+  info "Plan: bootstrap=$A_BOOTSTRAP harden=$A_HARDEN packages=$A_ANCILLARY($(anc_list)) shell=$A_SHELL($(shell_list); default ${DEFAULT_SHELL_CHOICE}) monitoring=$A_MONITORING(zabbix=$A_AGENT_zabbix alloy=$A_AGENT_alloy alerts=$A_AGENT_buzz) container=$A_CONTAINER motd=$A_MOTD docs=$A_DOC user=${PRIMARY_USER:-none} ssh_port=${SSH_PORT:-22}"
+}
+
 # run_wizard — this installer is whiptail-TUI only. It needs an interactive
 # terminal and whiptail (auto-installed if missing). No text fallback and no
 # unattended/defaults path: if either is unavailable, we stop with a clear error.
@@ -1355,11 +1504,16 @@ init_run_log
 command -v curl >/dev/null 2>&1 || warn "curl not found — the download fallback for remote scripts won't work (local copies still will)."
 
 # ==============================================================================
-step "Step 1 — Configure (whiptail menu)"
+step "Step 1 — Configure"
 # ==============================================================================
-# Pick VM/LXC, then review & customise every step in one menu; Accept to install.
-# TUI-only: requires a terminal + whiptail (auto-installed), else it stops.
-run_wizard
+# Unattended (UNATTENDED=1 or --unattended): answers from the environment, no
+# menu. Otherwise pick VM/LXC, then review & customise every step in one
+# whiptail menu; Accept to install.
+if [[ "${UNATTENDED:-0}" =~ ^(1|y|yes|true|on)$ || "${1:-}" == "--unattended" ]]; then
+  run_unattended
+else
+  run_wizard
+fi
 
 materialize_selection
 log_config

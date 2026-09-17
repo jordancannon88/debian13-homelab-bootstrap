@@ -479,6 +479,33 @@ To add a new app: make `/opt/docker/<app>/`, drop a `docker-compose.yml`
 (plus optional `.env` and `data/`) in it, then `docker compose up -d` from that
 folder.
 
+## Unattended mode
+
+`init.sh` is a whiptail wizard by default. For automation (cloud-init, `pct exec`, Ansible, a one-liner over ssh) run it with `UNATTENDED=1` (or `--unattended`): no menu, no terminal needed, every answer comes from the environment. The VM/LXC/PVE defaults apply first, then the variables below override them, then the same checks the wizard runs (a missing admin key, a Zabbix agent without a server address) stop the run with exit 2 and the list of what is missing, before anything is installed.
+
+| Variable | Meaning |
+|---|---|
+| `ENV_TYPE=vm\|lxc\|pve` | Host type; autodetected when unset |
+| `STEPS="bootstrap harden ancillary shell monitoring motd docs"` | Which steps run (add `container` for the container step). Unset = the wizard's defaults |
+| `PRIMARY_USER`, `PUBKEY`, `ADMIN_PASSWORD` | The admin account (bootstrap.sh). A new account needs a password; harden.sh needs the key |
+| `SSH_PORT`, `ALLOW_TCP_PORTS`, `ALLOW_UDP_PORTS`, `ALLOW_SSH_CIDRS` | harden.sh network settings |
+| `SKIP_UPGRADE`, `DISABLE_ROOT_LOGIN`, `BLACKLIST_USB_STORAGE`, `ENABLE_SSH_2FA`, `HARDEN_COMPILERS`, `ALLOW_HTTP`, `ALLOW_HTTPS` | harden.sh options, `1`/`0` |
+| `HARDEN_UNATTENDED`, `HARDEN_JOURNALD`, `HARDEN_SSH`, `HARDEN_FIREWALL`, `HARDEN_FAIL2BAN`, `HARDEN_APPARMOR`, `HARDEN_AIDE`, `HARDEN_SYSCTL`, `HARDEN_EXTRA`, `HARDEN_LYNIS` | harden.sh components, `1`/`0` |
+| `ANCILLARY_PKGS="vim btop duf rsync qemu-guest-agent"` | Extra packages |
+| `SHELL_PKGS="fish zsh tcsh"`, `DEFAULT_SHELL=fish\|zsh\|tcsh\|keep` | Shells |
+| `MONITORING_PKGS="zabbix-agent2 alloy alerts"`, `ZABBIX_SERVER_ACTIVE`, `ZABBIX_MONITOR_ROOTLESS_DOCKER`, `LOKI_URL`, `ALLOY_DOCKER_LOGS`, `BUZZ_ALERTS`, `ALERTS_SINKS`, `BUZZ_TARGET`, `BUZZ_PORT`, `NTFY_URL`, `NTFY_TOKEN` | monitoring.sh |
+| `INSTALL_DOCKER`, `INSTALL_PODMAN`, `DISABLE_ROOTFUL`, `CREATE_EXAMPLE_APP`, `DOCKER_JOURNALD_LOGS` | container.sh |
+| `DOC_URL` | motd.sh |
+
+Example, a Zabbix-monitored LXC with no Alloy and no alerts:
+
+```bash
+curl -fsSLo /root/init.sh https://raw.githubusercontent.com/jordancannon88/debian13-homelab-bootstrap/main/init.sh
+UNATTENDED=1 PRIMARY_USER=jordan PUBKEY="$(cat /root/jordan.pub)" ADMIN_PASSWORD='...' MONITORING_PKGS=zabbix-agent2 ZABBIX_SERVER_ACTIVE=zabbix:10051 bash /root/init.sh
+```
+
+The per-script environment overrides in the next section keep working underneath; unattended mode only replaces the menu that used to set them.
+
 ## Extras
 
 `extras/` holds small single-purpose units that run on a host built by this bootstrap but are not part of the bootstrap itself:
