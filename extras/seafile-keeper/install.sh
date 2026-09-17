@@ -13,7 +13,7 @@ install -m 0644 "$d/seafile-keeper.timer" /etc/systemd/system/seafile-keeper.tim
 install -d -m 0700 /etc/seafile-keeper
 install -d -m 0755 /var/lib/seafile-keeper
 if [ -d /etc/zabbix/zabbix_agent2.d ]; then
-  printf 'UserParameter=custom.seafile.keeper_age,/usr/local/bin/keeper-age.sh\n' > /etc/zabbix/zabbix_agent2.d/seafile-keeper.conf
+  printf 'UserParameter=custom.seafile.keeper_age,/usr/local/bin/keeper-age.sh age\nUserParameter=custom.seafile.keeper_status,/usr/local/bin/keeper-age.sh status\n' > /etc/zabbix/zabbix_agent2.d/seafile-keeper.conf
   chmod 0644 /etc/zabbix/zabbix_agent2.d/seafile-keeper.conf
   systemctl restart zabbix-agent2 2>/dev/null || true
 fi
