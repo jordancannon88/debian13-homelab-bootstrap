@@ -1190,6 +1190,17 @@ fi
 
   info "Installing alloy..."
   apt-get install -y alloy
+  # No usage reports to stats.grafana.org: on this LAN the resolver answers
+  # such names with 0.0.0.0 and Alloy retried five times a minute, every
+  # minute, into the journal (seen on every node, 2026-09-17). The Debian
+  # package reads CUSTOM_ARGS from /etc/default/alloy into the unit.
+  if ! grep -q -- '--disable-reporting' /etc/default/alloy 2>/dev/null; then
+    if grep -q '^CUSTOM_ARGS=' /etc/default/alloy 2>/dev/null; then
+      sed -i 's/^CUSTOM_ARGS="\(.*\)"$/CUSTOM_ARGS="\1 --disable-reporting"/; s/^CUSTOM_ARGS=" /CUSTOM_ARGS="/' /etc/default/alloy
+    else
+      printf 'CUSTOM_ARGS="--disable-reporting"\n' >> /etc/default/alloy
+    fi
+  fi
 
   # Back up the package default before replacing it with the custom config.
   if [[ -f "$ALLOY_CONF" ]]; then
