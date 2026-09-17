@@ -30,6 +30,30 @@ zabbix_export:
               tags:
                 - tag: scope
                   value: availability
+        - uuid: 8423a936bba4435fbfe836a3c40ceef3
+          name: 'Seafile keeper: outcome of the last run'
+          type: ZABBIX_ACTIVE
+          key: custom.seafile.keeper_status
+          delay: 5m
+          value_type: CHAR
+          trends: '0'
+          description: '"200 ok", or the HTTP code or curl error of the last attempt with the start of Seafile''s answer: 401 = API token revoked, 400 = wrong library password, curl-rc-* = NPM or Seafile unreachable.'
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1h
+          tags:
+            - tag: component
+              value: seafile
+          triggers:
+            - uuid: 985f4ec041b54294a0c38defef8d11b6
+              expression: 'find(/Homelab Seafile keeper/custom.seafile.keeper_status,,"regexp","^200 ok")=0'
+              name: 'Seafile keeper: last password refresh failed ({ITEM.LASTVALUE1})'
+              priority: HIGH
+              description: 'The keeper ran and Seafile did not accept the library password (or could not be reached). Uploads into the encrypted library start failing once the server''s one-hour cache expires. `journalctl -u seafile-keeper -n 5` on the CT. 401: new API token (POST /api2/auth-token/) into /etc/seafile-keeper/env. 400: the library password in env is wrong. curl-rc-*: NPM or Seafile down. Clears on the next successful run. Card n1d54ezp98n7.'
+              tags:
+                - tag: scope
+                  value: availability
       tags:
         - tag: class
           value: custom
