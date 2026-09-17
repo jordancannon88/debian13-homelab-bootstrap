@@ -24,7 +24,7 @@ zabbix_export:
             - uuid: 36405cc7ae8648a88a56c19b8bc2fb8f
               expression: 'change(/Homelab physical NIC flapping/custom.nic.pcie_detach)>0'
               recovery_mode: NONE
-              name: 'PCIe device dropped off the bus on {HOST.NAME} ({ITEM.LASTVALUE1}x this boot)'
+              name: 'NIC: PCIe device dropped off the bus on {HOST.NAME} ({ITEM.LASTVALUE1}x this boot)'
               type: MULTIPLE
               priority: HIGH
               description: 'A PCI device detached at runtime. On the Intel I225-V NICs this took corosync down and self-fenced the node (report link/367). pcie_aspm=off is already applied on pve3: a recurrence means escalate to NIC firmware/BIOS, then a replacement NIC. Never recovers on its own and each further detach opens a new problem; close by hand once acted on. The counter stays until reboot.'
@@ -53,7 +53,7 @@ zabbix_export:
               trigger_prototypes:
                 - uuid: 149de243dc604e168653477f1d50e49d
                   expression: 'sum(/Homelab physical NIC flapping/custom.nic.carrier_down[{#IFNAME}],5m)>2'
-                  name: 'NIC {#IFNAME} ({#DRIVER}, {#ROLE}) flapping on {HOST.NAME}'
+                  name: 'NIC: {#IFNAME} ({#DRIVER}, {#ROLE}) flapping on {HOST.NAME}'
                   priority: HIGH
                   description: 'A physical NIC on our side (LAN or mesh) lost link 3 or more times in 5 minutes. Cable first, then switch port, then the NIC; on a corosync NIC this self-fences the node within a minute. Close by hand once the cause is known.'
                   manual_close: 'YES'
@@ -64,7 +64,7 @@ zabbix_export:
                       value: '{#ROLE}'
                 - uuid: 554927dccc9947b4a91b149dfb7a9668
                   expression: 'sum(/Homelab physical NIC flapping/custom.nic.carrier_down[{#IFNAME}],5m)>2'
-                  name: 'WAN-side NIC {#IFNAME} ({#DRIVER}) flapping on {HOST.NAME} (ISP router side)'
+                  name: 'NIC: WAN-side {#IFNAME} ({#DRIVER}) flapping on {HOST.NAME} (ISP router side)'
                   priority: WARNING
                   description: 'The NIC that faces the ISP router lost link 3 or more times in 5 minutes. Usually the router rebooting or its port bouncing, not our cable. Once the Homelab internet template exists, a global correlation rule closes this automatically while "ISP router unreachable" is open (Kan 9yfu635gx2y4). Close by hand otherwise.'
                   manual_close: 'YES'
@@ -83,7 +83,7 @@ zabbix_export:
               operations:
                 - operationobject: TRIGGER_PROTOTYPE
                   operator: REGEXP
-                  value: '^NIC '
+                  value: '^NIC: [^W]'
                   discover: NO_DISCOVER
             - name: 'Our-side NICs'
               step: '2'
@@ -95,7 +95,7 @@ zabbix_export:
               operations:
                 - operationobject: TRIGGER_PROTOTYPE
                   operator: REGEXP
-                  value: '^WAN-side'
+                  value: '^NIC: WAN-side'
                   discover: NO_DISCOVER
           graph_prototypes:
             - uuid: 1644c479543942d3bdf48a458cba2ad5

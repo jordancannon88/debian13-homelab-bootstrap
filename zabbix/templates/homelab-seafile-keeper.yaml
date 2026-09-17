@@ -24,7 +24,7 @@ zabbix_export:
           triggers:
             - uuid: affbc09f377648459ee359896c8d9d36
               expression: 'last(/Homelab Seafile keeper/custom.seafile.keeper_age)>{$KEEPER_MAX_AGE}'
-              name: 'Seafile keeper has not refreshed the library password for over {$KEEPER_MAX_AGE}'
+              name: 'Seafile keeper: no accepted password refresh for over {$KEEPER_MAX_AGE}'
               priority: WARNING
               description: 'Background uploads into the encrypted library will fail with HTTP 500 once the server''s one-hour cache expires. Check `journalctl -u seafile-keeper -n 5` on the CT: a 401 means the API token was revoked (make a new one with POST /api2/auth-token/), a 400 means the library password changed, a curl error means NPM or Seafile is unreachable. Card n1d54ezp98n7.'
               tags:
