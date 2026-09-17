@@ -716,21 +716,21 @@ zabbix_export:
                   value: '{#DISKTYPE}'
               trigger_prototypes:
                 - uuid: 7f46b24934854866849dd758cb5999d5
-                  expression: 'avg(/SMART by Zabbix agent 2 active/smart.disk.temperature[{#NAME}],5m)>{$SMART.TEMPERATURE.MAX.CRIT}'
+                  expression: 'avg(/SMART by Zabbix agent 2 active/smart.disk.temperature[{#NAME}],5m)>{$SMART.TEMPERATURE.MAX.CRIT:"{#DISKTYPE}"}'
                   name: 'SMART: [{#NAME}]: Average disk temperature is critical'
-                  event_name: 'SMART: [{#NAME}]: Average disk temperature is critical (over {$SMART.TEMPERATURE.MAX.CRIT}°C for 5m)'
+                  event_name: 'SMART: [{#NAME}]: Average disk temperature is critical (over {$SMART.TEMPERATURE.MAX.CRIT:"{#DISKTYPE}"}°C for 5m)'
                   priority: AVERAGE
                   tags:
                     - tag: scope
                       value: notice
                 - uuid: c903a37f4b004e1593ef85ac893c3f6c
-                  expression: 'avg(/SMART by Zabbix agent 2 active/smart.disk.temperature[{#NAME}],5m)>{$SMART.TEMPERATURE.MAX.WARN}'
+                  expression: 'avg(/SMART by Zabbix agent 2 active/smart.disk.temperature[{#NAME}],5m)>{$SMART.TEMPERATURE.MAX.WARN:"{#DISKTYPE}"}'
                   name: 'SMART: [{#NAME}]: Average disk temperature is too high'
-                  event_name: 'SMART: [{#NAME}]: Average disk temperature is too high (over {$SMART.TEMPERATURE.MAX.WARN}°C for 5m)'
+                  event_name: 'SMART: [{#NAME}]: Average disk temperature is too high (over {$SMART.TEMPERATURE.MAX.WARN:"{#DISKTYPE}"}°C for 5m)'
                   priority: WARNING
                   dependencies:
                     - name: 'SMART: [{#NAME}]: Average disk temperature is critical'
-                      expression: 'avg(/SMART by Zabbix agent 2 active/smart.disk.temperature[{#NAME}],5m)>{$SMART.TEMPERATURE.MAX.CRIT}'
+                      expression: 'avg(/SMART by Zabbix agent 2 active/smart.disk.temperature[{#NAME}],5m)>{$SMART.TEMPERATURE.MAX.CRIT:"{#DISKTYPE}"}'
                   tags:
                     - tag: scope
                       value: notice
@@ -1233,6 +1233,18 @@ zabbix_export:
         - macro: '{$SMART.TEMPERATURE.MAX.WARN}'
           value: '50'
           description: 'This macro is used for trigger expression. It can be overridden on the host or linked on the template level.'
+        - macro: '{$SMART.TEMPERATURE.MAX.CRIT:"nvme"}'
+          value: '75'
+          description: 'Homelab: critical threshold for NVMe disks (context = {#DISKTYPE} from the discovery). NVMe runs 50 to 65 C in a small case and throttles near 85; the context-less 65 is for spinning disks. Card s24n9c7q8aye.'
+        - macro: '{$SMART.TEMPERATURE.MAX.WARN:"nvme"}'
+          value: '60'
+          description: 'Homelab: warning threshold for NVMe disks. HDDs keep the context-less 50.'
+        - macro: '{$SMART.TEMPERATURE.MAX.CRIT:"ssd"}'
+          value: '70'
+          description: 'Homelab: critical threshold for SATA SSDs.'
+        - macro: '{$SMART.TEMPERATURE.MAX.WARN:"ssd"}'
+          value: '55'
+          description: 'Homelab: warning threshold for SATA SSDs.'
       dashboards:
         - uuid: 3168a06be7744331b78574fbbc28826e
           name: 'SMART: Overview'
