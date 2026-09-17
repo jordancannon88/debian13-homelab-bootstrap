@@ -1,0 +1,37 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: bf6177b54b3f4fe39b327f18494c3001
+      name: Templates/Custom
+  templates:
+    - uuid: c435643350b142d4a835b726387b0066
+      template: 'Homelab kernel'
+      name: 'Homelab kernel'
+      description: 'Kernel-journal signals that mean a host is stalling, not just busy. custom.kernel.hung_tasks counts "blocked for more than N seconds" lines this boot (kernel-hung-tasks.sh reads the kernel journal as the zabbix user, systemd-journal group): a disk or NFS mount stopped answering for minutes. On 2026-09-17 a stalled SSD on pve1 blocked ZFS txg_sync and froze the opn1 firewall VM for 40 min with it (Kan jk9mlmclsl9m). High on any increase, manual close, same pattern as the PCIe-detach counter. Link to every bare-metal node and VM (not to containers: their kernel journal is the host). Host side installed by debian13-homelab-bootstrap monitoring.sh (setup_kernel_watch). Source of truth: zabbix/templates/homelab-kernel.yaml in that repo. Dry run: echo "INFO: task txg_sync:1 blocked for more than 120 seconds." | sudo tee /dev/kmsg. Docs: catalog link/376.'
+      groups:
+        - name: Templates/Custom
+      items:
+        - uuid: cb18c67f7f4b4214811a9efda79b858d
+          name: 'Kernel hung tasks this boot'
+          type: ZABBIX_ACTIVE
+          key: custom.kernel.hung_tasks
+          delay: 1m
+          description: 'Count of "task ... blocked for more than N seconds" lines in the kernel journal for the current boot. Resets to 0 on reboot.'
+          tags:
+            - tag: component
+              value: kernel
+          triggers:
+            - uuid: bc9b23e8168c49fb950167172cff657e
+              expression: 'change(/Homelab kernel/custom.kernel.hung_tasks)>0'
+              recovery_mode: NONE
+              name: 'Kernel: task blocked for over 2 minutes on {HOST.NAME} ({ITEM.LASTVALUE1} this boot)'
+              type: MULTIPLE
+              priority: HIGH
+              description: 'The kernel reported a task stuck in uninterruptible sleep for over the hung-task timeout: a disk, a USB bridge or an NFS server stopped answering. Everything waiting on that device is frozen meanwhile; on a node that hosts the firewall the LAN loses DNS and routing (pve1, 2026-09-17). Read `dmesg -T | grep -A6 "blocked for more than"` for the task name (txg_sync or zvol = ZFS waiting on the disk; nfs = the NFS server; usb-storage = the enclosure) and `vmstat 1 5` for the blocked-process count. Never recovers on its own; close by hand once the cause is known. Incident jk9mlmclsl9m.'
+              manual_close: 'YES'
+              tags:
+                - tag: scope
+                  value: availability
+      tags:
+        - tag: class
+          value: custom

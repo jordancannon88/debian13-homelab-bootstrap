@@ -564,6 +564,25 @@ setup_tbmesh() {
   record "Zabbix TB3 mesh" "installed (tb-mesh-heal cron every minute, custom.tbmesh.status)"
 }
 
+# setup_kernel_watch — the "Homelab kernel" template's host side: a counter of
+# kernel "task blocked for more than N seconds" lines this boot, read from the
+# kernel journal as the zabbix user (systemd-journal group). A hung task is a
+# device that stopped answering; on 2026-09-17 a stalled SSD on pve1 froze the
+# firewall VM for 40 minutes. Every bare-metal node and VM gets it; containers
+# have no kernel journal of their own.
+setup_kernel_watch() {
+  if ! install_zbx_helper kernel-hung-tasks.sh 0755; then
+    warn "Kernel watch helper not available — skipped."
+    record "Zabbix kernel watch" "skipped (helper missing)"
+    return 0
+  fi
+  if getent group systemd-journal >/dev/null 2>&1 && id zabbix >/dev/null 2>&1; then
+    usermod -aG systemd-journal zabbix
+  fi
+  write_agent_dropin kernel-watch.conf 'UserParameter=custom.kernel.hung_tasks,/usr/local/bin/kernel-hung-tasks.sh'
+  record "Zabbix kernel watch" "installed (custom.kernel.hung_tasks)"
+}
+
 # setup_bootcheck — collector for the "Homelab boot check" template. The
 # post-outage runbook (pve-outage-runbook.sh, run once per boot by
 # pve-outage-boot-check.service; not part of this repo) writes
@@ -1041,6 +1060,13 @@ else
     if [[ "${ZBX_TBMESH,,}" =~ ^(1|y|yes|true|on)$ ]]; then
       info "Installing the Thunderbolt mesh auto-heal and its Zabbix collector..."
       setup_tbmesh
+    fi
+    # Kernel hung-task counter: every host that has its own kernel (not containers).
+    if [[ "$ZBX_CONTAINER" == "1" ]]; then
+      note "Container detected: kernel watch skipped (the kernel journal belongs to the host)."
+    else
+      info "Installing the kernel hung-task watch..."
+      setup_kernel_watch
     fi
     # Boot check collector: only where the post-outage boot service is installed.
     if [[ -z "$ZBX_BOOTCHECK" ]]; then
