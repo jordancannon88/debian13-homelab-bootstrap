@@ -1,0 +1,39 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: bf6177b54b3f4fe39b327f18494c3001
+      name: Templates/Custom
+  templates:
+    - uuid: 2642f46b5a5b4309af1e1783af1d74cb
+      template: 'Homelab Seafile keeper'
+      name: 'Homelab Seafile keeper'
+      description: 'The seafile-keeper CT keeps the encrypted Seafile library password warm on the server every 50 minutes (Seafile forgets it after one hour and the mobile app does not re-send it, so background uploads fail with HTTP 500). custom.seafile.keeper_age is the age of the last successful call; Warning after 2 h. Host side: extras/seafile-keeper in debian13-homelab-bootstrap. Kan n1d54ezp98n7.'
+      groups:
+        - name: Templates/Custom
+      items:
+        - uuid: 8d2179967ac846d086a12b6281634e41
+          name: 'Seafile keeper: seconds since the library password was last set'
+          type: ZABBIX_ACTIVE
+          key: custom.seafile.keeper_age
+          delay: 5m
+          units: s
+          description: 'From /var/lib/seafile-keeper/last_ok. 999999 when the keeper never succeeded.'
+          tags:
+            - tag: component
+              value: seafile
+          triggers:
+            - uuid: affbc09f377648459ee359896c8d9d36
+              expression: 'last(/Homelab Seafile keeper/custom.seafile.keeper_age)>{$KEEPER_MAX_AGE}'
+              name: 'Seafile keeper has not refreshed the library password for over {$KEEPER_MAX_AGE}'
+              priority: WARNING
+              description: 'Background uploads into the encrypted library will fail with HTTP 500 once the server''s one-hour cache expires. Check `journalctl -u seafile-keeper -n 5` on the CT: a 401 means the API token was revoked (make a new one with POST /api2/auth-token/), a 400 means the library password changed, a curl error means NPM or Seafile is unreachable. Card n1d54ezp98n7.'
+              tags:
+                - tag: scope
+                  value: availability
+      tags:
+        - tag: class
+          value: custom
+      macros:
+        - macro: '{$KEEPER_MAX_AGE}'
+          value: 2h
+          description: 'Warning when the keeper has not succeeded for this long (it runs every 50 min).'
