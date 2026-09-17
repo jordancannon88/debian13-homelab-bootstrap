@@ -1417,7 +1417,7 @@ validate_unattended() {
     { [[ -z "$PRIMARY_USER" ]] || ! valid_user "$PRIMARY_USER"; } && m+=("PRIMARY_USER: set a valid admin username.")
   fi
   if [[ -n "$PRIMARY_USER" ]] && { [[ "$ENV_TYPE" == "pve" ]] || [[ "$A_HARDEN" == Y && "$A_HC_ssh" == Y ]]; }; then
-    akf="$(getent passwd "$PRIMARY_USER" 2>/dev/null | cut -d: -f6)/.ssh/authorized_keys"
+    akf="$( { getent passwd "$PRIMARY_USER" 2>/dev/null || true; } | cut -d: -f6)/.ssh/authorized_keys"
     if [[ "$A_BOOTSTRAP" == Y ]]; then
       if [[ -z "$PUBKEY" ]] && ! { id "$PRIMARY_USER" &>/dev/null && [[ -s "$akf" ]]; }; then
         m+=("PUBKEY: harden.sh needs an SSH key for ${PRIMARY_USER} (none given, none on file).")
@@ -1449,8 +1449,10 @@ run_unattended() {
   [[ "$ENV_TYPE" == "vm" || "$ENV_TYPE" == "lxc" || "$ENV_TYPE" == "pve" ]] || ENV_TYPE="$(detect_env_default)"
   info "Unattended mode: environment '${ENV_TYPE}', answers from the environment, no menu."
   sys_scan; compute_defaults; apply_unattended_overrides
-  (( ${#SYS_NOTES[@]} )) && { info "Found on this host:"; printf '   • %s\n' "${SYS_NOTES[@]}"; }
-  validate_unattended
+  if (( ${#SYS_NOTES[@]} )); then info "Found on this host:"; printf '   • %s\n' "${SYS_NOTES[@]}"; fi
+  # Called in a condition on purpose: set -e is suspended inside, like the
+  # wizard's validate_tui, so a missing user or key is reported, not fatal.
+  validate_unattended || exit 2
   info "Plan: bootstrap=$A_BOOTSTRAP harden=$A_HARDEN packages=$A_ANCILLARY($(anc_list)) shell=$A_SHELL($(shell_list); default ${DEFAULT_SHELL_CHOICE}) monitoring=$A_MONITORING(zabbix=$A_AGENT_zabbix alloy=$A_AGENT_alloy alerts=$A_AGENT_buzz) container=$A_CONTAINER motd=$A_MOTD docs=$A_DOC user=${PRIMARY_USER:-none} ssh_port=${SSH_PORT:-22}"
 }
 
