@@ -1234,6 +1234,10 @@ if [[ -n "$ZBX_SERVER_ACTIVE" ]]; then
     fi
     if [[ -n "$ZBX_DOCKER_USER" ]]; then
       setup_zabbix_rootless_docker "$ZBX_DOCKER_USER" || true
+      # The docker drop-in landed after the metadata was computed: redo it so
+      # the host announces the docker token (dev, 2026-09-18).
+      setup_host_metadata
+      systemctl restart zabbix-agent2 2>/dev/null || true
     else
       warn "Rootless Docker monitoring requested but no owning user resolved — set ZABBIX_DOCKER_USER=<user>."
       record "Zabbix rootless Docker" "skipped (no user resolved)"
