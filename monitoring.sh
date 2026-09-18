@@ -585,6 +585,20 @@ setup_kernel_watch() {
   record "Zabbix kernel watch" "installed (custom.kernel.hung_tasks)"
 }
 
+# setup_lxc_stat — the "Homelab LXC" template's host side, containers only:
+# lxc-stat-json.sh reports the container's own uptime (age of its init) and
+# CPU use from its cgroup, because /proc/uptime and /proc/loadavg inside a
+# container are the host kernel's numbers (pbs0 paged on pve0's load, 2026-09-17).
+setup_lxc_stat() {
+  if ! install_zbx_helper lxc-stat-json.sh 0755; then
+    warn "LXC stat helper not available — skipped."
+    record "Zabbix LXC stat" "skipped (helper missing)"
+    return 0
+  fi
+  write_agent_dropin lxc-stat.conf 'UserParameter=custom.lxc.stat,/usr/local/bin/lxc-stat-json.sh'
+  record "Zabbix LXC stat" "installed (custom.lxc.stat)"
+}
+
 # setup_host_metadata — HostMetadata for Zabbix autoregistration: a token
 # list derived from what this run installed (drop-ins in zabbix_agent2.d), so
 # the server's autoregistration actions link the right templates with no GUI
@@ -1098,6 +1112,11 @@ else
     if [[ "${ZBX_BOOTCHECK,,}" =~ ^(1|y|yes|true|on)$ ]]; then
       info "Installing the boot check collector..."
       setup_bootcheck
+    fi
+
+    if [[ "$ZBX_CONTAINER" == "1" ]]; then
+      info "Installing the LXC stat collector (container's own uptime and CPU)..."
+      setup_lxc_stat
     fi
 
     setup_host_metadata

@@ -23,6 +23,7 @@
 #   kernel     Homelab kernel               (kernel-watch.conf)
 #   bootcheck  Homelab boot check           (bootcheck.conf)
 #   keeper     Homelab Seafile keeper       (seafile-keeper.conf)
+#   lxcstat    Homelab LXC                  (lxc-stat.conf, containers only)
 #   docker     rootless docker monitoring   (docker.conf)
 set -u
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin:$PATH
@@ -51,6 +52,7 @@ tokens() {
   [[ -f "$D/kernel-watch.conf" ]]    && t="$t kernel"
   [[ -f "$D/bootcheck.conf" ]]       && t="$t bootcheck"
   [[ -f "$D/seafile-keeper.conf" ]]  && t="$t keeper"
+  [[ -f "$D/lxc-stat.conf" ]]        && t="$t lxcstat"
   [[ -f "$D/docker.conf" || -f "$D/plugins.d/docker.conf" ]] && t="$t docker"
   printf '%s\n' "$t"
 }
