@@ -38,7 +38,8 @@ def api(method, params):
 
 def guest_of(name):
     # "Proxmox VE: LXC [pve3/pbs (lxc/901)] ..." or "VM [pve4/dev (qemu/904)] ..."
-    m = re.search(r"\[[^/\]]+/([^ (\]]+) \((?:lxc|qemu)/\d+\)\]", name)
+    # and the restart form without the id: "LXC [pve2/grf]: has been restarted"
+    m = re.search(r"\[[^/\]]+/([^ (\]]+)(?: \((?:lxc|qemu)/\d+\))?\]", name)
     return m.group(1) if m else None
 
 def main():
