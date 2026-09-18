@@ -1163,6 +1163,20 @@ if command -v zfs >/dev/null 2>&1; then
     case " $AIDE_EXCLUDES " in *" $_mp "*) ;; *) AIDE_EXCLUDES="$AIDE_EXCLUDES $_mp";; esac
   done < <(zfs list -H -d 0 -o mountpoint 2>/dev/null)
 fi
+# Container image stores are bulk data too: rootful docker under /var/lib/docker
+# and rootless docker under every user's ~/.local/share/docker (dkr's daily
+# check cost 3 h of CPU and 6.6 GB of RAM walking it, 2026-09-18).
+if command -v docker >/dev/null 2>&1 || command -v podman >/dev/null 2>&1; then
+  for _d in /var/lib/docker /var/lib/containers; do
+    [[ -d "$_d" ]] && case " $AIDE_EXCLUDES " in *" $_d "*) ;; *) AIDE_EXCLUDES="$AIDE_EXCLUDES $_d";; esac
+  done
+  for _h in /home/*/.local/share/docker /home/*/.local/share/containers /root/.local/share/docker; do
+    [[ -d "$_h" ]] && AIDE_EXCLUDES="$AIDE_EXCLUDES $_h"
+  done
+fi
+# App data that only this host knows about (recordings, media, big caches)
+# goes in /etc/aide/aide.conf.d/98_local_exclude, written by hand with the
+# same "-/path" lines; the bootstrap never touches that file.
 if [[ -d /etc/aide/aide.conf.d ]]; then
   # AIDE 0.19 (Debian 13) has the non-recursive "-" rule; 0.18 (Debian 12)
   # rejects it, so there the classic "!" is written (valid, but it still walks
