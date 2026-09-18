@@ -37,6 +37,7 @@ PLAN = {
     "bootcheck": ("bootcheck", [], ["Homelab boot check"], False),
     "keeper":    ("keeper", [], ["Homelab Seafile keeper"], False),
     "lxcstat":   ("lxcstat", [], ["Homelab LXC"], False),
+    "docker-template": ("docker", [], ["Docker by Zabbix agent 2"], False),
 }
 NAME = "Autoreg: {key}"
 
