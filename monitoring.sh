@@ -1391,16 +1391,12 @@ hr '─'
 printf '%s%s  ⏭ NEXT STEPS%s\n' "$BOLD" "$MAG" "$RESET"
 _had_step=0
 if pkg_selected zabbix-agent2; then
-  printf '   %s•%s  Add this host on your Zabbix server using hostname %s%s%s, then confirm data\n' "$BOLD" "$RESET" "$BOLD" "$(hostname)" "$RESET"
-  printf '       with: %ssystemctl status zabbix-agent2%s and %stail -f /var/log/zabbix/zabbix_agent2.log%s\n' "$DIM" "$RESET" "$DIM" "$RESET"; _had_step=1
-  if [[ "${ZBX_DISK_HEALTH,,}" =~ ^(1|y|yes|true|on)$ ]]; then
-    printf '   %s•%s  Link the templates on the server: %sSMART by Zabbix agent 2 active%s (with the Homelab\n' "$BOLD" "$RESET" "$BOLD" "$RESET"
-    printf '       additions from zabbix/templates/) and, on ZFS hosts, %sHomelab ZFS pools%s. Active-only agents:\n' "$BOLD" "$RESET"
-    printf '       discovery runs on the agent'"'"'s 10-minute clock, so give it up to 15 minutes before judging.\n'
+  printf '   %s•%s  Zabbix: this host announces itself as %s%s%s with HostMetadata "%s"; the server'"'"'s\n' "$BOLD" "$RESET" "$BOLD" "$(hostname)" "$RESET" "$(grep -E '^HostMetadata=' "$ZBX_CONF" 2>/dev/null | cut -d= -f2-)"
+  printf '       autoregistration actions add it and link the templates for those tokens within 2 minutes.\n'
+  printf '       Confirm under Data collection > Hosts, then data with: %ssystemctl status zabbix-agent2%s and\n' "$DIM" "$RESET"
+  printf '       %stail -f /var/log/zabbix/zabbix_agent2.log%s. Disk discovery runs on the agent'"'"'s 10-minute clock.\n' "$DIM" "$RESET"; _had_step=1
+  if [[ "${ZBX_DISK_HEALTH,,}" =~ ^(1|y|yes|true|on)$ && "$ZBX_VIRT" == "1" ]]; then
     printf '       On a VM whose boot disk is virtual, set the host macro %s{$SMART.DISK.NAME.NOT_MATCHES}%s to hide it.\n' "$DIM" "$RESET"
-  fi
-  if [[ "${ZBX_NIC_FLAP,,}" =~ ^(1|y|yes|true|on)$ ]]; then
-    printf '   %s•%s  Also link %sHomelab physical NIC flapping%s (bare-metal hosts).\n' "$BOLD" "$RESET" "$BOLD" "$RESET"
   fi
   if [[ "${ZBX_PVE_EVENTS:-0}" == "1" ]]; then
     printf '   %s•%s  Also link %sHomelab Proxmox events%s (zabbix/templates/homelab-proxmox-events.yaml) on cluster nodes.\n' "$BOLD" "$RESET" "$BOLD" "$RESET"
