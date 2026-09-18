@@ -1,0 +1,83 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: bf6177b54b3f4fe39b327f18494c3001
+      name: Templates/Custom
+  templates:
+    - uuid: 32af4b71bdd64fcca353afaa955bd209
+      template: 'Homelab PVE guest volumes'
+      name: 'Homelab PVE guest volumes'
+      description: 'Guest volumes mounted on a PVE node, named after the guest. Every container root filesystem and mount point is a ZFS dataset the node sees, replicas included, so the stock filesystem discovery pages once per copy with only the dataset name (subvol-912-disk-0 on three nodes, 2026-09-18). pve-guest-volumes-json.sh (root via sudoers) lists them with {#GUEST}, {#VMID} and {#ROLE} live|replica; this rule keeps live only, so replicas raise nothing, and zbx-pve-fsfilter.py sets {$VFS.FS.FSNAME.NOT_MATCHES} on the node so the stock discovery ignores subvol mountpoints. Warning at {$GUESTFS.PUSED.MAX.WARN} %, High at {$GUESTFS.PUSED.MAX.CRIT} %. Linked by autoregistration token guestvol. Host side: monitoring.sh setup_pve_guestvol. Source: zabbix/templates/homelab-pve-guest-volumes.yaml. Kan 2rk32ec9faxf.'
+      groups:
+        - name: Templates/Custom
+      discovery_rules:
+        - uuid: 3350fbd151a14bd2a4f02a8b8ef6e830
+          name: 'Guest volume discovery'
+          type: ZABBIX_ACTIVE
+          key: custom.pve.guestvol.discovery
+          delay: 1h
+          filter:
+            evaltype: AND
+            conditions:
+              - macro: '{#ROLE}'
+                value: '^live$'
+                formulaid: A
+          lifetime: 7d
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
+          description: 'Live guest volumes on this node (replicas filtered out).'
+          item_prototypes:
+            - uuid: 21bfb462fe37484a89c80185478b917e
+              name: 'Guest volume {#GUEST} ({#VMID}): space used'
+              type: ZABBIX_ACTIVE
+              key: 'vfs.fs.size[{#FSNAME},pused]'
+              delay: 5m
+              value_type: FLOAT
+              units: '%'
+              tags:
+                - tag: component
+                  value: storage
+                - tag: guest
+                  value: '{#GUEST}'
+              trigger_prototypes:
+                - uuid: fdb5fe7baa6949059455088eab7bbf62
+                  expression: 'last(/Homelab PVE guest volumes/vfs.fs.size[{#FSNAME},pused])>{$GUESTFS.PUSED.MAX.CRIT}'
+                  name: 'Guest volume: {#GUEST} ({#VMID}) {#FSNAME} is over {$GUESTFS.PUSED.MAX.CRIT}% used ({ITEM.LASTVALUE1})'
+                  opdata: '{ITEM.LASTVALUE1}'
+                  priority: HIGH
+                  description: 'The guest''s own volume, seen from the node that runs it. Grow the volume (pct resize) or make the app keep less.'
+                  tags:
+                    - tag: scope
+                      value: capacity
+                - uuid: b0f53f827a6e42ce9efcc33e18c9e388
+                  expression: 'last(/Homelab PVE guest volumes/vfs.fs.size[{#FSNAME},pused])>{$GUESTFS.PUSED.MAX.WARN}'
+                  name: 'Guest volume: {#GUEST} ({#VMID}) {#FSNAME} is over {$GUESTFS.PUSED.MAX.WARN}% used ({ITEM.LASTVALUE1})'
+                  opdata: '{ITEM.LASTVALUE1}'
+                  priority: WARNING
+                  description: 'The guest''s own volume, seen from the node that runs it. Replicas of the same volume on other nodes are not discovered, so this fires once.'
+                  dependencies:
+                    - name: 'Guest volume: {#GUEST} ({#VMID}) {#FSNAME} is over {$GUESTFS.PUSED.MAX.CRIT}% used ({ITEM.LASTVALUE1})'
+                      expression: 'last(/Homelab PVE guest volumes/vfs.fs.size[{#FSNAME},pused])>{$GUESTFS.PUSED.MAX.CRIT}'
+                  tags:
+                    - tag: scope
+                      value: capacity
+            - uuid: 594d65d0c1aa4c2b805d7515314ba514
+              name: 'Guest volume {#GUEST} ({#VMID}): total'
+              type: ZABBIX_ACTIVE
+              key: 'vfs.fs.size[{#FSNAME},total]'
+              delay: 1h
+              units: B
+              tags:
+                - tag: component
+                  value: storage
+                - tag: guest
+                  value: '{#GUEST}'
+      tags:
+        - tag: class
+          value: custom
+      macros:
+        - macro: '{$GUESTFS.PUSED.MAX.CRIT}'
+          value: '90'
+          description: 'High when a live guest volume is fuller than this percent'
+        - macro: '{$GUESTFS.PUSED.MAX.WARN}'
+          value: '80'
+          description: 'Warning when a live guest volume is fuller than this percent'

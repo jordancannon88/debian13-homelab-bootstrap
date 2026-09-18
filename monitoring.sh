@@ -599,6 +599,27 @@ setup_lxc_stat() {
   record "Zabbix LXC stat" "installed (custom.lxc.stat)"
 }
 
+# setup_pve_guestvol — the "Homelab PVE guest volumes" template's host side
+# (PVE nodes only): guest volumes named after the guest, live copies only, so
+# a full container volume pages once with the guest's name instead of once per
+# replica with a dataset name. Reads /etc/pve, hence the sudoers line.
+setup_pve_guestvol() {
+  if ! install_zbx_helper pve-guest-volumes-json.sh 0755; then
+    warn "Guest volume helper not available — skipped."
+    record "Zabbix guest volumes" "skipped (helper missing)"
+    return 0
+  fi
+  printf 'zabbix ALL=(root) NOPASSWD: /usr/local/bin/pve-guest-volumes-json.sh\n' > /etc/sudoers.d/zabbix-guestvol.tmp
+  if visudo -cf /etc/sudoers.d/zabbix-guestvol.tmp >/dev/null 2>&1; then
+    install -m 0440 /etc/sudoers.d/zabbix-guestvol.tmp /etc/sudoers.d/zabbix-guestvol
+  else
+    warn "sudoers line for the guest volume helper failed validation — skipped."
+  fi
+  rm -f /etc/sudoers.d/zabbix-guestvol.tmp
+  write_agent_dropin pve-guestvol.conf 'UserParameter=custom.pve.guestvol.discovery,sudo /usr/local/bin/pve-guest-volumes-json.sh'
+  record "Zabbix guest volumes" "installed (custom.pve.guestvol.discovery)"
+}
+
 # setup_fleet_check — the "Homelab fleet check" template's host side: a daily
 # root run of fleet-check.sh --summary (systemd timer) whose result the agent
 # reads as JSON. A host that drifts from the bootstrap standard shows up as a
@@ -1152,6 +1173,11 @@ else
     if [[ "$ZBX_CONTAINER" == "1" ]]; then
       info "Installing the LXC stat collector (container's own uptime and CPU)..."
       setup_lxc_stat
+    fi
+
+    if command -v pveversion >/dev/null 2>&1 && [[ "$ZBX_CONTAINER" != "1" ]]; then
+      info "Installing the guest volume discovery (PVE node)..."
+      setup_pve_guestvol
     fi
 
     info "Installing the fleet parity check (daily fleet-check.sh for Zabbix)..."
