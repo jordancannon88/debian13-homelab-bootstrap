@@ -562,7 +562,7 @@ The per-script environment overrides in the next section keep working underneath
 | `REMOTE_SYSLOG="host:port"` | Forward logs to a remote syslog host (opt-in) |
 | `GRUB_PASSWORD="…"` | Set a GRUB password; normal boot stays password-free (opt-in) |
 | `HARDEN_SSH=0` · `HARDEN_FIREWALL=0` · `HARDEN_FAIL2BAN=0` · `HARDEN_UNATTENDED=0` · `HARDEN_JOURNALD=0` · `HARDEN_APPARMOR=0` · `HARDEN_AIDE=0` · `HARDEN_SYSCTL=0` · `HARDEN_EXTRA=0` · `HARDEN_LYNIS=0` | Per-component toggles; each defaults to 1 (run). Set 0 to skip that component entirely — its step, packages-side effects and recap entry are all skipped |
-| `AIDE_EXCLUDES="/mnt /media"` | Paths AIDE never indexes, written to `/etc/aide/aide.conf.d/99_homelab_exclude`. Default covers the usual bulk-data mount points; indexing an NFS datastore there once cost a host 16 h of CPU |
+| `AIDE_EXCLUDES="/mnt /media"` | Paths AIDE never indexes, written to `/etc/aide/aide.conf.d/99_homelab_exclude` as non-recursive `-<path>` rules (AIDE 0.19+; the classic `!` form still walks the tree). Default covers the usual bulk-data mount points; indexing an NFS datastore there once cost a host 16 h of CPU |
 | `ACCEPT_LOCKOUT_RISK=1` | Non-interactive runs (including `ASSUME_YES=1`) refuse to disable SSH password auth when no admin user has an SSH key, because that is a lockout. This flag is the explicit opt-in to proceed anyway; interactively you are asked (default No) |
 
 </details>
