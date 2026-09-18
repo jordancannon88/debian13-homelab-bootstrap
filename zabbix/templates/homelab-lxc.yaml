@@ -7,7 +7,7 @@ zabbix_export:
     - uuid: 8439714d01d9473594e7cb37be09c0ac
       template: 'Homelab LXC'
       name: 'Homelab LXC'
-      description: 'The container''s OWN uptime and CPU use. Inside an LXC container /proc/uptime and /proc/loadavg are the host kernel''s numbers, so the stock Linux template''s "has been restarted", "load average is too high" and "high CPU utilization" triggers are wrong for containers (pbs0 paged twice on 2026-09-17 while idle, showing pve0''s load; container restarts never show). lxc-stat-json.sh reads the age of the container''s init process and its cgroup v2 cpu.stat and cpu.pressure. Link to every LXC host (autoregistration token lxcstat) and silence the three stock triggers on those hosts with zbx-lxc-silence.py (host macros LOAD_AVG_PER_CPU.MAX.WARN and CPU.UTIL.CRIT set high, stock restart trigger disabled per host). Host side installed by debian13-homelab-bootstrap monitoring.sh (setup_lxc_stat, containers only). Source of truth: zabbix/templates/homelab-lxc.yaml. Dry run: restart a container, the LXC restart Info fires within a minute and the stock one stays quiet. Kan 2g05h9zrkkr1. Docs: catalog link/376.'
+      description: 'The container''s OWN uptime and CPU use. Inside an LXC container /proc/uptime and /proc/loadavg are the host kernel''s numbers, so the stock Linux template''s "has been restarted", "load average is too high" and "high CPU utilization" triggers are wrong for containers (pbs0 paged twice on 2026-09-17 while idle, showing pve0''s load; container restarts never show). lxc-stat-json.sh reads the age of the container''s init process and its cgroup v2 cpu.stat, cpu.pressure and io.pressure. Link to every LXC host (autoregistration token lxcstat) and silence the three stock triggers on those hosts with zbx-lxc-silence.py (host macros LOAD_AVG_PER_CPU.MAX.WARN and CPU.UTIL.CRIT set high, stock restart trigger disabled per host). Host side installed by debian13-homelab-bootstrap monitoring.sh (setup_lxc_stat, containers only). Source of truth: zabbix/templates/homelab-lxc.yaml. Dry run: restart a container, the LXC restart Info fires within a minute and the stock one stays quiet. Kan 2g05h9zrkkr1. Docs: catalog link/376.'
       groups:
         - name: Templates/Custom
       items:
@@ -83,6 +83,49 @@ zabbix_export:
           tags:
             - tag: component
               value: cpu
+        - uuid: a4adc6152acf47eaa393e6f4a13c5299
+          name: 'LXC: io_full10'
+          type: DEPENDENT
+          key: custom.lxc.io_full10
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: 'cgroup io.pressure "full" avg10: percent of the last 10 s in which every task of this container was stalled on IO. The container''s own number; /proc/pressure/io inside a container is the host''s.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.io_full10
+          master_item:
+            key: custom.lxc.stat
+          tags:
+            - tag: component
+              value: storage
+          triggers:
+            - uuid: bc6f41ede321410c82e72a29d1fd3834
+              expression: 'min(/Homelab LXC/custom.lxc.io_full10,5m)>{$LXC.IO.PSI.FULL.WARN}'
+              name: 'LXC: {HOST.NAME} stalled on IO (full over {$LXC.IO.PSI.FULL.WARN}% for 5m)'
+              priority: WARNING
+              description: 'This container''s own tasks are stalled on IO, not the host''s. Look at what the container does (backup, database, scan) and at the disk its volume lives on. Recovers on its own.'
+              tags:
+                - tag: scope
+                  value: performance
+        - uuid: 248494950fb541a8b89a90a03bd06143
+          name: 'LXC: io_some10'
+          type: DEPENDENT
+          key: custom.lxc.io_some10
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: 'cgroup io.pressure "some" avg10 of this container.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.io_some10
+          master_item:
+            key: custom.lxc.stat
+          tags:
+            - tag: component
+              value: storage
         - uuid: 5a811bfe80ce4bbbabc517e1a381f1aa
           name: 'LXC: stat (raw)'
           type: ZABBIX_ACTIVE
@@ -124,6 +167,9 @@ zabbix_export:
         - tag: class
           value: custom
       macros:
+        - macro: '{$LXC.IO.PSI.FULL.WARN}'
+          value: '25'
+          description: 'io.pressure full avg10 percent above which the container counts as stalled on IO'
         - macro: '{$LXC.CPU.PSI.WARN}'
           value: '50'
           description: 'cpu.pressure some avg10 percent above which the container is considered starved by the host'
