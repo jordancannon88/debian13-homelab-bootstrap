@@ -854,6 +854,7 @@ zabbix_export:
                   expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.offline_uncorrectable[{#NAME}])>0'
                   name: 'SMART: [{#NAME}] {#MODEL} {#SN}: uncorrectable sectors present'
                   priority: HIGH
+                  manual_close: 'YES'
                   description: 'Offline_Uncorrectable is non-zero: the drive has confirmed bad sectors. Replace.'
                   tags:
                     - tag: scope
@@ -864,6 +865,7 @@ zabbix_export:
                   expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.offline_uncorrectable[{#NAME}])>min(/SMART by Zabbix agent 2 active/smart.disk.attribute.offline_uncorrectable[{#NAME}],24h)'
                   name: 'SMART: [{#NAME}] {#MODEL} {#SN}: uncorrectable sectors rising (24h)'
                   priority: WARNING
+                  manual_close: 'YES'
                   description: 'Offline_Uncorrectable grew within the last 24h.'
                   tags:
                     - tag: scope
