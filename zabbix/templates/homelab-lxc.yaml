@@ -38,7 +38,7 @@ zabbix_export:
                 - tag: scope
                   value: performance
         - uuid: c3e7f73aeb8647ea9456af15685502a5
-          name: 'LXC: CPU use'
+          name: 'CPU use (own)'
           type: DEPENDENT
           key: custom.lxc.cpu_pct
           delay: '0'
