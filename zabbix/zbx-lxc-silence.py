@@ -6,6 +6,7 @@ inside a container (card 2g05h9zrkkr1):
   - host macro {$LOAD_AVG_PER_CPU.MAX.WARN} = 1000   (load average is too high)
   - host macro {$CPU.UTIL.CRIT}            = 1000   (high CPU utilization)
   - the host's inherited "has been restarted" trigger disabled
+  - the PSI template's "High IO pressure stall on ..." trigger disabled (host's number)
 
 The Homelab LXC template carries the honest replacements. Idempotent: existing
 macros are updated to the value, disabled triggers stay disabled. Run on the
@@ -23,6 +24,7 @@ DRY = "--dry-run" in sys.argv
 TEMPLATE = "Homelab LXC"
 MACROS = {"{$LOAD_AVG_PER_CPU.MAX.WARN}": "1000", "{$CPU.UTIL.CRIT}": "1000"}
 RESTART_TRIGGER_MATCH = "Linux: {HOST.NAME} has been restarted"   # the stock one only, never "LXC: ..."
+PSI_TRIGGER_PREFIX = "High IO pressure stall on"   # the PSI template's trigger: host's number inside a container
 
 def api(method, params):
     tok = open(TOKEN_FILE).readline().strip()
@@ -69,6 +71,17 @@ def main():
                 DRY or api("trigger.update", {"triggerid": t["triggerid"], "status": 1})
         if not trs:
             print(f"{h['host']}: WARNING no inherited '{RESTART_TRIGGER_MATCH}' trigger found")
+        psi = api("trigger.get", {"output": ["triggerid", "description", "status"], "hostids": h["hostid"],
+                                  "search": {"description": PSI_TRIGGER_PREFIX}, "inherited": True})
+        for t in psi:
+            if not t["description"].startswith(PSI_TRIGGER_PREFIX):
+                continue
+            if t["status"] == "1":
+                print(f"{h['host']}: trigger '{t['description'][:40]}...' already disabled")
+            else:
+                print(f"{h['host']}: disable trigger '{t['description'][:40]}...'")
+                changes += 1
+                DRY or api("trigger.update", {"triggerid": t["triggerid"], "status": 1})
     print(f"hosts={len(hosts)} {'planned' if DRY else 'applied'} changes={changes}")
 
 if __name__ == "__main__":

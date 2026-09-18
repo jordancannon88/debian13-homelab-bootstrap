@@ -14,6 +14,8 @@
 #   ncpu        CPUs the container may use
 #   cpu_pct     CPU used over a 1 s sample, percent of ncpu (0..100)
 #   cpu_some10  cpu.pressure "some" avg10 (percent of time a task waited for CPU)
+#   io_some10   io.pressure "some" avg10 of the container's cgroup
+#   io_full10   io.pressure "full" avg10 (all tasks stalled on IO)
 set -u
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin:$PATH
 
@@ -35,7 +37,11 @@ if [[ -n "$u1" ]]; then
 else
   pct="-1"
 fi
-some10="$(awk '/^some/{for(i=1;i<=NF;i++) if($i ~ /^avg10=/){sub("avg10=","",$i); print $i}}' /sys/fs/cgroup/cpu.pressure 2>/dev/null)"
-some10="${some10:--1}"
+psi() { awk -v k="$1" '$1==k{for(i=1;i<=NF;i++) if($i ~ /^avg10=/){sub("avg10=","",$i); print $i}}' "$2" 2>/dev/null; }
+some10="$(psi some /sys/fs/cgroup/cpu.pressure)"; some10="${some10:--1}"
+# io.pressure of the container's own cgroup: /proc/pressure/io inside a
+# container is the host's (grf and seafile-keeper paged on pve2's scrub).
+io_some10="$(psi some /sys/fs/cgroup/io.pressure)"; io_some10="${io_some10:--1}"
+io_full10="$(psi full /sys/fs/cgroup/io.pressure)"; io_full10="${io_full10:--1}"
 
-printf '{"uptime":%s,"ncpu":%s,"cpu_pct":%s,"cpu_some10":%s}\n' "$up" "$ncpu" "$pct" "$some10"
+printf '{"uptime":%s,"ncpu":%s,"cpu_pct":%s,"cpu_some10":%s,"io_some10":%s,"io_full10":%s}\n' "$up" "$ncpu" "$pct" "$some10" "$io_some10" "$io_full10"
