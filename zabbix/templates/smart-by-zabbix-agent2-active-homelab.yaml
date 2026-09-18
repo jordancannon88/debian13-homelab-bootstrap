@@ -199,7 +199,7 @@ zabbix_export:
                 - uuid: 42098b2cdcf84ac1b13fdbc68294021c
                   expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.reallocated_sector_ct[{#NAME}])>min(/SMART by Zabbix agent 2 active/smart.disk.attribute.reallocated_sector_ct[{#NAME}],24h)'
                   name: 'SMART: [{#NAME}] {#MODEL} {#SN}: reallocated sectors rising (24h)'
-                  url: 'https://bookstack.local.cannon.dev/link/354'
+                  url: 'https://bookstack.local.cannon.dev/link/428'
                   url_name: Runbook
                   priority: WARNING
                   description: 'Reallocated_Sector_Ct grew within the last 24h: the drive is remapping sectors.'
@@ -666,7 +666,7 @@ zabbix_export:
                 - uuid: 68f373252bee4f9e8f3b33d04fc1adbd
                   expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.percentage_used[{#NAME}])>90'
                   name: 'SMART: [{#NAME}]: NVMe disk percentage using is over 90% of estimated endurance'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/432'
                   url_name: Runbook
                   priority: AVERAGE
                   tags:
@@ -701,7 +701,7 @@ zabbix_export:
                 - uuid: 2d5cf100fe094c819d725ee598d37de8
                   expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.sn[{#NAME}],#1)<>last(/SMART by Zabbix agent 2 active/smart.disk.sn[{#NAME}],#2) and length(last(/SMART by Zabbix agent 2 active/smart.disk.sn[{#NAME}]))>0'
                   name: 'SMART: [{#NAME}]: Disk has been replaced'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/435'
                   url_name: Runbook
                   event_name: 'SMART: [{#NAME}]: Disk has been replaced (new serial number received)'
                   priority: INFO
@@ -740,7 +740,7 @@ zabbix_export:
                 - uuid: 7f46b24934854866849dd758cb5999d5
                   expression: 'avg(/SMART by Zabbix agent 2 active/smart.disk.temperature[{#NAME}],5m)>{$SMART.TEMPERATURE.MAX.CRIT:"{#DISKTYPE}"}'
                   name: 'SMART: [{#NAME}]: Average disk temperature is critical'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/426'
                   url_name: Runbook
                   event_name: 'SMART: [{#NAME}]: Average disk temperature is critical (over {$SMART.TEMPERATURE.MAX.CRIT:"{#DISKTYPE}"}°C for 5m)'
                   priority: AVERAGE
@@ -750,7 +750,7 @@ zabbix_export:
                 - uuid: c903a37f4b004e1593ef85ac893c3f6c
                   expression: 'avg(/SMART by Zabbix agent 2 active/smart.disk.temperature[{#NAME}],5m)>{$SMART.TEMPERATURE.MAX.WARN:"{#DISKTYPE}"}'
                   name: 'SMART: [{#NAME}]: Average disk temperature is too high'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/426'
                   url_name: Runbook
                   event_name: 'SMART: [{#NAME}]: Average disk temperature is too high (over {$SMART.TEMPERATURE.MAX.WARN:"{#DISKTYPE}"}°C for 5m)'
                   priority: WARNING
@@ -790,7 +790,7 @@ zabbix_export:
                 - uuid: 304bd042b7644a31bb74a1e71808d196
                   expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.test[{#NAME}])="false"'
                   name: 'SMART: [{#NAME}]: Disk self-test is not passed'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/433'
                   url_name: Runbook
                   priority: HIGH
                   tags:
@@ -830,7 +830,7 @@ zabbix_export:
                 - uuid: e176740425bc4a4bb1ed29a31e53e5e3
                   expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.current_pending_sector[{#NAME}])>0'
                   name: 'SMART: [{#NAME}] {#MODEL} {#SN}: pending sectors present'
-                  url: 'https://bookstack.local.cannon.dev/link/354'
+                  url: 'https://bookstack.local.cannon.dev/link/427'
                   url_name: Runbook
                   priority: HIGH
                   description: 'Unreadable sectors waiting for remap. On the pve2 WD Red this sat at 16 with no stock alert. Plan the replacement; do not zpool clear.'
@@ -842,7 +842,7 @@ zabbix_export:
                 - uuid: d15d1ff512884decb7b6f14a52e0c4f5
                   expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.current_pending_sector[{#NAME}])>min(/SMART by Zabbix agent 2 active/smart.disk.attribute.current_pending_sector[{#NAME}],24h)'
                   name: 'SMART: [{#NAME}] {#MODEL} {#SN}: pending sectors rising (24h)'
-                  url: 'https://bookstack.local.cannon.dev/link/354'
+                  url: 'https://bookstack.local.cannon.dev/link/427'
                   url_name: Runbook
                   priority: WARNING
                   description: 'Current_Pending_Sector grew within the last 24h: the surface failure is progressing.'
@@ -885,7 +885,7 @@ zabbix_export:
                 - uuid: 1dc571105e4841f0a594ceba4e7bf9aa
                   expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.offline_uncorrectable[{#NAME}])>0'
                   name: 'SMART: [{#NAME}] {#MODEL} {#SN}: uncorrectable sectors present'
-                  url: 'https://bookstack.local.cannon.dev/link/354'
+                  url: 'https://bookstack.local.cannon.dev/link/427'
                   url_name: Runbook
                   priority: HIGH
                   manual_close: 'YES'
@@ -898,7 +898,7 @@ zabbix_export:
                 - uuid: 31e8e91e714440f89ee3263c2bde1ee8
                   expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.offline_uncorrectable[{#NAME}])>min(/SMART by Zabbix agent 2 active/smart.disk.attribute.offline_uncorrectable[{#NAME}],24h)'
                   name: 'SMART: [{#NAME}] {#MODEL} {#SN}: uncorrectable sectors rising (24h)'
-                  url: 'https://bookstack.local.cannon.dev/link/354'
+                  url: 'https://bookstack.local.cannon.dev/link/427'
                   url_name: Runbook
                   priority: WARNING
                   manual_close: 'YES'
@@ -942,7 +942,7 @@ zabbix_export:
                 - uuid: 285311d7f6b74c00a568ad89a0d0face
                   expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.udma_crc_error_count[{#NAME}])>min(/SMART by Zabbix agent 2 active/smart.disk.attribute.udma_crc_error_count[{#NAME}],24h)'
                   name: 'SMART: [{#NAME}] {#MODEL} {#SN}: interface CRC errors rising (24h)'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/429'
                   url_name: Runbook
                   priority: WARNING
                   description: 'UDMA_CRC_Error_Count grew within the last 24h: check the cable, enclosure or controller before blaming the disk.'
@@ -1001,7 +1001,7 @@ zabbix_export:
                 - uuid: a459c4e258544245b6fd37f4f9ddfb9b
                   expression: 'last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}])<50'
                   name: 'SMART: [{#NAME}] {#MODEL} {#SN}: available spare below 50%'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/430'
                   url_name: Runbook
                   priority: WARNING
                   description: 'Over half of the spare flash is consumed. Reduce writes, plan a replacement.'
@@ -1013,7 +1013,7 @@ zabbix_export:
                 - uuid: cc18a608ab7644b8b080f14f1814d2b6
                   expression: 'last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}])<min(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}],24h)'
                   name: 'SMART: [{#NAME}] {#MODEL} {#SN}: available spare dropped (24h)'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/430'
                   url_name: Runbook
                   priority: WARNING
                   description: 'Available spare fell within the last 24h: the SSD is actively retiring blocks.'
@@ -1025,7 +1025,7 @@ zabbix_export:
                 - uuid: 96cdc398961e4fc8bc407806ffbd4aba
                   expression: 'last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}])<20 or last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}])<=last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare_threshold[{#NAME}]) or last(/SMART by Zabbix agent 2 active/smart.disk.media_errors[{#NAME}])>min(/SMART by Zabbix agent 2 active/smart.disk.media_errors[{#NAME}],24h)'
                   name: 'SMART: [{#NAME}] {#MODEL} {#SN}: NVMe failing (spare <20%, at threshold, or media errors rising)'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/431'
                   url_name: Runbook
                   priority: HIGH
                   description: 'Spare flash nearly gone, at the vendor threshold, or new media errors in 24h. Move data now.'

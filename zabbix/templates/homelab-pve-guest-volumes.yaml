@@ -46,7 +46,7 @@ zabbix_export:
                 - uuid: fdb5fe7baa6949059455088eab7bbf62
                   expression: 'last(/Homelab PVE guest volumes/vfs.fs.size[{#FSNAME},pused])>{$GUESTFS.PUSED.MAX.CRIT}'
                   name: 'Guest volume: {#GUEST} ({#VMID}) {#FSNAME} is over {$GUESTFS.PUSED.MAX.CRIT}% used ({ITEM.LASTVALUE1})'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/412'
                   url_name: Runbook
                   opdata: '{ITEM.LASTVALUE1}'
                   priority: HIGH
@@ -57,7 +57,7 @@ zabbix_export:
                 - uuid: b0f53f827a6e42ce9efcc33e18c9e388
                   expression: 'last(/Homelab PVE guest volumes/vfs.fs.size[{#FSNAME},pused])>{$GUESTFS.PUSED.MAX.WARN}'
                   name: 'Guest volume: {#GUEST} ({#VMID}) {#FSNAME} is over {$GUESTFS.PUSED.MAX.WARN}% used ({ITEM.LASTVALUE1})'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/412'
                   url_name: Runbook
                   opdata: '{ITEM.LASTVALUE1}'
                   priority: WARNING

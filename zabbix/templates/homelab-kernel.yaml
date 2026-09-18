@@ -25,7 +25,7 @@ zabbix_export:
               expression: 'change(/Homelab kernel/custom.kernel.hung_tasks)>0'
               recovery_mode: NONE
               name: 'Kernel: task blocked for over 2 minutes on {HOST.NAME} ({ITEM.LASTVALUE1} this boot)'
-              url: 'https://bookstack.local.cannon.dev/link/396'
+              url: 'https://bookstack.local.cannon.dev/link/447'
               url_name: Runbook
               type: MULTIPLE
               priority: HIGH

@@ -32,7 +32,7 @@ zabbix_export:
             - uuid: aaeec11ac4b047fba73a146ee6292220
               expression: 'min(/Homelab LXC/custom.lxc.cpu_some10,5m)>{$LXC.CPU.PSI.WARN}'
               name: 'LXC: {HOST.NAME} is starved for CPU (waiting over {$LXC.CPU.PSI.WARN}% of the time for 5m)'
-              url: 'https://bookstack.local.cannon.dev/link/376'
+              url: 'https://bookstack.local.cannon.dev/link/467'
               url_name: Runbook
               priority: WARNING
               description: 'The container''s tasks spend a large share of their time waiting for a CPU while its own use is not the cause: the host node is busy (backups, resyncs, another guest). Look at the host''s load and top, not at this container. Recovers on its own.'
@@ -62,7 +62,7 @@ zabbix_export:
               recovery_mode: RECOVERY_EXPRESSION
               recovery_expression: 'max(/Homelab LXC/custom.lxc.cpu_pct,5m)<{$LXC.CPU.UTIL.CRIT}-10'
               name: 'LXC: {HOST.NAME} CPU use over {$LXC.CPU.UTIL.CRIT}% for 5m'
-              url: 'https://bookstack.local.cannon.dev/link/376'
+              url: 'https://bookstack.local.cannon.dev/link/468'
               url_name: Runbook
               priority: WARNING
               description: 'The container itself is using nearly all the CPU it is allowed. This is the container''s own work, not the host''s. Recovers when use drops 10 points below the limit.'
@@ -108,7 +108,7 @@ zabbix_export:
             - uuid: bc6f41ede321410c82e72a29d1fd3834
               expression: 'min(/Homelab LXC/custom.lxc.io_full10,5m)>{$LXC.IO.PSI.FULL.WARN}'
               name: 'LXC: {HOST.NAME} stalled on IO (full over {$LXC.IO.PSI.FULL.WARN}% for 5m)'
-              url: 'https://bookstack.local.cannon.dev/link/376'
+              url: 'https://bookstack.local.cannon.dev/link/469'
               url_name: Runbook
               priority: WARNING
               description: 'This container''s own tasks are stalled on IO, not the host''s. Look at what the container does (backup, database, scan) and at the disk its volume lives on. Recovers on its own.'
@@ -163,7 +163,7 @@ zabbix_export:
             - uuid: dc2f4b36ce9b4520874ff95344d26d0f
               expression: 'last(/Homelab LXC/custom.lxc.uptime)<10m'
               name: 'LXC: {HOST.NAME} has been restarted (up {ITEM.LASTVALUE1})'
-              url: 'https://bookstack.local.cannon.dev/link/376'
+              url: 'https://bookstack.local.cannon.dev/link/466'
               url_name: Runbook
               priority: INFO
               description: 'The container''s init process is younger than 10 minutes: the container was restarted (pct stop/start, HA relocation, host reboot). The stock Linux "has been restarted" trigger cannot see this because it reads the host kernel''s uptime. Recovers on its own after 10 minutes.'
