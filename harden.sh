@@ -1250,6 +1250,24 @@ fi   # end: HARDEN_SYSCTL
 if [[ "$HARDEN_EXTRA" == "1" ]]; then
 banner "Applying extra hardening (Lynis suggestions)"
 # ==============================================================================
+# USB-SATA bridges: every ASMedia bridge in the fleet (174c:55aa enclosures
+# and dock, 174c:1153 single-disk cable) corrupts reads under the uas driver
+# (aborts + device resets: pms0 XFS 2026-09-16, 152 ZFS checksum errors on
+# pve2 2026-09-18, "slow IOs rising" on pve3/pve4). Pin them to usb-storage
+# everywhere; harmless on hosts without such a bridge. Takes effect for
+# devices plugged after this run and at the next boot (initramfs updated).
+USB_STORAGE_QUIRKS="${USB_STORAGE_QUIRKS:-174c:55aa:u,174c:1153:u}"
+if [[ -n "$USB_STORAGE_QUIRKS" ]]; then
+  write_file /etc/modprobe.d/usb-storage-quirks.conf <<EOF
+# debian13-homelab-bootstrap: ASMedia USB-SATA bridges on usb-storage, never uas
+options usb-storage quirks=${USB_STORAGE_QUIRKS}
+EOF
+  [[ -w /sys/module/usb_storage/parameters/quirks ]] && echo "$USB_STORAGE_QUIRKS" > /sys/module/usb_storage/parameters/quirks 2>/dev/null || true
+  run update-initramfs -u >/dev/null 2>&1 || true
+  log "usb-storage quirks set: ${USB_STORAGE_QUIRKS} (uas disabled for those bridges)."
+  record "USB bridges" "usb-storage quirks ${USB_STORAGE_QUIRKS}"
+fi
+
 # Safe, automatable fixes for common Lynis suggestions, applied BEFORE the audit.
 
 # set_logindef KEY VALUE — set a directive in /etc/login.defs (idempotent).
