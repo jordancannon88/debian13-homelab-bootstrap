@@ -58,6 +58,7 @@ if command -v sshd >/dev/null 2>&1; then
   mat="$(awk '$1=="maxauthtries"{print $2}' <<<"$T")"
   # PVE nodes: port 22 and key-only root are required for inter-node ssh.
   want_prl="no"; (( IS_PVE )) && want_prl="prohibit-password"
+  [[ "$prl" == "without-password" ]] && prl="prohibit-password"   # sshd -T prints the legacy alias
   if [[ "$prl" == "$want_prl" && "$pa" == "no" && "$mat" == "3" ]]; then row "sshd lockdown" OK "port=$port root=$prl pass=no tries=3"
   else row "sshd lockdown" MISSING "port=$port root=$prl (want $want_prl) pass=$pa tries=$mat"; fi
 else row "sshd lockdown" MISSING "sshd not found"; fi
