@@ -50,6 +50,8 @@ zabbix_export:
             - uuid: 3a0c55dc31f44d399b9354caad902cfd
               expression: 'length(last(/Homelab Proxmox events/custom.pve.replication.error))>0'
               name: 'Replication: status script failed on {HOST.NAME}'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
               priority: HIGH
               description: 'pvesr status did not run (sudoers, pmxcfs or pvesr itself); every replication trigger on this host is blind. Value: {ITEM.LASTVALUE1}'
               tags:
@@ -126,6 +128,8 @@ zabbix_export:
             - uuid: 38ee1c8e63de4031b9fa6fcf2adeaeec
               expression: 'length(last(/Homelab Proxmox events/custom.pve.backup.error))>0'
               name: 'Backup: task script failed on {HOST.NAME}'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
               priority: HIGH
               description: 'pvesh get /nodes/<host>/tasks did not run; backup failures on this host are invisible until fixed. Value: {ITEM.LASTVALUE1}'
               tags:
@@ -172,6 +176,8 @@ zabbix_export:
               expression: 'last(/Homelab Proxmox events/custom.pve.backup.last_failed,#1)<>last(/Homelab Proxmox events/custom.pve.backup.last_failed,#2) and length(last(/Homelab Proxmox events/custom.pve.backup.last_failed))>0'
               recovery_mode: NONE
               name: 'Backup: vzdump task failed on {HOST.NAME}: {ITEM.LASTVALUE1}'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
               type: MULTIPLE
               priority: HIGH
               description: 'A backup task finished with an error (job errors, storage unreachable, guest lock...). Fires when the newest failed task changes, once per failure. Read the task log in PVE > node > Task History, then the PBS datastore. Never recovers on its own; close by hand once acted on.'
@@ -284,6 +290,8 @@ zabbix_export:
             - uuid: 7f82204f50584978a261ba7dca744f62
               expression: 'length(last(/Homelab Proxmox events/custom.pve.ha.error))>0'
               name: 'HA: event script failed on {HOST.NAME}'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
               priority: HIGH
               description: 'The HA event collector cannot read the journal on this node; recover events would go unseen while it is CRM master. Value: {ITEM.LASTVALUE1}'
               tags:
@@ -345,6 +353,8 @@ zabbix_export:
               expression: 'last(/Homelab Proxmox events/custom.pve.ha.last_recover,#1)<>last(/Homelab Proxmox events/custom.pve.ha.last_recover,#2) and length(last(/Homelab Proxmox events/custom.pve.ha.last_recover))>0'
               recovery_mode: NONE
               name: 'HA: guest recovered from a fenced node: {ITEM.LASTVALUE1}'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
               type: MULTIPLE
               priority: HIGH
               description: 'HA recovered a guest because its node fenced itself (watchdog reboot after lost quorum). The guest now runs from its last replication sync. Find out why the node fenced before moving guests back (report link/357, pve3 link/374). Never recovers on its own, one problem per event; close by hand.'
@@ -376,6 +386,8 @@ zabbix_export:
               expression: 'last(/Homelab Proxmox events/custom.pve.ha.last_move,#1)<>last(/Homelab Proxmox events/custom.pve.ha.last_move,#2) and length(last(/Homelab Proxmox events/custom.pve.ha.last_move))>0'
               recovery_mode: NONE
               name: 'HA: guest moved: {ITEM.LASTVALUE1}'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
               type: MULTIPLE
               priority: INFO
               description: 'An HA-managed guest was migrated or relocated (audit trail). Close by hand.'
@@ -419,6 +431,8 @@ zabbix_export:
                 - uuid: 6307020fb5cb43829419d53582748d8d
                   expression: 'last(/Homelab Proxmox events/custom.pve.replication.fails[{#JOB}])>0'
                   name: 'Replication: job {#JOB} (guest {#GUEST}) to {#TARGET} failing, {ITEM.LASTVALUE1} in a row'
+                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url_name: Runbook
                   priority: HIGH
                   description: 'Replication of guest {#GUEST} to {#TARGET} keeps failing; an HA recover would boot the last good copy. Read the error in the job state item, then `pvesr status` on the node. Runbook link/355. Clears on its own when the next sync succeeds.'
                   tags:
@@ -523,6 +537,8 @@ zabbix_export:
                 - uuid: 6b239c802f494da18cd4ed6c9970e30d
                   expression: 'last(/Homelab Proxmox events/custom.pve.replication.next_sync[{#JOB}])>0 and now()-last(/Homelab Proxmox events/custom.pve.replication.next_sync[{#JOB}])>{$REPL_LATE_GRACE} and last(/Homelab Proxmox events/custom.pve.replication.enabled[{#JOB}])=1'
                   name: 'Replication: job {#JOB} to {#TARGET} missed its schedule (over {$REPL_LATE_GRACE} past the next sync)'
+                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url_name: Runbook
                   priority: WARNING
                   description: 'An enabled job is more than {$REPL_LATE_GRACE} past the next sync time pvesr scheduled for it: the schedule stopped or syncs are not completing. Judged by each job''s own schedule, so 15-minute and nightly jobs share one value. Check `pvesr status` and the job schedule on the node.'
                   tags:

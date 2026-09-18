@@ -26,6 +26,8 @@ zabbix_export:
             - uuid: 1a149664178e4b83a634012b8f43a126
               expression: 'max(/Homelab internet/icmpping[{$ISP_ROUTER},3,,,],3m)=0'
               name: 'Internet: ISP router {$ISP_ROUTER} unreachable'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
               priority: HIGH
               description: 'No answer from the ISP router for 3 minutes (3-minute window so a single lost ping never pages). Power, cable or the modem itself; a router power cycle also bounces the WAN-side NICs on pve1 and pve2, whose flap Warnings are auto-closed by the event correlation rule while this is open. Everything downstream (WAN link, internet, DNS) depends on this trigger. Reading the three layers: router unreachable = power, cable or the modem; router up but no internet = the ISP or the WAN link; internet up but DNS failing = the resolver. Runbook: BookStack link/332 (OPNsense notes), card 9yfu635gx2y4.'
               tags:
@@ -51,6 +53,8 @@ zabbix_export:
             - uuid: db35575c1c8c4bb397d894ca0637fa50
               expression: 'max(/Homelab internet/isp.gw.ping,5m)=0'
               name: 'Internet: ISP router {$ISP_ROUTER} unreachable from opn1'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
               priority: WARNING
               description: 'The firewall itself cannot ping its gateway although the Zabbix server can (otherwise the High above is open and this one is suppressed): the WAN side of opn1, its VLAN or a firewall rule. Reading the three layers: router unreachable = power, cable or the modem; router up but no internet = the ISP or the WAN link; internet up but DNS failing = the resolver. Runbook: BookStack link/332 (OPNsense notes), card 9yfu635gx2y4.'
               dependencies:
@@ -73,6 +77,8 @@ zabbix_export:
             - uuid: 0dfacad506dd4687a6c8cdcb9c05a83f
               expression: 'last(/Homelab internet/net.if.wan.status)<>1'
               name: 'Internet: WAN link {$WAN_IF} down on opn1'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
               priority: HIGH
               description: 'The WAN interface on the firewall is not operationally up: the virtio NIC in the opn1 VM, the RTL8156 dongle on pve2 (its flap Warning says so), or the cable to the ISP router. Suppressed while the router is unreachable. Reading the three layers: router unreachable = power, cable or the modem; router up but no internet = the ISP or the WAN link; internet up but DNS failing = the resolver. Runbook: BookStack link/332 (OPNsense notes), card 9yfu635gx2y4.'
               dependencies:
@@ -109,6 +115,8 @@ zabbix_export:
             - uuid: 92d6b334b4bb47038c405a02aca8f9a6
               expression: 'max(/Homelab internet/icmpping[{$INTERNET_PING_TARGET},3,,,],3m)=0 and max(/Homelab internet/net.tcp.service[https,{$INTERNET_TCP_HOST},443],3m)=0'
               name: 'Internet: no internet reachability'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
               priority: HIGH
               description: 'Neither ICMP to Quad9 nor TCP 443 to ghcr.io worked for 3 minutes while the ISP router answers and the WAN link is up: the ISP, or the path beyond the router. Nothing to fix in the lab; wait, or check the ISP status page from a phone. Delivery note: during an internet outage only a LAN-side sink can deliver this. Reading the three layers: router unreachable = power, cable or the modem; router up but no internet = the ISP or the WAN link; internet up but DNS failing = the resolver. Runbook: BookStack link/332 (OPNsense notes), card 9yfu635gx2y4.'
               dependencies:
@@ -136,6 +144,8 @@ zabbix_export:
             - uuid: 85b353a297a943ea8def68d493a83041
               expression: 'min(/Homelab internet/icmppingsec[{$INTERNET_PING_TARGET},3,,,,avg],5m)>{$INTERNET_LATENCY_MAX}'
               name: 'Internet: latency to Quad9 above {$INTERNET_LATENCY_MAX} for 5m'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
               priority: WARNING
               description: 'Every ping in the last 5 minutes was slower than the threshold: a saturated uplink (a backup or a large upload) or ISP trouble. Informational unless it lasts. Reading the three layers: router unreachable = power, cable or the modem; router up but no internet = the ISP or the WAN link; internet up but DNS failing = the resolver. Runbook: BookStack link/332 (OPNsense notes), card 9yfu635gx2y4.'
               dependencies:
@@ -193,6 +203,8 @@ zabbix_export:
             - uuid: f4032cf026654078a24d2821af2e361e
               expression: 'max(/Homelab DNS/net.dns[,bookstack.local.cannon.dev,A],3m)=0'
               name: 'DNS: internal names not resolving (opn1 Unbound)'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
               priority: HIGH
               description: 'The LAN resolver on opn1 is not answering for internal names for 3 minutes: Unbound stopped or its config broke (the 2026-09-05 renumber incident class). Every internal service name fails while this is open, independent of the internet. Check `configctl unbound status` on opn1, then System > Gateways and the DNS redirect rules. Runbook: BookStack link/332.'
               tags:
@@ -215,6 +227,8 @@ zabbix_export:
             - uuid: 22428a30dab1453c84c47824ea8a1621
               expression: 'max(/Homelab DNS/net.dns[9.9.9.9,ghcr.io,A],3m)=0'
               name: 'DNS: external names not resolving (Quad9 direct)'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
               priority: WARNING
               description: 'Quad9 did not answer a direct query for 3 minutes while the internet is otherwise reachable (the correlation rule closes this while "Internet: no internet reachability" is open): UDP 53 blocked or rate-limited upstream, or Quad9 itself. Try `dig @149.112.112.112 ghcr.io`. Card 9yfu635gx2y4.'
               tags:

@@ -30,6 +30,8 @@ zabbix_export:
             - uuid: 2abd38f03f96405cb62b1ff5afc8ebae
               expression: 'last(/Homelab fleet check/custom.fleet.age)>36h or last(/Homelab fleet check/custom.fleet.age)<0'
               name: 'Fleet check: no run on {HOST.NAME} for over 36 h'
+              url: 'https://bookstack.local.cannon.dev/link/399'
+              url_name: Runbook
               priority: WARNING
               description: 'fleet-check.timer did not run or fleet-check-run.sh failed. Check: systemctl status fleet-check.timer fleet-check.service; run it by hand: systemctl start fleet-check.service.'
               tags:
@@ -70,6 +72,8 @@ zabbix_export:
             - uuid: 3b3999a6d0a140fca986a88fae6ca910
               expression: 'last(/Homelab fleet check/custom.fleet.missing)<>"none" and last(/Homelab fleet check/custom.fleet.missing)<>"never-run"'
               name: 'Fleet drift on {HOST.NAME}: {ITEM.LASTVALUE1}'
+              url: 'https://bookstack.local.cannon.dev/link/399'
+              url_name: Runbook
               opdata: '{ITEM.LASTVALUE1}'
               priority: WARNING
               description: 'This host no longer matches debian13-homelab-bootstrap main for the listed components. Run fleet-check.sh on it for the full table, fix with the bootstrap step that owns the component (STEPS=harden / monitoring, unattended, with the host''s real SSH_PORT and ALLOW_* ports), then systemctl start fleet-check.service. Card yoexmvdlxpik.'
