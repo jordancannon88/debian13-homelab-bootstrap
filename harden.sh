@@ -526,6 +526,11 @@ for u in "${ADMIN_USER_LIST[@]}"; do
 done
 if [[ "$ROOT_ALREADY_LOCKED" -eq 1 ]]; then
   : # nothing to do; reported in the step
+elif [[ "$IS_PVE" == "1" ]]; then
+  # Proxmox VE: the web UI and the API log in as root@pam with the root
+  # password. Locking it would lock the GUI. Never on a PVE node.
+  LOCK_ROOT_NOW=0
+  [[ "$DISABLE_ROOT_LOGIN" == "1" ]] && warn "Proxmox VE host: DISABLE_ROOT_LOGIN ignored (root@pam is the web UI login)."
 elif [[ -n "$KEYED_ADMIN" ]]; then
   if [[ -n "$DISABLE_ROOT_LOGIN" ]]; then
     [[ "$DISABLE_ROOT_LOGIN" == "1" ]] && LOCK_ROOT_NOW=1
