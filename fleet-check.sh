@@ -35,10 +35,11 @@ age_days() { echo $(( ( $(date +%s) - $(stat -c %Y "$1") ) / 86400 )); }
 (( SUMMARY )) || { printf '%-26s %-8s %s\n' "== $HOST" "$VIRT" "pve=$IS_PVE zfs=$HAS_ZFS $(date -Is)"; }
 
 # --- bootstrap run ---------------------------------------------------------
+# Informational only (hosts built before the bootstrap wrote a log have none).
 if [[ -f /var/log/homelab-bootstrap/install-latest.log ]]; then
-  row "bootstrap log" OK "last run $(stat -c %y /var/log/homelab-bootstrap/install-latest.log | cut -c1-16)"
+  row "bootstrap log" n/a "last run $(stat -c %y /var/log/homelab-bootstrap/install-latest.log | cut -c1-16)"
 else
-  row "bootstrap log" MISSING "no /var/log/homelab-bootstrap/install-latest.log"
+  row "bootstrap log" n/a "none (built before the bootstrap kept a log)"
 fi
 
 # --- admin user: a non-root sudoer with an SSH key ---------------------------
