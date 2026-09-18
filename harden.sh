@@ -33,6 +33,8 @@
 #   ASSUME_YES=1     -> answer "yes" to every prompt (for automation)
 #   SKIP_UPGRADE=1   -> skip the full apt upgrade
 #   REBUILD_AIDE=1   -> force-rebuild the AIDE baseline even if present
+#   PVE_FIREWALL=1   -> on a Proxmox VE node, run the nftables step anyway
+#                       (default: skipped there; see the PVE profile notes)
 #   AIDE_EXCLUDES="/mnt /media /export /var/lib/vz" -> paths AIDE never indexes
 #                     (bulk-data mounts; /var/lib/vz = PVE guest disk images, ISOs, dumps)
 #   Per-component toggles (all default 1 = run; set 0 to skip that component):
@@ -433,6 +435,17 @@ if [[ "$IS_PVE" == "1" ]]; then
   if [[ "$HARDEN_FIREWALL" == "1" && "$DOCKER_COMPAT" != "1" ]] && systemctl is-active --quiet pve-firewall 2>/dev/null; then
     warn "pve-firewall is active: this firewall's 'flush ruleset' will clobber its rules on every load. Use DOCKER_COMPAT=1 (scoped flush) or disable pve-firewall."
   fi
+  # PVE profile (2026-09-18, fleet-parity work): a deny-by-default nftables
+  # ruleset on a cluster node with no corosync (5405-5412/udp), migration
+  # (60000-60050/tcp, VNC 5900-5999) or Thunderbolt-mesh rules drops quorum and
+  # the HA watchdog fences the node. Until a PVE ruleset exists the firewall
+  # step is skipped here; pve-firewall and the upstream segmentation stay in
+  # charge. PVE_FIREWALL=1 forces the old behaviour (you own the peer rules).
+  if [[ "$HARDEN_FIREWALL" == "1" && "${PVE_FIREWALL:-0}" != "1" ]]; then
+    warn "Proxmox VE host: skipping the nftables step (no cluster/migration/mesh rules yet; PVE_FIREWALL=1 to force)."
+    HARDEN_FIREWALL=0
+    TOTAL_STEPS=$((TOTAL_STEPS - 1))
+  fi
 fi
 
 info "Run date     : $(date '+%Y-%m-%d %H:%M:%S %Z')"
@@ -818,7 +831,14 @@ ensure_sshd_opt () {
 
 info "Applying hardened sshd options..."
 ensure_sshd_opt Port "$SSH_PORT"
-ensure_sshd_opt PermitRootLogin "no"
+# Cluster nodes ssh to each other as root with keys (migration, replication,
+# pvecm), so a PVE node keeps key-only root login; everywhere else it is off.
+if [[ "$IS_PVE" == "1" ]]; then
+  ensure_sshd_opt PermitRootLogin "prohibit-password"
+  note "Proxmox VE host: PermitRootLogin prohibit-password (key-only root for inter-node ssh)."
+else
+  ensure_sshd_opt PermitRootLogin "no"
+fi
 ensure_sshd_opt PasswordAuthentication "no"
 ensure_sshd_opt ChallengeResponseAuthentication "no"
 ensure_sshd_opt PubkeyAuthentication "yes"
@@ -1179,11 +1199,16 @@ SYSCTL_H="/etc/sysctl.d/99-hardening.conf"
 run cp -a /etc/sysctl.conf "$BACKUP_DIR/sysctl.conf.bak" 2>/dev/null || true
 # Docker requires IPv4 forwarding; otherwise keep it off for a non-router host.
 if [[ "$DOCKER_COMPAT" == "1" ]]; then IP_FWD=1; IP_FWD_NOTE="enabled for Docker"; else IP_FWD=0; IP_FWD_NOTE="off (host is not a router)"; fi
+# A PVE node routes for its guests and for the Thunderbolt mesh (routed
+# fallback between nodes), so forwarding stays on and reverse-path filtering
+# is loose (2) rather than strict (1), which drops asymmetric mesh paths.
+RPF=1
+if [[ "$IS_PVE" == "1" ]]; then IP_FWD=1; IP_FWD_NOTE="enabled (Proxmox VE node: guests and mesh routing)"; RPF=2; fi
 write_file "$SYSCTL_H" <<EOF
 # Minimal kernel/network hardening
 net.ipv4.ip_forward = ${IP_FWD}   # ${IP_FWD_NOTE}
-net.ipv4.conf.all.rp_filter = 1
-net.ipv4.conf.default.rp_filter = 1
+net.ipv4.conf.all.rp_filter = ${RPF}
+net.ipv4.conf.default.rp_filter = ${RPF}
 net.ipv4.tcp_syncookies = 1
 net.ipv4.tcp_timestamps = 0
 net.ipv4.conf.all.accept_source_route = 0
@@ -1274,7 +1299,14 @@ set_logindef PASS_MIN_DAYS 1
 set_logindef PASS_WARN_AGE 7
 set_logindef SHA_CRYPT_MIN_ROUNDS 65536
 set_logindef SHA_CRYPT_MAX_ROUNDS 65536
-set_logindef UMASK 027
+if [[ "$IS_PVE" == "1" ]]; then
+  # UMASK 027 makes 'pct create' build a 0750 rootfs the userns root cannot
+  # traverse (Kan sdds9tw12dv3). A PVE node keeps the Debian default.
+  set_logindef UMASK 022
+  note "Proxmox VE host: login.defs UMASK kept at 022 (027 breaks pct create, Kan sdds9tw12dv3)."
+else
+  set_logindef UMASK 027
+fi
 record "login.defs" "password aging + SHA rounds + UMASK 027"
 
 # 4) fail2ban jail.local so updates can't clobber config (DEB-0880).
