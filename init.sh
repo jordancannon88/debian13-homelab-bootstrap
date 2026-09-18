@@ -1518,6 +1518,7 @@ else
 fi
 
 materialize_selection
+export ENV_TYPE   # the host type reaches every child script (harden.sh PVE profile)
 log_config
 if (( ${#SELECTED[@]} == 0 )); then warn "No scripts selected — nothing to do."; exit 0; fi
 log "Settings accepted — running the selected scripts now."
