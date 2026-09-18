@@ -7,7 +7,7 @@ zabbix_export:
     - uuid: 32af4b71bdd64fcca353afaa955bd209
       template: 'Homelab PVE guest volumes'
       name: 'Homelab PVE guest volumes'
-      description: 'Guest volumes mounted on a PVE node, named after the guest. Every container root filesystem and mount point is a ZFS dataset the node sees, replicas included, so the stock filesystem discovery pages once per copy with only the dataset name (subvol-912-disk-0 on three nodes, 2026-09-18). pve-guest-volumes-json.sh (root via sudoers) lists them with {#GUEST}, {#VMID} and {#ROLE} live|replica; this rule keeps live only, so replicas raise nothing, and zbx-pve-fsfilter.py sets {$VFS.FS.FSNAME.NOT_MATCHES} on the node so the stock discovery ignores subvol mountpoints. Warning at {$GUESTFS.PUSED.MAX.WARN} %, High at {$GUESTFS.PUSED.MAX.CRIT} %. Linked by autoregistration token guestvol. Host side: monitoring.sh setup_pve_guestvol. Source: zabbix/templates/homelab-pve-guest-volumes.yaml. Kan 2rk32ec9faxf.'
+      description: 'Guest volumes mounted on a PVE node, named after the guest. Every container root filesystem and mount point is a ZFS dataset the node sees, replicas included, so the stock filesystem discovery pages once per copy with only the dataset name (subvol-912-disk-0 on three nodes, 2026-09-18). pve-guest-volumes-json.sh (root via sudoers) lists them with {#GUEST}, {#VMID} and {#ROLE} live|replica; this rule keeps live only and skips guests listed in {$GUESTVOL.SELF_REPORTING} (they have their own agent and raise their own alert), so replicas and self-reporting guests raise nothing here, and zbx-pve-fsfilter.py sets {$VFS.FS.FSNAME.NOT_MATCHES} on the node so the stock discovery ignores subvol mountpoints. Warning at {$GUESTFS.PUSED.MAX.WARN} %, High at {$GUESTFS.PUSED.MAX.CRIT} %. Linked by autoregistration token guestvol. Host side: monitoring.sh setup_pve_guestvol. Source: zabbix/templates/homelab-pve-guest-volumes.yaml. Kan 2rk32ec9faxf.'
       groups:
         - name: Templates/Custom
       discovery_rules:
@@ -22,6 +22,10 @@ zabbix_export:
               - macro: '{#ROLE}'
                 value: '^live$'
                 formulaid: A
+              - macro: '{#GUEST}'
+                value: '{$GUESTVOL.SELF_REPORTING}'
+                operator: NOT_MATCHES_REGEX
+                formulaid: B
           lifetime: 7d
           enabled_lifetime_type: DISABLE_IMMEDIATELY
           description: 'Live guest volumes on this node (replicas filtered out).'
@@ -75,6 +79,9 @@ zabbix_export:
         - tag: class
           value: custom
       macros:
+        - macro: '{$GUESTVOL.SELF_REPORTING}'
+          value: '^(grf|zabbix|frigate|seafile-keeper|pbs|pbs0)$'
+          description: 'Guests with their own Zabbix agent: they raise their own space alerts, so the node does not repeat them. Add a guest here when it gets an agent.'
         - macro: '{$GUESTFS.PUSED.MAX.CRIT}'
           value: '90'
           description: 'High when a live guest volume is fuller than this percent'
