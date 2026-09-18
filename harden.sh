@@ -33,7 +33,7 @@
 #   ASSUME_YES=1     -> answer "yes" to every prompt (for automation)
 #   SKIP_UPGRADE=1   -> skip the full apt upgrade
 #   REBUILD_AIDE=1   -> force-rebuild the AIDE baseline even if present
-#   AIDE_EXCLUDES="/mnt /media" -> paths AIDE never indexes (bulk-data mounts)
+#   AIDE_EXCLUDES="/mnt /media /export" -> paths AIDE never indexes (bulk-data mounts)
 #   Per-component toggles (all default 1 = run; set 0 to skip that component):
 #   HARDEN_UNATTENDED, HARDEN_JOURNALD, HARDEN_SSH, HARDEN_FIREWALL,
 #   HARDEN_FAIL2BAN, HARDEN_APPARMOR, HARDEN_AIDE, HARDEN_SYSCTL,
@@ -1125,7 +1125,7 @@ run_aideinit() {
 # The rule must be the NON-recursive form "-<regex>" (AIDE 0.19+): the
 # classic "!<regex>" only drops the results and still walks the whole tree,
 # which costs exactly the same CPU. Debian 13 ships AIDE 0.19.
-AIDE_EXCLUDES="${AIDE_EXCLUDES:-/mnt /media}"
+AIDE_EXCLUDES="${AIDE_EXCLUDES:-/mnt /media /export}"
 if [[ -d /etc/aide/aide.conf.d ]]; then
   {
     printf '# Written by harden.sh: bulk-data mounts are not part of the integrity baseline.\n'
