@@ -1122,12 +1122,16 @@ run_aideinit() {
 # integrity baseline: indexing them can pin a CPU for days (pbs0, 2026-09-17,
 # 16 h of CPU walking a 937 GB PBS chunk store over NFS). Debian's aide.conf
 # pulls in /etc/aide/aide.conf.d via @@x_include, so a drop-in is enough.
+# The rule must be the NON-recursive form "-<regex>" (AIDE 0.19+): the
+# classic "!<regex>" only drops the results and still walks the whole tree,
+# which costs exactly the same CPU. Debian 13 ships AIDE 0.19.
 AIDE_EXCLUDES="${AIDE_EXCLUDES:-/mnt /media}"
 if [[ -d /etc/aide/aide.conf.d ]]; then
   {
     printf '# Written by harden.sh: bulk-data mounts are not part of the integrity baseline.\n'
+    printf '# "-" = non-recursive negative rule (AIDE 0.19+): the directory is never entered.\n'
     printf '# Override with AIDE_EXCLUDES="/path /path" at run time.\n'
-    for p in $AIDE_EXCLUDES; do printf '!%s\n' "$p"; done
+    for p in $AIDE_EXCLUDES; do printf -- '-%s\n' "$p"; done
   } > /etc/aide/aide.conf.d/99_homelab_exclude
   log "AIDE excludes written: $AIDE_EXCLUDES (/etc/aide/aide.conf.d/99_homelab_exclude)."
 fi
