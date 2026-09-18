@@ -1,0 +1,27 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: bf6177b54b3f4fe39b327f18494c3001
+      name: Templates/Custom
+  templates:
+    - uuid: 5b53823e2b704ecbb124c1fa7971be21
+      template: 'Homelab uptime SNMP'
+      name: 'Homelab uptime SNMP'
+      description: 'One calculated item, "Uptime (own)", mirroring the stock SNMP hardware uptime (system.hw.uptime[hrSystemUptime.0]) so SNMP-monitored hosts (opn1) appear in the dashboard column that matches every host''s own uptime by item name. Companion of Homelab uptime host (agents) and Homelab LXC (containers). Link by hand: SNMP hosts do not autoregister. Source: zabbix/templates/homelab-uptime-snmp.yaml. Kan 2g05h9zrkkr1.'
+      groups:
+        - name: Templates/Custom
+      items:
+        - uuid: 0a98ccb03fbb4c62851b2f9b6727fc57
+          name: 'Uptime (own)'
+          type: CALCULATED
+          key: custom.uptime
+          delay: 1m
+          units: uptime
+          params: 'last(//system.hw.uptime[hrSystemUptime.0])'
+          description: 'Mirror of the SNMP hardware uptime under the shared name "Uptime (own)".'
+          tags:
+            - tag: component
+              value: system
+      tags:
+        - tag: class
+          value: custom
