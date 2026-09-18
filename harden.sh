@@ -423,7 +423,7 @@ fi
 # A bare PVE host reached over its web UI must not be cut off by the firewall,
 # and cluster ssh assumes port 22. Auto-repair the ports; warn on the rest.
 IS_PVE=0
-if command -v pveversion >/dev/null 2>&1 || [[ -d /etc/pve/local ]]; then IS_PVE=1; fi
+if command -v pveversion >/dev/null 2>&1 || [[ -d /etc/pve/local ]] || [[ "${ENV_TYPE:-}" == "pve" ]]; then IS_PVE=1; fi
 if [[ "$IS_PVE" == "1" ]]; then
   if [[ "$HARDEN_FIREWALL" == "1" ]] && ! grep -qw 8006 <<<"${ALLOW_TCP_PORTS//,/ }"; then
     warn "Proxmox VE host: adding 8006 (web UI) and 3128 (SPICE console) to ALLOW_TCP_PORTS so hardening does not cut off the UI."
