@@ -40,6 +40,7 @@ PLAN = {
     "docker-template": ("docker", [], ["Docker by Zabbix agent 2"], False),
     "vm-uptime":    ("vm", [], ["Homelab uptime host"], False),
     "fleetcheck":   ("fleetcheck", [], ["Homelab fleet check"], False),
+    "guestvol":     ("guestvol", [], ["Homelab PVE guest volumes"], False),
     "metal-uptime": ("metal", [], ["Homelab uptime host"], False),
 }
 NAME = "Autoreg: {key}"
