@@ -95,12 +95,12 @@ zabbix_export:
             - tag: component
               value: raw
         - uuid: 598ef9c8d564440ab3d32afb6088f3ad
-          name: 'LXC: uptime'
+          name: 'Uptime (own)'
           type: DEPENDENT
           key: custom.lxc.uptime
           delay: '0'
           units: uptime
-          description: 'Seconds since the container''s own init (PID 1) started. Unlike system.uptime this resets when the container restarts, not when the host does.'
+          description: 'Seconds since the container''s own init (PID 1) started. Unlike system.uptime this resets when the container restarts, not when the host does. Named "Uptime (own)" on purpose: the Homelab uptime (host) template gives VMs and nodes an item of the same name, so one dashboard column shows every host''s own uptime.'
           preprocessing:
             - type: JSONPATH
               parameters:

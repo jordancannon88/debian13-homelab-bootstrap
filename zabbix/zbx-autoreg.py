@@ -38,6 +38,8 @@ PLAN = {
     "keeper":    ("keeper", [], ["Homelab Seafile keeper"], False),
     "lxcstat":   ("lxcstat", [], ["Homelab LXC"], False),
     "docker-template": ("docker", [], ["Docker by Zabbix agent 2"], False),
+    "vm-uptime":    ("vm", [], ["Homelab uptime (host)"], False),
+    "metal-uptime": ("metal", [], ["Homelab uptime (host)"], False),
 }
 NAME = "Autoreg: {key}"
 
