@@ -413,7 +413,7 @@ zabbix_export:
                     and bitand(last(/SMART by Zabbix agent 2 active/smart.disk.es[{#NAME}]),8) > bitand(last(/SMART by Zabbix agent 2 active/smart.disk.es[{#NAME}],#2),8) )
                   recovery_mode: NONE
                   name: 'SMART: [{#NAME}]: Check returned "DISK FAILING"'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/431'
                   url_name: Runbook
                   priority: HIGH
                   description: 'SMART status check returned "DISK FAILING".'
@@ -428,7 +428,7 @@ zabbix_export:
                     and bitand(last(/SMART by Zabbix agent 2 active/smart.disk.es[{#NAME}]),1) > bitand(last(/SMART by Zabbix agent 2 active/smart.disk.es[{#NAME}],#2),1) )
                   recovery_mode: NONE
                   name: 'SMART: [{#NAME}]: Command line did not parse'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/435'
                   url_name: Runbook
                   priority: HIGH
                   description: 'Command line did not parse.'
@@ -443,7 +443,7 @@ zabbix_export:
                     and bitand(last(/SMART by Zabbix agent 2 active/smart.disk.es[{#NAME}]),2) > bitand(last(/SMART by Zabbix agent 2 active/smart.disk.es[{#NAME}],#2),2) )
                   recovery_mode: NONE
                   name: 'SMART: [{#NAME}]: Device open failed'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/435'
                   url_name: Runbook
                   priority: HIGH
                   description: 'Device open failed, device did not return an IDENTIFY DEVICE structure, or device is in a low-power mode.'
@@ -458,7 +458,7 @@ zabbix_export:
                     and bitand(last(/SMART by Zabbix agent 2 active/smart.disk.es[{#NAME}]),64) > bitand(last(/SMART by Zabbix agent 2 active/smart.disk.es[{#NAME}],#2),64) )
                   recovery_mode: NONE
                   name: 'SMART: [{#NAME}]: Error log contains records'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/434'
                   url_name: Runbook
                   priority: HIGH
                   description: 'The device error log contains records of errors.'
@@ -473,7 +473,7 @@ zabbix_export:
                     and bitand(last(/SMART by Zabbix agent 2 active/smart.disk.es[{#NAME}]),128) > bitand(last(/SMART by Zabbix agent 2 active/smart.disk.es[{#NAME}],#2),128) )
                   recovery_mode: NONE
                   name: 'SMART: [{#NAME}]: Self-test log contains records'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/433'
                   url_name: Runbook
                   priority: HIGH
                   description: |
@@ -490,7 +490,7 @@ zabbix_export:
                     and bitand(last(/SMART by Zabbix agent 2 active/smart.disk.es[{#NAME}]),32) > bitand(last(/SMART by Zabbix agent 2 active/smart.disk.es[{#NAME}],#2),32) )
                   recovery_mode: NONE
                   name: 'SMART: [{#NAME}]: Some Attributes have been <= threshold'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/431'
                   url_name: Runbook
                   priority: HIGH
                   description: |
@@ -507,7 +507,7 @@ zabbix_export:
                     and bitand(last(/SMART by Zabbix agent 2 active/smart.disk.es[{#NAME}]),4) > bitand(last(/SMART by Zabbix agent 2 active/smart.disk.es[{#NAME}],#2),4) )
                   recovery_mode: NONE
                   name: 'SMART: [{#NAME}]: Some command to the disk failed'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/435'
                   url_name: Runbook
                   priority: HIGH
                   description: |
@@ -524,7 +524,7 @@ zabbix_export:
                     and bitand(last(/SMART by Zabbix agent 2 active/smart.disk.es[{#NAME}]),16) > bitand(last(/SMART by Zabbix agent 2 active/smart.disk.es[{#NAME}],#2),16) )
                   recovery_mode: NONE
                   name: 'SMART: [{#NAME}]: Some prefail Attributes <= threshold'
-                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url: 'https://bookstack.local.cannon.dev/link/431'
                   url_name: Runbook
                   priority: HIGH
                   description: 'We found prefail Attributes <= threshold.'
