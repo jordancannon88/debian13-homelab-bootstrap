@@ -22,7 +22,7 @@ TOKEN_FILE = os.environ.get("ZBX_TOKEN_FILE", os.path.expanduser("~/.config/zabb
 DRY = "--dry-run" in sys.argv
 TEMPLATE = "Homelab LXC"
 MACROS = {"{$LOAD_AVG_PER_CPU.MAX.WARN}": "1000", "{$CPU.UTIL.CRIT}": "1000"}
-RESTART_TRIGGER_MATCH = "has been restarted"
+RESTART_TRIGGER_MATCH = "Linux: {HOST.NAME} has been restarted"   # the stock one only, never "LXC: ..."
 
 def api(method, params):
     tok = open(TOKEN_FILE).readline().strip()
@@ -58,7 +58,8 @@ def main():
                 changes += 1
                 DRY or api("usermacro.create", {"hostid": h["hostid"], "macro": macro, "value": val})
         trs = api("trigger.get", {"output": ["triggerid", "description", "status"], "hostids": h["hostid"],
-                                  "search": {"description": RESTART_TRIGGER_MATCH}, "inherited": True})
+                                  "filter": {"description": RESTART_TRIGGER_MATCH}, "inherited": True})
+        trs = [t for t in trs if t["description"] == RESTART_TRIGGER_MATCH]
         for t in trs:
             if t["status"] == "1":
                 print(f"{h['host']}: trigger '{t['description']}' already disabled")
