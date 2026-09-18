@@ -301,7 +301,10 @@ sys_scan() {
     SYS_NOTES+=("WARNING: Docker is running ${SYS_DOCKER_RUNNING} container(s) — the container step's rootless-only option would stop them.")
   fi
   (( SYS_HARDENED ))  && SYS_NOTES+=("Hardened before: nftables deny-by-default present${SYS_SSHPORT:+ (sshd on port ${SYS_SSHPORT})} — this is a re-run; existing values are pre-filled.")
-  { (( SYS_DOCKER )) || (( SYS_PODMAN )); } && SYS_NOTES+=("Container runtime installed: $( (( SYS_DOCKER )) && printf docker )$( (( SYS_DOCKER && SYS_PODMAN )) && printf ' + ' )$( (( SYS_PODMAN )) && printf podman ).")
+  # Each substitution ends with "|| true": a false (( )) test would otherwise
+  # give the whole assignment a non-zero status and set -e would end the
+  # script silently (net, docker without podman, 2026-09-18).
+  { (( SYS_DOCKER )) || (( SYS_PODMAN )); } && SYS_NOTES+=("Container runtime installed: $( (( SYS_DOCKER )) && printf docker || true )$( (( SYS_DOCKER && SYS_PODMAN )) && printf ' + ' || true )$( (( SYS_PODMAN )) && printf podman || true ).")
   (( SYS_ZABBIX ))    && SYS_NOTES+=("zabbix-agent2 installed${SYS_ZBX_SERVER:+ (server: ${SYS_ZBX_SERVER})}.")
   (( SYS_ALLOY ))     && SYS_NOTES+=("Grafana Alloy installed${SYS_LOKI:+ (Loki: ${SYS_LOKI})}.")
   (( SYS_BUZZKEY ))   && SYS_NOTES+=("buzz alert key present${SYS_BUZZ_ALERTS:+ (watches: ${SYS_BUZZ_ALERTS})}${SYS_BUZZ_TARGET:+ → ${SYS_BUZZ_TARGET}}.")
