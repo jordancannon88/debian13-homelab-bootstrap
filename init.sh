@@ -313,8 +313,8 @@ sys_scan() {
   (( SYS_ALLOY ))     && SYS_NOTES+=("Grafana Alloy installed${SYS_LOKI:+ (Loki: ${SYS_LOKI})}.")
   (( SYS_BUZZKEY ))   && SYS_NOTES+=("buzz alert key present${SYS_BUZZ_ALERTS:+ (watches: ${SYS_BUZZ_ALERTS})}${SYS_BUZZ_TARGET:+ → ${SYS_BUZZ_TARGET}}.")
   (( SYS_MOTD ))      && SYS_NOTES+=("Dynamic MOTD banner installed${SYS_DOCURL:+ (docs: ${SYS_DOCURL})}.")
-  return 0
   set -e
+  return 0
 }
 
 # sys_report — the system-check screen shown once before the hub.
