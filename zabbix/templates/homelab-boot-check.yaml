@@ -109,7 +109,8 @@ zabbix_export:
               expression: 'length(last(/Homelab boot check/custom.bootcheck.clean_recent))>0'
               name: 'Boot check: {HOST.NAME} recovered clean ({ITEM.LASTVALUE1})'
               priority: INFO
-              description: 'The post-boot self-check passed every check. The green all-clear that buzz used to post; no action. Closes on its own one hour after the run (a manual run gives the same confirmation).'
+              description: 'The post-boot self-check passed every check. The green all-clear that buzz used to post; no action. Closes on its own when the clean_recent window (BOOTCHECK_WINDOW) passes, or close it by hand.'
+              manual_close: 'YES'
               tags:
                 - tag: scope
                   value: availability
