@@ -53,7 +53,9 @@ tokens() {
   [[ -f "$D/bootcheck.conf" ]]       && t="$t bootcheck"
   [[ -f "$D/seafile-keeper.conf" ]]  && t="$t keeper"
   [[ -f "$D/lxc-stat.conf" ]]        && t="$t lxcstat"
-  [[ -f "$D/docker.conf" || -f "$D/plugins.d/docker.conf" ]] && t="$t docker"
+  # The agent package ships a stock plugins.d/docker.conf with everything
+  # commented out; only the bootstrap's rootless setup sets a live endpoint.
+  grep -qsE '^Plugins\.Docker\.Endpoint=' "$D/docker.conf" "$D/plugins.d/docker.conf" 2>/dev/null && t="$t docker"
   printf '%s\n' "$t"
 }
 
