@@ -1,0 +1,109 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: bf6177b54b3f4fe39b327f18494c3001
+      name: Templates/Custom
+  templates:
+    - uuid: cfb15746b25e46e7887e833182b67adb
+      template: 'Homelab fleet check'
+      name: 'Homelab fleet check'
+      description: 'Drift from the bootstrap standard, per host. fleet-check.sh --summary runs daily as root (fleet-check.timer, written by monitoring.sh setup_fleet_check) and the agent reads the result: ok/total component counts and the list of missing ones. Warning "Fleet drift on <host>: <list>" while anything is missing; Warning when the daily run is older than 36 h. Judges PVE nodes by their own rules (port 22, key-only root, umask 022, no firewall step). Card yoexmvdlxpik. Source: zabbix/templates/homelab-fleet-check.yaml in debian13-homelab-bootstrap. Dry run: touch a drift (e.g. systemctl stop fail2ban), systemctl start fleet-check.service, wait a poll; undo.'
+      groups:
+        - name: Templates/Custom
+      items:
+        - uuid: a19c268bcfd7439ba2c26e0dfa27b7fc
+          name: 'Fleet check: age of last run'
+          type: DEPENDENT
+          key: custom.fleet.age
+          delay: '0'
+          units: s
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.age
+          master_item:
+            key: custom.fleet.check
+          tags:
+            - tag: component
+              value: fleet
+          triggers:
+            - uuid: 2abd38f03f96405cb62b1ff5afc8ebae
+              expression: 'last(/Homelab fleet check/custom.fleet.age)>36h or last(/Homelab fleet check/custom.fleet.age)<0'
+              name: 'Fleet check: no run on {HOST.NAME} for over 36 h'
+              priority: WARNING
+              description: 'fleet-check.timer did not run or fleet-check-run.sh failed. Check: systemctl status fleet-check.timer fleet-check.service; run it by hand: systemctl start fleet-check.service.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 1b4be647b7744381a4ac11c77d169453
+          name: 'Fleet check (raw)'
+          type: ZABBIX_ACTIVE
+          key: custom.fleet.check
+          delay: 10m
+          history: '0'
+          value_type: TEXT
+          description: 'JSON from fleet-check-json.sh: ok, total, missing, age.'
+          tags:
+            - tag: component
+              value: raw
+        - uuid: 570631f4c3ac4ce699f9309a2997e189
+          name: 'Fleet check: missing components'
+          type: DEPENDENT
+          key: custom.fleet.missing
+          delay: '0'
+          value_type: TEXT
+          trends: '0'
+          description: 'Comma-separated components that do not match the standard, or "none".'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.missing
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+          master_item:
+            key: custom.fleet.check
+          tags:
+            - tag: component
+              value: fleet
+          triggers:
+            - uuid: 3b3999a6d0a140fca986a88fae6ca910
+              expression: 'last(/Homelab fleet check/custom.fleet.missing)<>"none" and last(/Homelab fleet check/custom.fleet.missing)<>"never-run"'
+              name: 'Fleet drift on {HOST.NAME}: {ITEM.LASTVALUE1}'
+              opdata: '{ITEM.LASTVALUE1}'
+              priority: WARNING
+              description: 'This host no longer matches debian13-homelab-bootstrap main for the listed components. Run fleet-check.sh on it for the full table, fix with the bootstrap step that owns the component (STEPS=harden / monitoring, unattended, with the host''s real SSH_PORT and ALLOW_* ports), then systemctl start fleet-check.service. Card yoexmvdlxpik.'
+              tags:
+                - tag: scope
+                  value: security
+        - uuid: 0478ec3324f1448989219d2e93469d7e
+          name: 'Fleet check: components OK'
+          type: DEPENDENT
+          key: custom.fleet.ok
+          delay: '0'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.ok
+          master_item:
+            key: custom.fleet.check
+          tags:
+            - tag: component
+              value: fleet
+        - uuid: dab4af8e31c24fe8a1a9e27155753be8
+          name: 'Fleet check: components expected'
+          type: DEPENDENT
+          key: custom.fleet.total
+          delay: '0'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.total
+          master_item:
+            key: custom.fleet.check
+          tags:
+            - tag: component
+              value: fleet
+      tags:
+        - tag: class
+          value: custom

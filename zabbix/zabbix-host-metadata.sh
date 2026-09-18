@@ -24,6 +24,7 @@
 #   bootcheck  Homelab boot check           (bootcheck.conf)
 #   keeper     Homelab Seafile keeper       (seafile-keeper.conf)
 #   lxcstat    Homelab LXC                  (lxc-stat.conf, containers only)
+#   fleetcheck Homelab fleet check          (fleet-check.conf)
 #   docker     rootless docker monitoring   (docker.conf)
 set -u
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin:$PATH
@@ -53,6 +54,7 @@ tokens() {
   [[ -f "$D/bootcheck.conf" ]]       && t="$t bootcheck"
   [[ -f "$D/seafile-keeper.conf" ]]  && t="$t keeper"
   [[ -f "$D/lxc-stat.conf" ]]        && t="$t lxcstat"
+  [[ -f "$D/fleet-check.conf" ]]     && t="$t fleetcheck"
   # The agent package ships a stock plugins.d/docker.conf with everything
   # commented out; only the bootstrap's rootless setup sets a live endpoint.
   grep -qsE '^Plugins\.Docker\.Endpoint=' "$D/docker.conf" "$D/plugins.d/docker.conf" 2>/dev/null && t="$t docker"

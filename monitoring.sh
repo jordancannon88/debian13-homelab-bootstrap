@@ -599,6 +599,41 @@ setup_lxc_stat() {
   record "Zabbix LXC stat" "installed (custom.lxc.stat)"
 }
 
+# setup_fleet_check — the "Homelab fleet check" template's host side: a daily
+# root run of fleet-check.sh --summary (systemd timer) whose result the agent
+# reads as JSON. A host that drifts from the bootstrap standard shows up as a
+# Zabbix problem naming the missing components (card yoexmvdlxpik).
+setup_fleet_check() {
+  resolve_template "${SCRIPT_DIR}/fleet-check.sh" "fleet-check.sh" || { warn "fleet-check.sh not available — skipped."; record "Fleet check" "skipped (script missing)"; return 0; }
+  install -m 0755 "$RESOLVED_TEMPLATE" /usr/local/bin/fleet-check.sh
+  [[ "$RESOLVED_TEMPLATE_IS_TMP" == "1" ]] && rm -f "$RESOLVED_TEMPLATE"
+  install_zbx_helper fleet-check-run.sh 0755 || { warn "fleet-check-run.sh missing — skipped."; return 0; }
+  install_zbx_helper fleet-check-json.sh 0755 || { warn "fleet-check-json.sh missing — skipped."; return 0; }
+  cat > /etc/systemd/system/fleet-check.service <<'UNIT'
+[Unit]
+Description=Fleet parity check (fleet-check.sh --summary for Zabbix)
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/fleet-check-run.sh
+UNIT
+  cat > /etc/systemd/system/fleet-check.timer <<'UNIT'
+[Unit]
+Description=Daily fleet parity check
+[Timer]
+OnBootSec=10min
+OnCalendar=*-*-* 06:20:00
+RandomizedDelaySec=20min
+Persistent=true
+[Install]
+WantedBy=timers.target
+UNIT
+  systemctl daemon-reload
+  systemctl enable --now fleet-check.timer >/dev/null 2>&1 || true
+  systemctl start fleet-check.service >/dev/null 2>&1 || true
+  write_agent_dropin fleet-check.conf 'UserParameter=custom.fleet.check,/usr/local/bin/fleet-check-json.sh'
+  record "Fleet check" "installed (custom.fleet.check, daily timer)"
+}
+
 # setup_host_metadata — HostMetadata for Zabbix autoregistration: a token
 # list derived from what this run installed (drop-ins in zabbix_agent2.d), so
 # the server's autoregistration actions link the right templates with no GUI
@@ -1118,6 +1153,9 @@ else
       info "Installing the LXC stat collector (container's own uptime and CPU)..."
       setup_lxc_stat
     fi
+
+    info "Installing the fleet parity check (daily fleet-check.sh for Zabbix)..."
+    setup_fleet_check
 
     setup_host_metadata
 
