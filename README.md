@@ -491,6 +491,7 @@ folder.
 | `SSH_PORT`, `ALLOW_TCP_PORTS`, `ALLOW_UDP_PORTS`, `ALLOW_SSH_CIDRS` | harden.sh network settings |
 | `SKIP_UPGRADE`, `DISABLE_ROOT_LOGIN`, `BLACKLIST_USB_STORAGE`, `ENABLE_SSH_2FA`, `HARDEN_COMPILERS`, `ALLOW_HTTP`, `ALLOW_HTTPS` | harden.sh options, `1`/`0` |
 | `HARDEN_UNATTENDED`, `HARDEN_JOURNALD`, `HARDEN_SSH`, `HARDEN_FIREWALL`, `HARDEN_FAIL2BAN`, `HARDEN_APPARMOR`, `HARDEN_AIDE`, `HARDEN_SYSCTL`, `HARDEN_EXTRA`, `HARDEN_LYNIS` | harden.sh components, `1`/`0` |
+| `AIDE_EXCLUDES="/mnt /media"` | Paths AIDE never indexes (bulk-data mounts such as NFS datastores and docked disks) |
 | `ANCILLARY_PKGS="vim btop duf rsync qemu-guest-agent"` | Extra packages |
 | `SHELL_PKGS="fish zsh tcsh"`, `DEFAULT_SHELL=fish\|zsh\|tcsh\|keep` | Shells |
 | `MONITORING_PKGS="zabbix-agent2 alloy alerts"`, `ZABBIX_SERVER_ACTIVE`, `ZABBIX_MONITOR_ROOTLESS_DOCKER`, `LOKI_URL`, `ALLOY_DOCKER_LOGS`, `BUZZ_ALERTS`, `ALERTS_SINKS`, `BUZZ_TARGET`, `BUZZ_PORT`, `NTFY_URL`, `NTFY_TOKEN` | monitoring.sh |
@@ -561,6 +562,7 @@ The per-script environment overrides in the next section keep working underneath
 | `REMOTE_SYSLOG="host:port"` | Forward logs to a remote syslog host (opt-in) |
 | `GRUB_PASSWORD="…"` | Set a GRUB password; normal boot stays password-free (opt-in) |
 | `HARDEN_SSH=0` · `HARDEN_FIREWALL=0` · `HARDEN_FAIL2BAN=0` · `HARDEN_UNATTENDED=0` · `HARDEN_JOURNALD=0` · `HARDEN_APPARMOR=0` · `HARDEN_AIDE=0` · `HARDEN_SYSCTL=0` · `HARDEN_EXTRA=0` · `HARDEN_LYNIS=0` | Per-component toggles; each defaults to 1 (run). Set 0 to skip that component entirely — its step, packages-side effects and recap entry are all skipped |
+| `AIDE_EXCLUDES="/mnt /media"` | Paths AIDE never indexes, written to `/etc/aide/aide.conf.d/99_homelab_exclude`. Default covers the usual bulk-data mount points; indexing an NFS datastore there once cost a host 16 h of CPU |
 | `ACCEPT_LOCKOUT_RISK=1` | Non-interactive runs (including `ASSUME_YES=1`) refuse to disable SSH password auth when no admin user has an SSH key, because that is a lockout. This flag is the explicit opt-in to proceed anyway; interactively you are asked (default No) |
 
 </details>

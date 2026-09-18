@@ -33,6 +33,7 @@
 #   ASSUME_YES=1     -> answer "yes" to every prompt (for automation)
 #   SKIP_UPGRADE=1   -> skip the full apt upgrade
 #   REBUILD_AIDE=1   -> force-rebuild the AIDE baseline even if present
+#   AIDE_EXCLUDES="/mnt /media" -> paths AIDE never indexes (bulk-data mounts)
 #   Per-component toggles (all default 1 = run; set 0 to skip that component):
 #   HARDEN_UNATTENDED, HARDEN_JOURNALD, HARDEN_SSH, HARDEN_FIREWALL,
 #   HARDEN_FAIL2BAN, HARDEN_APPARMOR, HARDEN_AIDE, HARDEN_SYSCTL,
@@ -1116,6 +1117,20 @@ run_aideinit() {
     record "AIDE" "Init attempted (baseline DB not confirmed)"
   fi
 }
+
+# Bulk-data mounts (NFS datastores, docked disks, media) are never part of the
+# integrity baseline: indexing them can pin a CPU for days (pbs0, 2026-09-17,
+# 16 h of CPU walking a 937 GB PBS chunk store over NFS). Debian's aide.conf
+# pulls in /etc/aide/aide.conf.d via @@x_include, so a drop-in is enough.
+AIDE_EXCLUDES="${AIDE_EXCLUDES:-/mnt /media}"
+if [[ -d /etc/aide/aide.conf.d ]]; then
+  {
+    printf '# Written by harden.sh: bulk-data mounts are not part of the integrity baseline.\n'
+    printf '# Override with AIDE_EXCLUDES="/path /path" at run time.\n'
+    for p in $AIDE_EXCLUDES; do printf '!%s\n' "$p"; done
+  } > /etc/aide/aide.conf.d/99_homelab_exclude
+  log "AIDE excludes written: $AIDE_EXCLUDES (/etc/aide/aide.conf.d/99_homelab_exclude)."
+fi
 
 # FINT-4402: make sure the AIDE config references SHA-512 checksums.
 if [[ -f /etc/aide/aide.conf ]] && ! grep -q 'sha512' /etc/aide/aide.conf 2>/dev/null; then
