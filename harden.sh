@@ -1127,11 +1127,22 @@ run_aideinit() {
 # classic "!<regex>" only drops the results and still walks the whole tree,
 # which costs exactly the same CPU. Debian 13 ships AIDE 0.19.
 AIDE_EXCLUDES="${AIDE_EXCLUDES:-/mnt /media /export /var/lib/vz}"
+# ZFS hosts (PVE nodes): every pool mounted somewhere other than / holds guest
+# data (container root filesystems as subvol-* datasets, replicas, dumps).
+# Each pool's top mountpoint is excluded as a whole; the root dataset is a
+# child mounted at / and is unaffected. pve4 had no baseline at all because
+# its bootstrap-day init tried to hash every container's files.
+if command -v zfs >/dev/null 2>&1; then
+  while IFS= read -r _mp; do
+    [[ -z "$_mp" || "$_mp" == "/" || "$_mp" == "none" || "$_mp" == "legacy" || "$_mp" == "-" ]] && continue
+    case " $AIDE_EXCLUDES " in *" $_mp "*) ;; *) AIDE_EXCLUDES="$AIDE_EXCLUDES $_mp";; esac
+  done < <(zfs list -H -d 0 -o mountpoint 2>/dev/null)
+fi
 if [[ -d /etc/aide/aide.conf.d ]]; then
   {
     printf '# Written by harden.sh: bulk-data mounts are not part of the integrity baseline.\n'
     printf '# "-" = non-recursive negative rule (AIDE 0.19+): the directory is never entered.\n'
-    printf '# Override with AIDE_EXCLUDES="/path /path" at run time.\n'
+    printf '# Override with AIDE_EXCLUDES="/path /path" at run time; ZFS pool mountpoints are added.\n'
     for p in $AIDE_EXCLUDES; do printf -- '-%s\n' "$p"; done
   } > /etc/aide/aide.conf.d/99_homelab_exclude
   log "AIDE excludes written: $AIDE_EXCLUDES (/etc/aide/aide.conf.d/99_homelab_exclude)."
