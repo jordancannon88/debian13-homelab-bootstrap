@@ -491,7 +491,7 @@ folder.
 | `SSH_PORT`, `ALLOW_TCP_PORTS`, `ALLOW_UDP_PORTS`, `ALLOW_SSH_CIDRS` | harden.sh network settings |
 | `SKIP_UPGRADE`, `DISABLE_ROOT_LOGIN`, `BLACKLIST_USB_STORAGE`, `ENABLE_SSH_2FA`, `HARDEN_COMPILERS`, `ALLOW_HTTP`, `ALLOW_HTTPS` | harden.sh options, `1`/`0` |
 | `HARDEN_UNATTENDED`, `HARDEN_JOURNALD`, `HARDEN_SSH`, `HARDEN_FIREWALL`, `HARDEN_FAIL2BAN`, `HARDEN_APPARMOR`, `HARDEN_AIDE`, `HARDEN_SYSCTL`, `HARDEN_EXTRA`, `HARDEN_LYNIS` | harden.sh components, `1`/`0` |
-| `AIDE_EXCLUDES="/mnt /media /export /var/lib/vz"` | Paths AIDE never indexes (bulk-data mounts such as NFS datastores and docked disks, and PVE guest disk images under `/var/lib/vz`) |
+| `AIDE_EXCLUDES="/mnt /media /export /var/lib/vz"` | Paths AIDE never indexes (bulk-data mounts such as NFS datastores and docked disks, and PVE guest disk images under `/var/lib/vz`); on ZFS hosts every pool mountpoint other than `/` is added automatically (container subvols, replica pools) |
 | `ANCILLARY_PKGS="vim btop duf rsync qemu-guest-agent"` | Extra packages |
 | `SHELL_PKGS="fish zsh tcsh"`, `DEFAULT_SHELL=fish\|zsh\|tcsh\|keep` | Shells |
 | `MONITORING_PKGS="zabbix-agent2 alloy alerts"`, `ZABBIX_SERVER_ACTIVE`, `ZABBIX_MONITOR_ROOTLESS_DOCKER`, `LOKI_URL`, `ALLOY_DOCKER_LOGS`, `BUZZ_ALERTS`, `ALERTS_SINKS`, `BUZZ_TARGET`, `BUZZ_PORT`, `NTFY_URL`, `NTFY_TOKEN` | monitoring.sh |
