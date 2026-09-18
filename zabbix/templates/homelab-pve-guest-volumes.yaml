@@ -46,6 +46,8 @@ zabbix_export:
                 - uuid: fdb5fe7baa6949059455088eab7bbf62
                   expression: 'last(/Homelab PVE guest volumes/vfs.fs.size[{#FSNAME},pused])>{$GUESTFS.PUSED.MAX.CRIT}'
                   name: 'Guest volume: {#GUEST} ({#VMID}) {#FSNAME} is over {$GUESTFS.PUSED.MAX.CRIT}% used ({ITEM.LASTVALUE1})'
+                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url_name: Runbook
                   opdata: '{ITEM.LASTVALUE1}'
                   priority: HIGH
                   description: 'The guest''s own volume, seen from the node that runs it. Grow the volume (pct resize) or make the app keep less.'
@@ -55,6 +57,8 @@ zabbix_export:
                 - uuid: b0f53f827a6e42ce9efcc33e18c9e388
                   expression: 'last(/Homelab PVE guest volumes/vfs.fs.size[{#FSNAME},pused])>{$GUESTFS.PUSED.MAX.WARN}'
                   name: 'Guest volume: {#GUEST} ({#VMID}) {#FSNAME} is over {$GUESTFS.PUSED.MAX.WARN}% used ({ITEM.LASTVALUE1})'
+                  url: 'https://bookstack.local.cannon.dev/link/376'
+                  url_name: Runbook
                   opdata: '{ITEM.LASTVALUE1}'
                   priority: WARNING
                   description: 'The guest''s own volume, seen from the node that runs it. Replicas of the same volume on other nodes are not discovered, so this fires once.'

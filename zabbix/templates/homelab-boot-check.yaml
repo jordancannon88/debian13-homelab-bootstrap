@@ -50,6 +50,8 @@ zabbix_export:
             - uuid: b84c221ee53d46948e1297f599f9542a
               expression: 'length(last(/Homelab boot check/custom.bootcheck.error))>0 and last(/Homelab boot check/custom.bootcheck.uptime)>{$BOOTCHECK_SETTLE}'
               name: 'Boot check: boot check JSON missing or unreadable on {HOST.NAME}'
+              url: 'https://bookstack.local.cannon.dev/link/366'
+              url_name: Runbook
               priority: HIGH
               description: 'The boot check result file is missing or unreadable by the agent, more than {$BOOTCHECK_SETTLE} after boot: the runbook never ran on this host, the file is not 0644 (a manual run under a 027 umask before the umask fix), or the dir is not 0755. Value: {ITEM.LASTVALUE1}. Outage runbook: BookStack link/358.'
               tags:
@@ -78,6 +80,8 @@ zabbix_export:
             - uuid: 44362db7a7684e4786b7c5d7fdaa5331
               expression: 'length(last(/Homelab boot check/custom.bootcheck.attention))>0 and last(/Homelab boot check/custom.bootcheck.uptime)<{$BOOTCHECK_WINDOW}'
               name: 'Boot check: {HOST.NAME} came back with checks needing eyes'
+              url: 'https://bookstack.local.cannon.dev/link/366'
+              url_name: Runbook
               opdata: '{ITEM.LASTVALUE1}'
               priority: HIGH
               description: 'The post-boot self-check found something wrong: cluster-quorum, ha-services, zfs-pools, smart-health, replication, tb3-mesh or core-services (the list is in the name). Read the section of the full log (item "Boot check: log path") and follow the outage runbook. Recovery is a GREEN run: the next boot, or `sudo /usr/local/sbin/pve-outage-runbook.sh` after the fix. Scoped to the first {$BOOTCHECK_WINDOW} after boot: after that the dedicated triggers (ZFS pools, SMART, replication, HA, TB3 mesh) own any lasting problem and this one clears on its own. The list is in the operational data column, refreshed live (a stale name was the first design). A known long-running CHECK, such as a DEGRADED pool waiting on a disk swap, can be closed by hand; it reopens only after a GREEN run and a new ATTENTION. Outage runbook: BookStack link/358.'
@@ -108,6 +112,8 @@ zabbix_export:
             - uuid: 38b5b964ae3f4073a519c867fa1fa77b
               expression: 'length(last(/Homelab boot check/custom.bootcheck.clean_recent))>0'
               name: 'Boot check: {HOST.NAME} recovered clean ({ITEM.LASTVALUE1})'
+              url: 'https://bookstack.local.cannon.dev/link/366'
+              url_name: Runbook
               priority: INFO
               description: 'The post-boot self-check passed every check. The green all-clear that buzz used to post; no action. Closes on its own when the clean_recent window (BOOTCHECK_WINDOW) passes, or close it by hand.'
               manual_close: 'YES'
@@ -132,6 +138,8 @@ zabbix_export:
             - uuid: 7325868ab4d1417697eb331630f6aa54
               expression: 'last(/Homelab boot check/custom.bootcheck.current_boot)=0 and last(/Homelab boot check/custom.bootcheck.uptime)>{$BOOTCHECK_SETTLE}'
               name: 'Boot check: boot check did not run this boot on {HOST.NAME}'
+              url: 'https://bookstack.local.cannon.dev/link/366'
+              url_name: Runbook
               priority: WARNING
               description: 'The node has been up for more than {$BOOTCHECK_SETTLE} and pve-outage-boot-check.service has not written a result for this boot: unit disabled (`systemctl is-enabled pve-outage-boot-check`), wrapper stuck waiting for quorum or on the dev-box fetch, or collector missing. `journalctl -u pve-outage-boot-check -b`. Run `sudo /usr/local/sbin/pve-outage-runbook.sh` by hand to clear it. New: buzz could never report this.'
               dependencies:
@@ -273,6 +281,8 @@ zabbix_export:
             - uuid: 9ab44889a75e441eb20181ff36115a91
               expression: 'min(/Homelab boot check/custom.bootcheck.test,1h)=1'
               name: 'Boot check: test marker left in place on {HOST.NAME}'
+              url: 'https://bookstack.local.cannon.dev/link/366'
+              url_name: Runbook
               priority: WARNING
               description: 'The dry-run marker /etc/zabbix/homelab-test/bootcheck has existed for over an hour. Remove it: sudo rm -f /etc/zabbix/homelab-test/bootcheck'
               tags:
