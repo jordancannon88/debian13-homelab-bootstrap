@@ -34,12 +34,15 @@ tokens() {
   local t="homelab"
   command -v pveversion >/dev/null 2>&1 && t="$t pve"
   command -v proxmox-backup-manager >/dev/null 2>&1 && t="$t pbs"
-  case "$(systemd-detect-virt 2>/dev/null || echo none)" in
+  # systemd-detect-virt prints "none" AND exits 1 on bare metal: read the
+  # output only, never "|| echo none" (that yields "none\nnone").
+  local virt; virt="$(systemd-detect-virt 2>/dev/null)"; virt="${virt:-none}"
+  case "$virt" in
     lxc|lxc-libvirt) t="$t lxc";;
     none) t="$t metal";;
     *) t="$t vm";;
   esac
-  { [[ -f "$D/nvme-smart.conf" ]] || [[ -f /etc/smartd.conf && "$(systemd-detect-virt 2>/dev/null)" != lxc ]]; } && t="$t smart"
+  { [[ -f "$D/nvme-smart.conf" ]] || [[ -f /etc/smartd.conf && "$virt" != lxc ]]; } && t="$t smart"
   [[ -f "$D/zfs-status.conf" ]]      && t="$t zfs"
   [[ -f "$D/snapraid-status.conf" ]] && t="$t snapraid"
   [[ -f "$D/pve-events.conf" ]]      && t="$t events"

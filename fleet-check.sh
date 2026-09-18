@@ -16,7 +16,7 @@ SUMMARY=0; [[ "${1:-}" == "--summary" ]] && SUMMARY=1
 [[ $EUID -eq 0 ]] || { echo "fleet-check: run as root" >&2; exit 2; }
 
 HOST="$(hostname)"
-VIRT="$(systemd-detect-virt 2>/dev/null || echo none)"
+VIRT="$(systemd-detect-virt 2>/dev/null)"; VIRT="${VIRT:-none}"   # prints "none" and exits 1 on metal
 IS_CT=0; [[ "$VIRT" == "lxc" || "$VIRT" == "lxc-libvirt" ]] && IS_CT=1
 IS_PVE=0; command -v pveversion >/dev/null 2>&1 && IS_PVE=1
 HAS_ZFS=0; command -v zfs >/dev/null 2>&1 && zfs list -H -d 0 >/dev/null 2>&1 && HAS_ZFS=1
