@@ -12,6 +12,12 @@ DIFF_TIMEOUT="${DIFF_TIMEOUT:-120}"
 
 st="$($SUDO "$SNAPRAID" status 2>&1)"; st_rc=$?
 if [ $st_rc -ne 0 ] && ! grep -q "SnapRAID status report" <<<"$st"; then
+  # A running sync/scrub/fix holds the array lock and status refuses: that is
+  # work in progress, not a failure (pms0 paged during the d1-80r sync, 2026-09-18).
+  if pgrep -x snapraid >/dev/null 2>&1 || grep -qiE "lock|already (locked|running)" <<<"$st"; then
+    printf '{"error":"","busy":1,"busy_cmd":"%s"}\n' "$(pgrep -a -x snapraid | awk '{print $3}' | head -1)"
+    exit 0
+  fi
   printf '{"error":"snapraid status rc=%d: %s"}\n' "$st_rc" "$(tail -1 <<<"$st" | tr -d '"\\')"
   exit 0
 fi
