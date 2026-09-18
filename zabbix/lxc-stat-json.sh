@@ -17,7 +17,12 @@
 set -u
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin:$PATH
 
-up="$(ps -o etimes= -p 1 2>/dev/null | tr -d ' ')"; up="${up:-0}"
+# Age of the container's init: now minus the creation time of /proc/1, which
+# the kernel stamps with wall-clock time. ps -o etimes mixes lxcfs's
+# virtualised uptime with host jiffies and wrapped to 47717 days on a
+# Debian 12 container (pbs, 2026-09-18).
+st="$(stat -c %Y /proc/1 2>/dev/null)"; now="$(date +%s)"
+if [[ -n "$st" && "$st" -gt 0 && "$st" -le "$now" ]]; then up=$(( now - st )); else up=0; fi
 ncpu="$(nproc 2>/dev/null || echo 1)"
 
 read_usage() { awk '/^usage_usec/{print $2}' /sys/fs/cgroup/cpu.stat 2>/dev/null; }
