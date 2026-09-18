@@ -56,12 +56,15 @@ if command -v sshd >/dev/null 2>&1; then
   prl="$(awk '$1=="permitrootlogin"{print $2}' <<<"$T")"
   pa="$(awk '$1=="passwordauthentication"{print $2}' <<<"$T")"
   mat="$(awk '$1=="maxauthtries"{print $2}' <<<"$T")"
-  if [[ "$prl" == "no" && "$pa" == "no" && "$mat" == "3" ]]; then row "sshd lockdown" OK "port=$port root=no pass=no tries=3"
-  else row "sshd lockdown" MISSING "port=$port root=$prl pass=$pa tries=$mat"; fi
+  # PVE nodes: port 22 and key-only root are required for inter-node ssh.
+  want_prl="no"; (( IS_PVE )) && want_prl="prohibit-password"
+  if [[ "$prl" == "$want_prl" && "$pa" == "no" && "$mat" == "3" ]]; then row "sshd lockdown" OK "port=$port root=$prl pass=no tries=3"
+  else row "sshd lockdown" MISSING "port=$port root=$prl (want $want_prl) pass=$pa tries=$mat"; fi
 else row "sshd lockdown" MISSING "sshd not found"; fi
 
 # --- firewall ---------------------------------------------------------------
-if active nftables && grep -q 'policy drop' /etc/nftables.conf 2>/dev/null; then row "nftables deny-by-default" OK "active, policy drop"
+if (( IS_PVE )); then row "nftables deny-by-default" n/a "PVE node: firewall step skipped (pve-firewall + upstream segmentation)"
+elif active nftables && grep -q 'policy drop' /etc/nftables.conf 2>/dev/null; then row "nftables deny-by-default" OK "active, policy drop"
 elif active nftables; then row "nftables deny-by-default" WARN "active but no 'policy drop' in /etc/nftables.conf"
 else row "nftables deny-by-default" MISSING "nftables not active"; fi
 
@@ -81,7 +84,8 @@ else row "journald persistent" MISSING "Storage=persistent not set or /var/log/j
 # --- sysctl, login.defs, banner ---------------------------------------------
 [[ -f /etc/sysctl.d/99-hardening.conf ]] && row "sysctl hardening" OK "99-hardening.conf" || row "sysctl hardening" MISSING "no /etc/sysctl.d/99-hardening.conf"
 um="$(awk '$1=="UMASK"{print $2}' /etc/login.defs 2>/dev/null)"
-[[ "$um" == "027" ]] && row "login.defs UMASK 027" OK "" || row "login.defs UMASK 027" MISSING "UMASK=${um:-unset}"
+want_um="027"; (( IS_PVE )) && want_um="022"   # 027 breaks pct create on PVE (sdds9tw12dv3)
+[[ "$um" == "$want_um" ]] && row "login.defs UMASK $want_um" OK "" || row "login.defs UMASK $want_um" MISSING "UMASK=${um:-unset}"
 grep -qsi 'authorized' /etc/issue.net && row "login banner" OK "/etc/issue.net" || row "login banner" MISSING "no warning text in /etc/issue.net"
 
 # --- AppArmor, auditd (hosts only) ------------------------------------------
