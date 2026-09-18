@@ -245,6 +245,10 @@ detect_env_default() {
 # warnings the operator should see before selecting anything.
 SYS_NOTES=()
 sys_scan() {
+  # Fact-finding only: nothing in here may abort the run. sshd -T, docker ps
+  # and friends return non-zero on some hosts (containers, rootless docker)
+  # and with pipefail that status lands on the assignment (pbs, net, 2026-09-18).
+  set +e
   SYS_HARDENED=0; SYS_SSHPORT=""; SYS_UFW=0; SYS_FIREWALLD=0
   SYS_DOCKER=0; SYS_DOCKER_RUNNING=0; SYS_PODMAN=0
   SYS_ZABBIX=0; SYS_ZBX_SERVER=""; SYS_ALLOY=0; SYS_LOKI=""
@@ -310,6 +314,7 @@ sys_scan() {
   (( SYS_BUZZKEY ))   && SYS_NOTES+=("buzz alert key present${SYS_BUZZ_ALERTS:+ (watches: ${SYS_BUZZ_ALERTS})}${SYS_BUZZ_TARGET:+ → ${SYS_BUZZ_TARGET}}.")
   (( SYS_MOTD ))      && SYS_NOTES+=("Dynamic MOTD banner installed${SYS_DOCURL:+ (docs: ${SYS_DOCURL})}.")
   return 0
+  set -e
 }
 
 # sys_report — the system-check screen shown once before the hub.
