@@ -7,10 +7,22 @@ zabbix_export:
     - uuid: 438d8461f1c14c4684e9ec8536c481dc
       template: 'Homelab uptime host'
       name: 'Homelab uptime host'
-      description: 'One item, "Uptime (own)", a calculated mirror of the stock system.uptime for VMs and bare-metal nodes. It exists so a dashboard column matched by item name shows every host''s own uptime in one column: containers get an item of the same name from Homelab LXC (their init age), everything else gets this one. Linked by autoregistration tokens vm and metal (zbx-autoreg.py). Source of truth: zabbix/templates/homelab-uptime-host.yaml in debian13-homelab-bootstrap. Kan 2g05h9zrkkr1.'
+      description: 'Two items, "Uptime (own)" and "CPU use (own)", a calculated mirror of the stock system.uptime for VMs and bare-metal nodes. It exists so a dashboard column matched by item name shows every host''s own uptime in one column: containers get an item of the same name from Homelab LXC (their init age), everything else gets this one. Linked by autoregistration tokens vm and metal (zbx-autoreg.py). Source of truth: zabbix/templates/homelab-uptime-host.yaml in debian13-homelab-bootstrap. Kan 2g05h9zrkkr1.'
       groups:
         - name: Templates/Custom
       items:
+        - uuid: b379982b62744370870c8f5f30781995
+          name: 'CPU use (own)'
+          type: CALCULATED
+          key: custom.cpu_util
+          delay: 1m
+          value_type: FLOAT
+          units: '%'
+          params: 'last(//system.cpu.util)'
+          description: 'Mirror of system.cpu.util under the shared name "CPU use (own)": containers carry the same name from Homelab LXC (their cgroup), so one dashboard column shows every host''s own CPU.'
+          tags:
+            - tag: component
+              value: cpu
         - uuid: 3b64e9406ca24835ab74186744a2ef2f
           name: 'Uptime (own)'
           type: CALCULATED
