@@ -258,7 +258,12 @@ sys_scan() {
   systemctl is-active --quiet firewalld 2>/dev/null && SYS_FIREWALLD=1
 
   command -v docker >/dev/null 2>&1 && SYS_DOCKER=1
-  (( SYS_DOCKER )) && SYS_DOCKER_RUNNING="$(docker ps -q 2>/dev/null | wc -l | tr -d ' ')"
+  # docker ps fails as root against a rootless-only daemon; with pipefail that
+  # made this assignment fatal under set -e (net, 2026-09-18). Count what root
+  # can see and treat a failure as zero.
+  if (( SYS_DOCKER )); then
+    SYS_DOCKER_RUNNING="$( { docker ps -q 2>/dev/null || true; } | wc -l | tr -d ' ')"
+  fi
   command -v podman >/dev/null 2>&1 && SYS_PODMAN=1
 
   dpkg-query -W -f='${Status}' zabbix-agent2 2>/dev/null | grep -q 'install ok installed' && SYS_ZABBIX=1
