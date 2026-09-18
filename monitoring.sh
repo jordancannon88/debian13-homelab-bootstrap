@@ -41,6 +41,8 @@
 #    ZABBIX_SERVER_ACTIVE="host[:port]" -> Zabbix server/proxy for active checks
 #                                       (required when zabbix-agent2 is selected;
 #                                       asked interactively if unset)
+#    ZABBIX_HOST_METADATA="tok tok" -> replace the autoregistration token list
+#                                       (default: derived from what is installed)
 #    ZABBIX_MONITOR_ROOTLESS_DOCKER=1|0 -> set the agent up to monitor a rootless
 #                                       Docker daemon. Empty = ask when a rootless
 #                                       daemon is detected (default no)
@@ -583,6 +585,27 @@ setup_kernel_watch() {
   record "Zabbix kernel watch" "installed (custom.kernel.hung_tasks)"
 }
 
+# setup_host_metadata — HostMetadata for Zabbix autoregistration: a token
+# list derived from what this run installed (drop-ins in zabbix_agent2.d), so
+# the server's autoregistration actions link the right templates with no GUI
+# step. ZABBIX_HOST_METADATA overrides the whole list. Runs last, after every
+# other setup_* has written its drop-in, right before the agent restart.
+setup_host_metadata() {
+  if ! install_zbx_helper zabbix-host-metadata.sh 0755; then
+    warn "Host metadata helper not available — HostMetadata not set (link templates by hand)."
+    record "Zabbix host metadata" "skipped (helper missing)"
+    return 0
+  fi
+  local md
+  md="$(ZABBIX_HOST_METADATA="${ZABBIX_HOST_METADATA:-}" /usr/local/bin/zabbix-host-metadata.sh)"
+  local tmp; tmp="$(mktemp)"
+  grep -vE '^(HostMetadata|HostMetadataItem)=' "$ZBX_CONF" > "$tmp"
+  printf 'HostMetadata=%s\n' "$md" >> "$tmp"
+  install -m 0644 "$tmp" "$ZBX_CONF"; rm -f "$tmp"
+  log "HostMetadata=${md} (autoregistration tokens)."
+  record "Zabbix host metadata" "HostMetadata=${md}"
+}
+
 # setup_bootcheck — collector for the "Homelab boot check" template. The
 # post-outage runbook (pve-outage-runbook.sh, run once per boot by
 # pve-outage-boot-check.service; not part of this repo) writes
@@ -1076,6 +1099,8 @@ else
       info "Installing the boot check collector..."
       setup_bootcheck
     fi
+
+    setup_host_metadata
 
     systemctl enable zabbix-agent2 >/dev/null 2>&1 || true
     if systemctl restart zabbix-agent2 2>/dev/null; then
