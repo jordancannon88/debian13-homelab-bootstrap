@@ -1164,13 +1164,22 @@ if command -v zfs >/dev/null 2>&1; then
   done < <(zfs list -H -d 0 -o mountpoint 2>/dev/null)
 fi
 if [[ -d /etc/aide/aide.conf.d ]]; then
+  # AIDE 0.19 (Debian 13) has the non-recursive "-" rule; 0.18 (Debian 12)
+  # rejects it, so there the classic "!" is written (valid, but it still walks
+  # the tree: upgrade such hosts to Debian 13 to get the real exclusion).
+  _aide_ver="$(aide --version 2>/dev/null | head -n1 | grep -oE '[0-9]+\.[0-9]+' | head -n1)"
+  _aide_pfx='-'
+  if [[ -n "$_aide_ver" ]] && ! dpkg --compare-versions "$_aide_ver" ge 0.19; then
+    _aide_pfx='!'
+    warn "AIDE ${_aide_ver} has no non-recursive rule: writing '!' excludes (they still walk the tree)."
+  fi
   {
     printf '# Written by harden.sh: bulk-data mounts are not part of the integrity baseline.\n'
     printf '# "-" = non-recursive negative rule (AIDE 0.19+): the directory is never entered.\n'
     printf '# Override with AIDE_EXCLUDES="/path /path" at run time; ZFS pool mountpoints are added.\n'
-    for p in $AIDE_EXCLUDES; do printf -- '-%s\n' "$p"; done
+    for p in $AIDE_EXCLUDES; do printf -- '%s%s\n' "$_aide_pfx" "$p"; done
   } > /etc/aide/aide.conf.d/99_homelab_exclude
-  log "AIDE excludes written: $AIDE_EXCLUDES (/etc/aide/aide.conf.d/99_homelab_exclude)."
+  log "AIDE excludes written (${_aide_pfx}): $AIDE_EXCLUDES (/etc/aide/aide.conf.d/99_homelab_exclude)."
 fi
 
 # FINT-4402: make sure the AIDE config references SHA-512 checksums.

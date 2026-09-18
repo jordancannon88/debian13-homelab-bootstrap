@@ -84,7 +84,7 @@ else row "journald persistent" MISSING "Storage=persistent not set or /var/log/j
 
 # --- sysctl, login.defs, banner ---------------------------------------------
 [[ -f /etc/sysctl.d/99-hardening.conf ]] && row "sysctl hardening" OK "99-hardening.conf" || row "sysctl hardening" MISSING "no /etc/sysctl.d/99-hardening.conf"
-um="$(awk '$1=="UMASK"{print $2}' /etc/login.defs 2>/dev/null)"
+um="$(awk '$1=="UMASK"{v=$2} END{print v}' /etc/login.defs 2>/dev/null)"   # last one wins (older files repeat it)
 want_um="027"; (( IS_PVE )) && want_um="022"   # 027 breaks pct create on PVE (sdds9tw12dv3)
 [[ "$um" == "$want_um" ]] && row "login.defs UMASK $want_um" OK "" || row "login.defs UMASK $want_um" MISSING "UMASK=${um:-unset}"
 grep -qsi 'authorized' /etc/issue.net && row "login banner" OK "/etc/issue.net" || row "login banner" MISSING "no warning text in /etc/issue.net"
@@ -107,7 +107,10 @@ else
   if [[ -f "$ex" ]] && grep -q '^-/mnt' "$ex"; then
     want=""; (( HAS_ZFS )) && for mp in $(zfs list -H -d 0 -o mountpoint 2>/dev/null); do [[ "$mp" == "/" || "$mp" == none || "$mp" == legacy || "$mp" == - ]] && continue; grep -q "^-$mp\$" "$ex" || want="$want $mp"; done
     [[ -z "$want" ]] && row "aide excludes" OK "$(grep -c '^-' "$ex") rules" || row "aide excludes" WARN "pool(s) not excluded:${want}"
-  elif [[ -f "$ex" ]]; then row "aide excludes" WARN "drop-in uses '!' not '-' (still walks the tree)"
+  elif [[ -f "$ex" ]] && grep -q '^!/mnt' "$ex"; then
+    av="$(aide --version 2>/dev/null | head -n1 | grep -oE '[0-9]+\.[0-9]+' | head -n1)"
+    if [[ -n "$av" ]] && ! dpkg --compare-versions "$av" ge 0.19; then row "aide excludes" OK "'!' rules (AIDE $av has no '-'; upgrade to Debian 13 for real exclusion)"
+    else row "aide excludes" WARN "drop-in uses '!' not '-' (still walks the tree)"; fi
   else row "aide excludes" MISSING "no $ex"; fi
   r="$(systemctl show -p Result --value dailyaidecheck.service 2>/dev/null)"
   case "$r" in success) row "aide daily check" OK "last result success";; "") row "aide daily check" WARN "never ran";; *) row "aide daily check" WARN "last result $r";; esac
