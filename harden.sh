@@ -1310,10 +1310,17 @@ set_logindef() {
 }
 
 # 1) Packages: PAM/tmp, package auditing, accounting, malware scanner, etc.
+# apt-listbugs is deliberately NOT here: it hooks every apt run and aborts
+# non-interactive installs when it cannot reach the bug tracker (broke the
+# pbs upgrade prep on 2026-09-18). Hosts that already have it get it removed.
 EXTRA_PKGS=(
-  libpam-tmpdir libpam-pwquality apt-listbugs debsums apt-show-versions
+  libpam-tmpdir libpam-pwquality debsums apt-show-versions
   acct sysstat rkhunter
 )
+if dpkg-query -W -f='${Status}' apt-listbugs 2>/dev/null | grep -q 'install ok installed'; then
+  DEBIAN_FRONTEND=noninteractive APT_LISTBUGS_FRONTEND=none apt-get -y -q purge apt-listbugs >/dev/null 2>&1 || true
+  log "apt-listbugs removed (its apt hook breaks unattended package runs)."
+fi
 # auditd's kernel audit subsystem is host-owned and cannot run inside an
 # (unprivileged) LXC/container — its postinst even errors out trying to start
 # the service. Only install it on bare metal / full VMs (see header comment).
