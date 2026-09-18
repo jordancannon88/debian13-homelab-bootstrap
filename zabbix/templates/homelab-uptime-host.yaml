@@ -5,8 +5,8 @@ zabbix_export:
       name: Templates/Custom
   templates:
     - uuid: 438d8461f1c14c4684e9ec8536c481dc
-      template: 'Homelab uptime (host)'
-      name: 'Homelab uptime (host)'
+      template: 'Homelab uptime host'
+      name: 'Homelab uptime host'
       description: 'One item, "Uptime (own)", a calculated mirror of the stock system.uptime for VMs and bare-metal nodes. It exists so a dashboard column matched by item name shows every host''s own uptime in one column: containers get an item of the same name from Homelab LXC (their init age), everything else gets this one. Linked by autoregistration tokens vm and metal (zbx-autoreg.py). Source of truth: zabbix/templates/homelab-uptime-host.yaml in debian13-homelab-bootstrap. Kan 2g05h9zrkkr1.'
       groups:
         - name: Templates/Custom
