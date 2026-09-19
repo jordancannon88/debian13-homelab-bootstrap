@@ -734,6 +734,28 @@ run apt -y install "${CORE_PKGS[@]}"
 log "Core tools present (${#CORE_PKGS[@]} packages)."
 record "Core tools" "${#CORE_PKGS[@]} packages ensured (nftables, fail2ban, aide, apparmor, lynis, ...)"
 
+# /tmp must not live in RAM on a container. Debian 13 mounts /tmp as tmpfs
+# (tmp.mount) sized from the HOST's RAM, so inside a 2 GB LXC a logwatch run or
+# an app that keeps state under /tmp (Loki's example config does) eats the whole
+# memory allowance and the kernel starts killing services (grf, 2026-09-19).
+# logwatch gets a disk-backed TmpDir everywhere; containers also mask tmp.mount
+# so /tmp is on the root filesystem from the next boot.
+mkdir -p /etc/logwatch/conf; touch /etc/logwatch/conf/logwatch.conf
+if grep -q '^TmpDir' /etc/logwatch/conf/logwatch.conf; then
+  sed -i 's#^TmpDir.*#TmpDir = /var/tmp#' /etc/logwatch/conf/logwatch.conf
+else
+  printf 'TmpDir = /var/tmp\n' >> /etc/logwatch/conf/logwatch.conf
+fi
+if detect_container >/dev/null 2>&1; then
+  if findmnt -n -t tmpfs /tmp >/dev/null 2>&1 || systemctl is-enabled tmp.mount >/dev/null 2>&1; then
+    run systemctl mask tmp.mount >/dev/null 2>&1 || true
+    log "/tmp on disk from the next boot (tmp.mount masked; container memory is too small for a RAM /tmp)."
+    record "/tmp on disk" "tmp.mount masked (container), logwatch TmpDir=/var/tmp"
+  fi
+else
+  record "/tmp on disk" "logwatch TmpDir=/var/tmp"
+fi
+
 # Remove Docker-conflicting packages if the operator opted in (Docker prereq).
 if [[ "${PURGE_CONFLICTS:-0}" == "1" ]]; then
   info "Removing conflicting Docker packages: ${DIM}${FOUND_CONFLICTS[*]}${RESET}"
