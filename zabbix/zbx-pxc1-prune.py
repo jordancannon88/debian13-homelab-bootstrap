@@ -9,6 +9,9 @@ SELF_REPORTING (they carry Linux, PSI, LXC or SMART templates themselves), and
 the "Storage [node/pool] ..." triggers for every ZFS pool that the node itself
 already reports through the Homelab ZFS pools template (found from the node's
 own "ZFS: [pool]:" triggers). Storages of other kinds (dir, PBS, NFS) stay.
+Also disabled: "Node [pveN]: has been restarted / high CPU / high memory" when
+pveN is itself a Zabbix host (its Linux agent raises the same). "Node not
+online", quorum, HA and every trigger for an agentless guest stay.
 
   python3 zbx-pxc1-prune.py --dry-run   # list keep / disable, change nothing
   python3 zbx-pxc1-prune.py             # apply
@@ -27,6 +30,7 @@ HOST = "pxc1"
 SELF_REPORTING = ["grf", "zabbix", "frigate", "seafile-keeper", "pbs", "pbs0", "dkr", "net", "dev", "pms0"]
 # Trigger name fragments that a guest agent already covers.
 DUPLICATE_KINDS = ["has been restarted", "disk space usage", "memory usage", "CPU usage", "cpu usage"]
+NODE_DUP_KINDS = ["has been restarted", "memory usage", "CPU usage", "cpu usage"]
 
 def api(method, params):
     tok = open(TOKEN_FILE).readline().strip()
@@ -59,6 +63,7 @@ def self_reported_pools():
 
 def main():
     pools = self_reported_pools()
+    agent_hosts = {h["host"] for h in api("host.get", {"output": ["host"]})}
     hosts = api("host.get", {"output": ["hostid", "host"], "filter": {"host": [HOST]}})
     if not hosts:
         raise SystemExit(f"host {HOST} not found (API user needs read on its group)")
@@ -70,7 +75,9 @@ def main():
         g = guest_of(t["description"])
         kind = any(k in t["description"] for k in DUPLICATE_KINDS)
         st = re.search(r"Storage \[([^/\]]+)/([^\]]+)\]", t["description"])
-        if (g in SELF_REPORTING and kind) or (st and (st.group(1), st.group(2)) in pools):
+        nd = re.search(r"Node \[([^\]]+)\]", t["description"])
+        node_dup = bool(nd and nd.group(1) in agent_hosts and any(k in t["description"] for k in NODE_DUP_KINDS))
+        if (g in SELF_REPORTING and kind) or (st and (st.group(1), st.group(2)) in pools) or node_dup:
             dup.append(t)
         else:
             keep.append(t)
