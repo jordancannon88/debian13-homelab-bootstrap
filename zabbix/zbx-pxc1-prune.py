@@ -5,7 +5,10 @@ per-guest triggers that duplicate a guest's own agent (card rv8jq8rbryow).
 Kept: everything about nodes, quorum, HA, storage pools, and every trigger for
 a guest that has no agent of its own (unc1, immich, haos, opn1, ...).
 Disabled: restart / disk / memory / CPU / stopped triggers for guests listed in
-SELF_REPORTING (they carry Linux, PSI, LXC or SMART templates themselves).
+SELF_REPORTING (they carry Linux, PSI, LXC or SMART templates themselves), and
+the "Storage [node/pool] ..." triggers for every ZFS pool that the node itself
+already reports through the Homelab ZFS pools template (found from the node's
+own "ZFS: [pool]:" triggers). Storages of other kinds (dir, PBS, NFS) stay.
 
   python3 zbx-pxc1-prune.py --dry-run   # list keep / disable, change nothing
   python3 zbx-pxc1-prune.py             # apply
@@ -42,7 +45,20 @@ def guest_of(name):
     m = re.search(r"\[[^/\]]+/([^ (\]]+)(?: \((?:lxc|qemu)/\d+\))?\]", name)
     return m.group(1) if m else None
 
+def self_reported_pools():
+    # (node, pool) pairs the nodes report themselves: "ZFS: [local-zfs-hdd]: ..." on host pve2
+    trs = api("trigger.get", {"output": ["description"], "selectHosts": ["host"],
+                              "search": {"description": "ZFS: ["}, "expandDescription": True})
+    pairs = set()
+    for t in trs:
+        m = re.match(r"ZFS: \[([^\]]+)\]", t["description"])
+        if m:
+            for h in t["hosts"]:
+                pairs.add((h["host"], m.group(1)))
+    return pairs
+
 def main():
+    pools = self_reported_pools()
     hosts = api("host.get", {"output": ["hostid", "host"], "filter": {"host": [HOST]}})
     if not hosts:
         raise SystemExit(f"host {HOST} not found (API user needs read on its group)")
@@ -53,7 +69,8 @@ def main():
     for t in trs:
         g = guest_of(t["description"])
         kind = any(k in t["description"] for k in DUPLICATE_KINDS)
-        if g in SELF_REPORTING and kind:
+        st = re.search(r"Storage \[([^/\]]+)/([^\]]+)\]", t["description"])
+        if (g in SELF_REPORTING and kind) or (st and (st.group(1), st.group(2)) in pools):
             dup.append(t)
         else:
             keep.append(t)
