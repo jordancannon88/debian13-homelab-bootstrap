@@ -9,9 +9,11 @@ SELF_REPORTING (they carry Linux, PSI, LXC or SMART templates themselves), and
 the "Storage [node/pool] ..." triggers for every ZFS pool that the node itself
 already reports through the Homelab ZFS pools template (found from the node's
 own "ZFS: [pool]:" triggers). Storages of other kinds (dir, PBS, NFS) stay.
-Also disabled: "Node [pveN]: has been restarted / high CPU / high memory" when
-pveN is itself a Zabbix host (its Linux agent raises the same). "Node not
-online", quorum, HA and every trigger for an agentless guest stay.
+Also disabled: "Node [pveN]: restarted / CPU / memory / root filesystem / swap"
+when pveN is itself a Zabbix host (its Linux agent raises the same); Storage
+"local" (the root pool) and "local-pbs-hdd" (pve3's ZFS pool); shared NFS
+storages on every node but KEEP_SHARED_ON. "Node offline", quorum, API,
+"Not running" and every trigger for an agentless guest stay.
 
   python3 zbx-pxc1-prune.py --dry-run   # list keep / disable, change nothing
   python3 zbx-pxc1-prune.py             # apply
@@ -30,7 +32,14 @@ HOST = "pxc1"
 SELF_REPORTING = ["grf", "zabbix", "frigate", "seafile-keeper", "pbs", "pbs0", "dkr", "net", "dev", "pms0"]
 # Trigger name fragments that a guest agent already covers.
 DUPLICATE_KINDS = ["has been restarted", "disk space usage", "memory usage", "CPU usage", "cpu usage"]
-NODE_DUP_KINDS = ["has been restarted", "memory usage", "CPU usage", "cpu usage"]
+NODE_DUP_KINDS = ["has been restarted", "memory usage", "CPU usage", "cpu usage",
+                  "root filesystem space usage", "swap space usage"]
+# Storages whose space another host already reports: "local" is the node's root
+# pool (Linux agent, "/"), "local-pbs-hdd" is pve3's local-zfs-hdd pool (ZFS template).
+STORAGE_COVERED = ["local", "local-pbs-hdd"]
+# Shared storages every node mounts: keep the trigger on one node only.
+SHARED_STORAGES = ["nfs-pms0", "pms0-nas"]
+KEEP_SHARED_ON = "pve2"
 
 def api(method, params):
     tok = open(TOKEN_FILE).readline().strip()
@@ -77,7 +86,10 @@ def main():
         st = re.search(r"Storage \[([^/\]]+)/([^\]]+)\]", t["description"])
         nd = re.search(r"Node \[([^\]]+)\]", t["description"])
         node_dup = bool(nd and nd.group(1) in agent_hosts and any(k in t["description"] for k in NODE_DUP_KINDS))
-        if (g in SELF_REPORTING and kind) or (st and (st.group(1), st.group(2)) in pools) or node_dup:
+        st_dup = bool(st and ((st.group(1), st.group(2)) in pools
+                              or (st.group(2) in STORAGE_COVERED and st.group(1) in agent_hosts)
+                              or (st.group(2) in SHARED_STORAGES and st.group(1) != KEEP_SHARED_ON)))
+        if (g in SELF_REPORTING and kind) or st_dup or node_dup:
             dup.append(t)
         else:
             keep.append(t)
