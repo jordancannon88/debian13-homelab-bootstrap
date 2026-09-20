@@ -57,7 +57,6 @@ zabbix_export:
               tags:
                 - tag: scope
                   value: availability
-      discovery_rules:
         - uuid: 87896ac999804a23bfb744a1b094c055
           name: 'ZFS ARC size'
           type: DEPENDENT
@@ -102,6 +101,7 @@ zabbix_export:
           tags:
             - tag: component
               value: memory
+      discovery_rules:
         - uuid: 4563832ffa4f4554b46b8001c173c393
           name: 'ZFS pool discovery'
           type: DEPENDENT
