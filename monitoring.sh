@@ -794,9 +794,14 @@ EOF
   #     'create 0640 zabbix zabbix', which the re-usered agent can't open.
   if [[ -f "$lr" ]] && grep -qE '^[[:space:]]*create[[:space:]]' "$lr" \
      && ! grep -qE "^[[:space:]]*create[[:space:]]+[0-7]+[[:space:]]+${du}[[:space:]]+${du}([[:space:]]|$)" "$lr"; then
-    cp -a "$lr" "${lr}.bak.$(date +%F-%H%M%S)"
+    # The backup must NOT stay in /etc/logrotate.d: logrotate reads every file
+    # in that directory, so a copy duplicates the log entry and the whole run
+    # aborts with "duplicate log entry" (dev and net had no rotation from
+    # 2026-09-18 until 2026-09-20 because of exactly this).
+    mkdir -p /root/logrotate-backups
+    cp -a "$lr" "/root/logrotate-backups/$(basename "$lr").bak.$(date +%F-%H%M%S)"
     sed -i -E "s/^([[:space:]]*create[[:space:]]+[0-7]+)[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+/\1 ${du} ${du}/" "$lr"
-    log "Repointed the logrotate 'create' rule in ${lr} at ${du} (backup kept)."
+    log "Repointed the logrotate 'create' rule in ${lr} at ${du} (backup in /root/logrotate-backups)."
   fi
 
   # Apply the override and verify the Docker plugin can reach the socket.
