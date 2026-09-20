@@ -99,6 +99,10 @@ DOCKER_CONFLICT_PKGS=(docker.io docker-compose docker-doc podman-docker containe
 FOUND_CONFLICTS=()
 
 ASSUME_YES="${ASSUME_YES:-0}"
+# One timezone across the fleet. A mixed fleet makes every timestamp ambiguous:
+# on 2026-09-20 four containers were on Etc/UTC and two on America/Boise, which
+# led to a running job being read six hours wrong. Set TIMEZONE= to override.
+TIMEZONE="${TIMEZONE:-America/Denver}"
 SKIP_UPGRADE="${SKIP_UPGRADE:-0}"
 REBUILD_AIDE="${REBUILD_AIDE:-0}"
 
@@ -740,6 +744,25 @@ record "Core tools" "${#CORE_PKGS[@]} packages ensured (nftables, fail2ban, aide
 # memory allowance and the kernel starts killing services (grf, 2026-09-19).
 # logwatch gets a disk-backed TmpDir everywhere; containers also mask tmp.mount
 # so /tmp is on the root filesystem from the next boot.
+# Timezone: every host, VM and container reads the same clock.
+if [[ -n "$TIMEZONE" ]]; then
+  CUR_TZ="$(timedatectl show -p Timezone --value 2>/dev/null || readlink -f /etc/localtime | sed 's#.*/zoneinfo/##')"
+  if [[ "$CUR_TZ" == "$TIMEZONE" ]]; then
+    note "Timezone already $TIMEZONE."
+  elif timedatectl set-timezone "$TIMEZONE" 2>/dev/null; then
+    log "Timezone set to $TIMEZONE (was ${CUR_TZ:-unknown})."
+    record "Timezone" "$TIMEZONE (was ${CUR_TZ:-unknown})"
+  elif [[ -f "/usr/share/zoneinfo/$TIMEZONE" ]]; then
+    # An unprivileged container often cannot reach systemd-timedated.
+    ln -sf "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime
+    [[ -f /etc/timezone ]] && printf '%s\n' "$TIMEZONE" > /etc/timezone
+    log "Timezone set to $TIMEZONE by symlink (was ${CUR_TZ:-unknown}); timedatectl unavailable here."
+    record "Timezone" "$TIMEZONE by symlink (was ${CUR_TZ:-unknown})"
+  else
+    warn "Timezone $TIMEZONE not found in /usr/share/zoneinfo; left at ${CUR_TZ:-unknown}."
+  fi
+fi
+
 mkdir -p /etc/logwatch/conf; touch /etc/logwatch/conf/logwatch.conf
 if grep -q '^TmpDir' /etc/logwatch/conf/logwatch.conf; then
   sed -i 's#^TmpDir.*#TmpDir = /var/tmp#' /etc/logwatch/conf/logwatch.conf
