@@ -155,48 +155,48 @@ zabbix_export:
           tags:
             - tag: component
               value: kernel
-      graphs:
-        - uuid: 7fa2e347a04440bd9bebc53cd4351559
-          name: 'Pressure: memory'
-          graph_items:
-            - sortorder: '0'
-              color: FFA400
-              item:
-                host: 'Homelab pressure'
-                key: custom.psi.mem.some60
-            - sortorder: '1'
-              color: F63100
-              item:
-                host: 'Homelab pressure'
-                key: custom.psi.mem.full60
-        - uuid: b7e79316ca6a47c394d9d0fec02e76e5
-          name: 'Pressure: CPU'
-          graph_items:
-            - sortorder: '0'
-              color: 1A7C11
-              item:
-                host: 'Homelab pressure'
-                key: custom.psi.cpu.some60
-            - sortorder: '1'
-              color: 2774A4
-              item:
-                host: 'Homelab pressure'
-                key: custom.psi.cpu.some300
-        - uuid: bfa7086305ea4d849a8a904e030a2302
-          name: 'Pressure: all three, waiting share'
-          graph_items:
-            - sortorder: '0'
-              color: F63100
-              item:
-                host: 'Homelab pressure'
-                key: custom.psi.mem.full60
-            - sortorder: '1'
-              color: 1A7C11
-              item:
-                host: 'Homelab pressure'
-                key: custom.psi.cpu.some60
-            - sortorder: '2'
-              color: 2774A4
-              item:
-                host: 'Homelab pressure'
-                key: custom.psi.io.full60
+  graphs:
+    - uuid: 7fa2e347a04440bd9bebc53cd4351559
+      name: 'Pressure: memory'
+      graph_items:
+        - sortorder: '0'
+          color: FFA400
+          item:
+            host: 'Homelab pressure'
+            key: custom.psi.mem.some60
+        - sortorder: '1'
+          color: F63100
+          item:
+            host: 'Homelab pressure'
+            key: custom.psi.mem.full60
+    - uuid: b7e79316ca6a47c394d9d0fec02e76e5
+      name: 'Pressure: CPU'
+      graph_items:
+        - sortorder: '0'
+          color: 1A7C11
+          item:
+            host: 'Homelab pressure'
+            key: custom.psi.cpu.some60
+        - sortorder: '1'
+          color: 2774A4
+          item:
+            host: 'Homelab pressure'
+            key: custom.psi.cpu.some300
+    - uuid: bfa7086305ea4d849a8a904e030a2302
+      name: 'Pressure: all three, waiting share'
+      graph_items:
+        - sortorder: '0'
+          color: F63100
+          item:
+            host: 'Homelab pressure'
+            key: custom.psi.mem.full60
+        - sortorder: '1'
+          color: 1A7C11
+          item:
+            host: 'Homelab pressure'
+            key: custom.psi.cpu.some60
+        - sortorder: '2'
+          color: 2774A4
+          item:
+            host: 'Homelab pressure'
+            key: custom.psi.io.full60
