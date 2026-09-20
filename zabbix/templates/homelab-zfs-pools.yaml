@@ -10,6 +10,10 @@ zabbix_export:
       description: 'Per-pool and per-vdev ZFS health from zpool status -j (OpenZFS 2.3+), read every minute by /usr/local/bin/zfs-status-json.py through the UserParameter custom.zfs.status (needs no root). Two LLD rules: pools (health, capacity, permanent errors, scrub) and vdevs (state and read/write/checksum/slow-IO counters per device, the numbers the pool summary hides). Source of truth: ~/frigate/zabbix-template-homelab-zfs.yaml on the dev box. Kan ez7prbx6pr3z.'
       groups:
         - name: Templates/Custom
+      macros:
+        - macro: '{$MEMORY.UTIL.NOARC.MAX}'
+          value: '90'
+          description: 'Percent of memory held by guests and services, cache excluded, above which the node pages. Override per host.'
       items:
         - uuid: 9e84600de3414138806e2c1045c0abc7
           name: 'ZFS status (raw)'
@@ -101,6 +105,17 @@ zabbix_export:
           tags:
             - tag: component
               value: memory
+          triggers:
+            - uuid: 018cb56e1267462b96e31866943b0b09
+              expression: 'min(/Homelab ZFS pools/custom.memory.util.noarc,5m)>{$MEMORY.UTIL.NOARC.MAX}'
+              name: 'Memory: {HOST.NAME} over {$MEMORY.UTIL.NOARC.MAX}% used, cache excluded ({ITEM.LASTVALUE1})'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
+              priority: HIGH
+              description: 'Memory held by guests and services passed the threshold for five minutes, with the ZFS cache taken out of the figure. This replaces the stock "High memory utilization" trigger on ZFS nodes, which counts the ARC as used and so fires while nothing is short: pve1 read 86 % with the cache and 76.9 % without, and cache size ranges from 0.86 GB on pve0 to 6.6 GB on pve4, so no single inflated stock threshold suits every node. The stock trigger is neutralised on those hosts by setting {$MEMORY.UTIL.MAX} to 100. To act: find the guests holding the memory (qm list, pct list, or the guest rows on the dashboard), and remember the ARC gives its memory back under pressure so it is never the cause. Added 2026-09-20, Kan d6ylz9eeb9eg.'
+              tags:
+                - tag: scope
+                  value: capacity
       discovery_rules:
         - uuid: 4563832ffa4f4554b46b8001c173c393
           name: 'ZFS pool discovery'
