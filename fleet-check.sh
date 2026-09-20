@@ -138,6 +138,17 @@ if pkg alloy; then
   else row "alloy" WARN "active=$(systemctl is-active alloy 2>/dev/null) reporting_off=$([[ -n $dr ]] && echo y || echo n) loki=${loki:-unset}"; fi
 else row "alloy" MISSING "package absent"; fi
 
+# --- systemd state, and every unit that was masked on purpose ---------------
+# A container cannot run kernel process accounting or the ZFS units, so those
+# get masked; masking hides a unit completely, which is why the list is printed
+# here every day. Anything masked that you do not recognise is drift.
+SYSSTATE="$(systemctl is-system-running 2>/dev/null || true)"
+MASKED="$(systemctl list-unit-files --state=masked --no-legend 2>/dev/null | awk '{print $1}' | paste -sd, -)"
+FAILED="$(systemctl list-units --state=failed --no-legend 2>/dev/null | awk '{print $2}' | paste -sd, -)"
+if [[ "$SYSSTATE" == "running" ]]; then row "systemd state" OK "running${MASKED:+, masked: $MASKED}"
+elif [[ -n "$FAILED" ]]; then row "systemd state" WARN "$SYSSTATE, failed: $FAILED${MASKED:+, masked: $MASKED}"
+else row "systemd state" WARN "$SYSSTATE${MASKED:+, masked: $MASKED}"; fi
+
 # --- MOTD -------------------------------------------------------------------
 [[ -x /etc/update-motd.d/20-homelab ]] && row "motd generator" OK "/etc/update-motd.d/20-homelab" || row "motd generator" MISSING "no /etc/update-motd.d/20-homelab"
 
