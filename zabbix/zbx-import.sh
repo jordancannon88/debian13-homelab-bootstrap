@@ -18,7 +18,8 @@
 #   Discovery rules   update + create (+ delete missing with --delete-items)
 #   Triggers          update + create (+ delete missing with --delete-triggers)
 #   Value mappings   update + create (template-scoped)
-#   Template dashboards, graphs, web scenarios, host groups: untouched
+#   Graphs            update + create (never delete)
+#   Template dashboards, web scenarios, host groups: untouched
 #
 # Needs: the token of the `claude` API user (role Template importer, API allow
 # list configuration.import/export) in ~/.config/zabbix/token (0600), curl,
@@ -57,7 +58,7 @@ rules = {
     "host_groups": {"createMissing": False},
     "valueMaps": {"updateExisting": True, "createMissing": True, "deleteMissing": False},   # template-scoped in 7.x
     "templateDashboards": {"updateExisting": False, "createMissing": False, "deleteMissing": False},
-    "graphs": {"updateExisting": False, "createMissing": False, "deleteMissing": False},
+    "graphs": {**uc, "deleteMissing": False},   # on since 2026-09-20: a template graph silently did nothing without it
     "httptests": {"updateExisting": False, "createMissing": False, "deleteMissing": False},
 }
 print(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "configuration.import",
