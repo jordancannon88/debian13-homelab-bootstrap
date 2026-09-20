@@ -44,4 +44,13 @@ some10="$(psi some /sys/fs/cgroup/cpu.pressure)"; some10="${some10:--1}"
 io_some10="$(psi some /sys/fs/cgroup/io.pressure)"; io_some10="${io_some10:--1}"
 io_full10="$(psi full /sys/fs/cgroup/io.pressure)"; io_full10="${io_full10:--1}"
 
-printf '{"uptime":%s,"ncpu":%s,"cpu_pct":%s,"cpu_some10":%s,"io_some10":%s,"io_full10":%s}\n' "$up" "$ncpu" "$pct" "$some10" "$io_some10" "$io_full10"
+# Load average of this container alone. /proc/loadavg inside a container is the
+# container's own only when lxcfs runs with --enable-loadavg (bootstrap harden.sh
+# since 2026-09-20); the Zabbix agent's system.cpu.load item cannot use it, because
+# it reads the figure through a system call that lxcfs does not intercept and so
+# always reports the host's load. Reading the file here is what makes the number
+# honest in Zabbix. Falls back to -1 where the file is the host's.
+read -r l1 l5 l15 _ < /proc/loadavg 2>/dev/null || { l1=-1; l5=-1; l15=-1; }
+l1="${l1:--1}"; l5="${l5:--1}"; l15="${l15:--1}"
+
+printf '{"uptime":%s,"ncpu":%s,"cpu_pct":%s,"cpu_some10":%s,"io_some10":%s,"io_full10":%s,"load1":%s,"load5":%s,"load15":%s}\n' "$up" "$ncpu" "$pct" "$some10" "$io_some10" "$io_full10" "$l1" "$l5" "$l15"

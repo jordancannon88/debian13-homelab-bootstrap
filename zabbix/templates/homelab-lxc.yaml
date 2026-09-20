@@ -39,6 +39,54 @@ zabbix_export:
               tags:
                 - tag: scope
                   value: performance
+        - uuid: 964eb4c904bd40bfb6b86762a50c39c0
+          name: 'Load average (own, 1m)'
+          type: DEPENDENT
+          key: custom.lxc.load1m
+          delay: '0'
+          value_type: FLOAT
+          description: 'This container''s own 1m load average, read from /proc/loadavg inside the container, which lxcfs makes honest when it runs with --enable-loadavg (bootstrap harden.sh since 2026-09-20). The stock system.cpu.load item cannot be used here: it reads the figure through a system call that lxcfs does not intercept, so it always reports the host''s load, which is why the container load trigger stays silenced against the stock item. -1 where the file is still the host''s. The dashboard column matches this item by name; VMs and nodes carry a calculated item of the same name from the Homelab uptime host template.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.load1
+          master_item:
+            key: custom.lxc.stat
+          tags:
+            - tag: component
+              value: cpu
+        - uuid: 9dd5efe83fe2482594a28816630ecc07
+          name: 'Load average (own, 5m)'
+          type: DEPENDENT
+          key: custom.lxc.load5m
+          delay: '0'
+          value_type: FLOAT
+          description: 'This container''s own 5m load average, read from /proc/loadavg inside the container, which lxcfs makes honest when it runs with --enable-loadavg (bootstrap harden.sh since 2026-09-20). The stock system.cpu.load item cannot be used here: it reads the figure through a system call that lxcfs does not intercept, so it always reports the host''s load, which is why the container load trigger stays silenced against the stock item. -1 where the file is still the host''s. The dashboard column matches this item by name; VMs and nodes carry a calculated item of the same name from the Homelab uptime host template.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.load5
+          master_item:
+            key: custom.lxc.stat
+          tags:
+            - tag: component
+              value: cpu
+        - uuid: 2b6a2cae7fd240cc9a938f4465bef98a
+          name: 'Load average (own, 15m)'
+          type: DEPENDENT
+          key: custom.lxc.load15m
+          delay: '0'
+          value_type: FLOAT
+          description: 'This container''s own 15m load average, read from /proc/loadavg inside the container, which lxcfs makes honest when it runs with --enable-loadavg (bootstrap harden.sh since 2026-09-20). The stock system.cpu.load item cannot be used here: it reads the figure through a system call that lxcfs does not intercept, so it always reports the host''s load, which is why the container load trigger stays silenced against the stock item. -1 where the file is still the host''s. The dashboard column matches this item by name; VMs and nodes carry a calculated item of the same name from the Homelab uptime host template.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.load15
+          master_item:
+            key: custom.lxc.stat
+          tags:
+            - tag: component
+              value: cpu
         - uuid: c3e7f73aeb8647ea9456af15685502a5
           name: 'CPU use (own)'
           type: DEPENDENT

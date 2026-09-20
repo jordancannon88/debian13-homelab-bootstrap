@@ -11,6 +11,36 @@ zabbix_export:
       groups:
         - name: Templates/Custom
       items:
+        - uuid: f4d49870dc47413dba24db62ec21c41c
+          name: 'Load average (own, 1m)'
+          type: CALCULATED
+          key: custom.load1m
+          value_type: FLOAT
+          params: 'last(//system.cpu.load[all,avg1])'
+          description: 'Mirror of the stock 1m load average under a name shared with the containers'' own item, so one dashboard column reads every machine. On a VM or a node the stock item is already the machine''s own figure; only inside a container is it the host''s, which the Homelab LXC template handles.'
+          tags:
+            - tag: component
+              value: cpu
+        - uuid: 7395a27eb865417391b15ccf0ac1ac95
+          name: 'Load average (own, 5m)'
+          type: CALCULATED
+          key: custom.load5m
+          value_type: FLOAT
+          params: 'last(//system.cpu.load[all,avg5])'
+          description: 'Mirror of the stock 5m load average under a name shared with the containers'' own item, so one dashboard column reads every machine. On a VM or a node the stock item is already the machine''s own figure; only inside a container is it the host''s, which the Homelab LXC template handles.'
+          tags:
+            - tag: component
+              value: cpu
+        - uuid: c88f4b7f0b42438f8bc10b8ed8af8efb
+          name: 'Load average (own, 15m)'
+          type: CALCULATED
+          key: custom.load15m
+          value_type: FLOAT
+          params: 'last(//system.cpu.load[all,avg15])'
+          description: 'Mirror of the stock 15m load average under a name shared with the containers'' own item, so one dashboard column reads every machine. On a VM or a node the stock item is already the machine''s own figure; only inside a container is it the host''s, which the Homelab LXC template handles.'
+          tags:
+            - tag: component
+              value: cpu
         - uuid: b379982b62744370870c8f5f30781995
           name: 'CPU use (own)'
           type: CALCULATED
