@@ -756,6 +756,29 @@ else
   record "/tmp on disk" "logwatch TmpDir=/var/tmp"
 fi
 
+# A container reads the HOST's load average unless lxcfs virtualises it, so a
+# 1-core LXC shows the node's load (seafile-keeper read 6.45 at 3.5 % CPU while
+# pve2 scrubbed, 2026-09-20) and every per-container load trigger is noise.
+# lxcfs -l gives each container its own figure from its cgroup.
+if [[ "$IS_PVE" == "1" ]] && systemctl list-unit-files lxcfs.service >/dev/null 2>&1; then
+  LXCFS_DROPIN=/etc/systemd/system/lxcfs.service.d/override.conf
+  if ! grep -qs -- '--enable-loadavg' "$LXCFS_DROPIN"; then
+    mkdir -p "$(dirname "$LXCFS_DROPIN")"
+    LXCFS_BIN="$(systemctl show -p ExecStart --value lxcfs.service | sed -n 's/.*path=\([^ ;]*\).*/\1/p')"
+    LXCFS_BIN="${LXCFS_BIN:-/usr/bin/lxcfs}"
+    write_file "$LXCFS_DROPIN" "[Service]
+ExecStart=
+ExecStart=$LXCFS_BIN --enable-loadavg /var/lib/lxcfs
+" 0644
+    run systemctl daemon-reload
+    run systemctl restart lxcfs.service || warn "lxcfs restart failed; containers keep the host load average until it restarts."
+    log "lxcfs: per-container load average enabled (--enable-loadavg)."
+    record "lxcfs loadavg" "containers report their own load, not the node's"
+  else
+    note "lxcfs already reports per-container load averages."
+  fi
+fi
+
 # Remove Docker-conflicting packages if the operator opted in (Docker prereq).
 if [[ "${PURGE_CONFLICTS:-0}" == "1" ]]; then
   info "Removing conflicting Docker packages: ${DIM}${FOUND_CONFLICTS[*]}${RESET}"

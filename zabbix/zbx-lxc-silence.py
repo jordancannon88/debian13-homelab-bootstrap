@@ -15,14 +15,23 @@ usermacro.create, usermacro.update, trigger.get, trigger.update.
 
   python3 zbx-lxc-silence.py --dry-run
   python3 zbx-lxc-silence.py
+  python3 zbx-lxc-silence.py --restore-load   # load macro back to the stock 1.5
+
+Use --restore-load once lxcfs runs with --enable-loadavg on the nodes (bootstrap
+harden.sh, 2026-09-20): from then on a container's /proc/loadavg is its own, so
+the stock load trigger is meaningful again. The CPU macro, the restart trigger
+and the PSI trigger stay silenced: those still read the host.
 """
 import json, os, sys, urllib.request
 
 URL = os.environ.get("ZBX_URL", "https://zabbix.local.cannon.dev/api_jsonrpc.php")
 TOKEN_FILE = os.environ.get("ZBX_TOKEN_FILE", os.path.expanduser("~/.config/zabbix/token"))
 DRY = "--dry-run" in sys.argv
+RESTORE_LOAD = "--restore-load" in sys.argv
 TEMPLATE = "Homelab LXC"
-MACROS = {"{$LOAD_AVG_PER_CPU.MAX.WARN}": "1000", "{$CPU.UTIL.CRIT}": "1000"}
+# --restore-load touches the load macro only and puts it back to the stock value.
+MACROS = ({"{$LOAD_AVG_PER_CPU.MAX.WARN}": "1.5"} if RESTORE_LOAD
+          else {"{$LOAD_AVG_PER_CPU.MAX.WARN}": "1000", "{$CPU.UTIL.CRIT}": "1000"})
 RESTART_TRIGGER_MATCH = "Linux: {HOST.NAME} has been restarted"   # the stock one only, never "LXC: ..."
 PSI_TRIGGER_PREFIX = "High IO pressure stall on"   # the PSI template's trigger: host's number inside a container
 

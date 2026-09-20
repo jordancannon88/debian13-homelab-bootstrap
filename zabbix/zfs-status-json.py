@@ -4,6 +4,7 @@ for the Zabbix UserParameter custom.zfs.status (template "Homelab ZFS pools").
 
 Reads `zpool status -j -p` and `zpool list -Hp` as the zabbix user (no root needed
 on OpenZFS 2.3+). Emits:
+  arc:        ZFS cache size and its cap, so a node's memory can be read without it
   pools:      per pool health, capacity, fragmentation, permanent error count, scrub stats
   vdevs:      per non-root vdev (mirror groups, disks, logs, cache) state and error counters
   lld_pools / lld_vdevs: discovery arrays for the two LLD rules
@@ -50,6 +51,22 @@ def walk(pool, node, out, lld, depth=0):
         walk(pool, child, out, lld, depth + 1)
 
 
+def arc_stats():
+    """ZFS ARC size and cap from the kernel. The ARC counts as used memory in
+    /proc/meminfo although it is given back under pressure, so a node with a big
+    cache reads as nearly full. Returns zeros where there is no ZFS module."""
+    out = {"size": 0, "c_max": 0}
+    try:
+        with open("/proc/spl/kstat/zfs/arcstats") as fh:
+            for line in fh:
+                f = line.split()
+                if len(f) == 3 and f[0] in ("size", "c_max"):
+                    out[f[0]] = num(f[2])
+    except OSError:
+        pass
+    return out
+
+
 def build(status, listing):
     pools, vdevs, lld_pools, lld_vdevs = {}, {}, [], []
     caps = {}
@@ -74,7 +91,8 @@ def build(status, listing):
         lld_pools.append({"{#POOL}": name})
         for root in (p.get("vdevs") or {}).values():
             walk(name, root, vdevs, lld_vdevs)
-    return {"ts": int(time.time()), "pools": pools, "vdevs": vdevs, "lld_pools": lld_pools, "lld_vdevs": lld_vdevs}
+    return {"ts": int(time.time()), "arc": arc_stats(), "pools": pools, "vdevs": vdevs,
+            "lld_pools": lld_pools, "lld_vdevs": lld_vdevs}
 
 
 def main():

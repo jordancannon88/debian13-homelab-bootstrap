@@ -58,6 +58,50 @@ zabbix_export:
                 - tag: scope
                   value: availability
       discovery_rules:
+        - uuid: 87896ac999804a23bfb744a1b094c055
+          name: 'ZFS ARC size'
+          type: DEPENDENT
+          key: custom.zfs.arc.size
+          units: B
+          description: 'Bytes the ZFS cache (ARC) holds. Linux counts this as used memory although ZFS gives it back under pressure, so a node with a big cache reads as nearly full. Read together with "Memory use (no ARC)".'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.arc.size
+          master_item:
+            key: custom.zfs.status
+          tags:
+            - tag: component
+              value: memory
+        - uuid: ee8577cfa9c64a958175ec50f947cfdf
+          name: 'ZFS ARC maximum'
+          type: DEPENDENT
+          key: custom.zfs.arc.c_max
+          units: B
+          description: 'The cap the kernel puts on the ARC (zfs_arc_max, about a tenth of RAM on current Proxmox installs).'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.arc.c_max
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+          master_item:
+            key: custom.zfs.status
+          tags:
+            - tag: component
+              value: memory
+        - uuid: fec8e485f91f4680968ee52258f5987e
+          name: 'Memory use (no ARC)'
+          type: CALCULATED
+          key: custom.memory.util.noarc
+          value_type: FLOAT
+          units: '%'
+          params: '(last(//vm.memory.size[total])-last(//vm.memory.size[available])-last(//custom.zfs.arc.size))/last(//vm.memory.size[total])*100'
+          description: 'Memory held by guests and services, with the ZFS cache taken out. The stock "Memory utilization" item counts the ARC and reads far higher on a ZFS host. Needs the stock Linux agent items on the same host. Dashboard columns match this item by name.'
+          tags:
+            - tag: component
+              value: memory
         - uuid: 4563832ffa4f4554b46b8001c173c393
           name: 'ZFS pool discovery'
           type: DEPENDENT
