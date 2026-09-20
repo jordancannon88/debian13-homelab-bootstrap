@@ -71,6 +71,17 @@ zabbix_export:
           tags:
             - tag: component
               value: cpu
+          triggers:
+            - uuid: 8e5daf4c8b94437c99d92dc1f1c470ce
+              expression: 'min(/Homelab LXC/custom.lxc.load5m,5m)/last(/Homelab LXC/custom.lxc.ncpu)>{$LXC.LOAD.PER.CPU.WARN} and last(/Homelab LXC/custom.lxc.load5m)>=0'
+              name: 'LXC: load per CPU over {$LXC.LOAD.PER.CPU.WARN} on {HOST.NAME} ({ITEM.LASTVALUE1} over {ITEM.LASTVALUE2} CPUs)'
+              url: 'https://bookstack.local.cannon.dev/link/467'
+              url_name: Runbook
+              priority: WARNING
+              description: 'This container''s own 5 minute load average per CPU it may use. The stock "Load average is too high" trigger cannot be used inside a container: the agent reads load through a system call that lxcfs does not intercept, so it always reports the node''s figure, and pbs0 paged on pve0''s load during a disk write pass on 2026-09-20. That stock trigger stays neutralised with {$LOAD_AVG_PER_CPU.MAX.WARN} = 1000; this one is the honest replacement, from /proc/loadavg inside the container. Sustained load per CPU above the threshold with low CPU use means the container is waiting on IO or being throttled: read "CPU use (own)", "stalled on IO" and the cpu.pressure item next to it. Added 2026-09-20, Kan in2f71k36m7z.'
+              tags:
+                - tag: scope
+                  value: capacity
         - uuid: 2b6a2cae7fd240cc9a938f4465bef98a
           name: 'Load average (own, 15m)'
           type: DEPENDENT
@@ -226,6 +237,9 @@ zabbix_export:
         - macro: '{$LXC.IO.PSI.FULL.WARN}'
           value: '25'
           description: 'io.pressure full avg10 percent above which the container counts as stalled on IO'
+        - macro: '{$LXC.LOAD.PER.CPU.WARN}'
+          value: '1.5'
+          description: 'This container''s own 5 minute load average per CPU above which it counts as overloaded. Replaces the stock {$LOAD_AVG_PER_CPU.MAX.WARN}, which inside a container reads the node''s load.'
         - macro: '{$LXC.CPU.PSI.WARN}'
           value: '50'
           description: 'cpu.pressure some avg10 percent above which the container is considered starved by the host'
