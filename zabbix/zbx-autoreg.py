@@ -34,6 +34,7 @@ PLAN = {
     "nic":       ("nic", [], ["Homelab physical NIC flapping"], False),
     "tbmesh":    ("tbmesh", [], ["Homelab TB3 mesh"], False),
     "kernel":    ("kernel", [], ["Homelab kernel"], False),
+    "psi":       ("psi", [], ["Homelab pressure"], False),
     "bootcheck": ("bootcheck", [], ["Homelab boot check"], False),
     "keeper":    ("keeper", [], ["Homelab Seafile keeper"], False),
     "lxcstat":   ("lxcstat", [], ["Homelab LXC"], False),

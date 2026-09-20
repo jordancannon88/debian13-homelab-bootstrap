@@ -585,6 +585,27 @@ setup_kernel_watch() {
   record "Zabbix kernel watch" "installed (custom.kernel.hung_tasks)"
 }
 
+# setup_pressure — the "Homelab pressure" template's host side: psi-json.sh
+# reports memory and CPU pressure stall information, the two families the fleet
+# did not collect before 2026-09-20. Pressure says how long work waited for a
+# resource, where utilization only says how much is in use. Not for containers:
+# /proc/pressure inside one is the host machine's, so the collector reports -1
+# there and the triggers are suppressed; the "Homelab LXC" template reads the
+# container's own cgroup pressure instead.
+setup_pressure() {
+  if [[ ! -r /proc/pressure/cpu ]]; then
+    record "Zabbix pressure" "skipped (no /proc/pressure on this kernel)"
+    return 0
+  fi
+  if ! install_zbx_helper psi-json.sh 0755; then
+    warn "Pressure helper not available — skipped."
+    record "Zabbix pressure" "skipped (helper missing)"
+    return 0
+  fi
+  write_agent_dropin pressure.conf 'UserParameter=custom.psi,/usr/local/bin/psi-json.sh'
+  record "Zabbix pressure" "installed (custom.psi)"
+}
+
 # setup_lxc_stat — the "Homelab LXC" template's host side, containers only:
 # lxc-stat-json.sh reports the container's own uptime (age of its init) and
 # CPU use from its cgroup, because /proc/uptime and /proc/loadavg inside a
@@ -1165,6 +1186,13 @@ else
     else
       info "Installing the kernel hung-task watch..."
       setup_kernel_watch
+    fi
+    # Memory and CPU pressure: same rule, the machine must own its kernel.
+    if [[ "$ZBX_CONTAINER" == "1" ]]; then
+      note "Container detected: pressure collector skipped (/proc/pressure belongs to the host; the LXC template reads the cgroup instead)."
+    else
+      info "Installing the memory and CPU pressure collector..."
+      setup_pressure
     fi
     # Boot check collector: only where the post-outage boot service is installed.
     if [[ -z "$ZBX_BOOTCHECK" ]]; then

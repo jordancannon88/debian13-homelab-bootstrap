@@ -21,6 +21,7 @@
 #   nic        Homelab physical NIC flapping (physnic.conf)
 #   tbmesh     Homelab TB3 mesh             (tbmesh.conf)
 #   kernel     Homelab kernel               (kernel-watch.conf)
+#   psi        Homelab pressure             (pressure.conf)
 #   bootcheck  Homelab boot check           (bootcheck.conf)
 #   keeper     Homelab Seafile keeper       (seafile-keeper.conf)
 #   lxcstat    Homelab LXC                  (lxc-stat.conf, containers only)
@@ -52,6 +53,7 @@ tokens() {
   [[ -f "$D/physnic.conf" ]]         && t="$t nic"
   [[ -f "$D/tbmesh.conf" ]]          && t="$t tbmesh"
   [[ -f "$D/kernel-watch.conf" ]]    && t="$t kernel"
+  [[ -f "$D/pressure.conf" ]]        && t="$t psi"
   [[ -f "$D/bootcheck.conf" ]]       && t="$t bootcheck"
   [[ -f "$D/seafile-keeper.conf" ]]  && t="$t keeper"
   [[ -f "$D/lxc-stat.conf" ]]        && t="$t lxcstat"

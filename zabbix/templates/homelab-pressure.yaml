@@ -1,0 +1,157 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: bf6177b54b3f4fe39b327f18494c3001
+      name: Templates/Custom
+  templates:
+    - uuid: c6c8a2ee73fb42f7a9fbb69dc61b017e
+      template: 'Homelab pressure'
+      name: 'Homelab pressure'
+      description: 'Pressure stall information for memory and CPU, the two families the fleet did not collect before 2026-09-20. Pressure answers how much time work spent waiting for a resource, where utilization only answers how much is in use, and the two disagree in both directions: pve1 read 86 percent memory used with zero memory pressure because the ZFS cache gives memory back on demand, and dkr carried load 1.2 with 98 percent idle and zero IO pressure because container health checks inflate load. Host side: /usr/local/bin/psi-json.sh through the UserParameter custom.psi, installed by debian13-homelab-bootstrap monitoring.sh (setup_pressure). Link to bare-metal nodes and VMs only: inside a container /proc/pressure is the host machine, so the values come back -1 and the triggers are suppressed; per-container pressure comes from the "Homelab LXC" template. IO pressure alerting still lives in the older "Linux IO pressure stall (PSI)" template (page 112) and the two should be consolidated. Source of truth: zabbix/templates/homelab-pressure.yaml in that repo. Docs: catalog link/376. Kan a2nbba25qtqw.'
+      groups:
+        - name: Templates/Custom
+      macros:
+        - macro: '{$PSI.MEM.FULL.WARN}'
+          value: '10'
+          description: 'Percent of the last minute in which every task was stalled on memory, above which the host pages. Deliberately low: sustained full memory pressure means work is not progressing.'
+        - macro: '{$PSI.CPU.SOME.WARN}'
+          value: '50'
+          description: 'Percent of five minutes in which at least one task waited for a CPU, above which the host raises a Warning.'
+      items:
+        - uuid: 9d416d44807b404ea84f7d825ce12366
+          name: 'Pressure (raw)'
+          type: ZABBIX_ACTIVE
+          key: custom.psi
+          delay: 1m
+          history: 1d
+          value_type: TEXT
+          trends: '0'
+          description: 'One JSON document per minute from /usr/local/bin/psi-json.sh: cpu, memory and io, each with some and full at 10, 60 and 300 second averages, plus a container flag. Every other item on this template depends on it.'
+          tags:
+            - tag: component
+              value: kernel
+        - uuid: 47a3bcddccc94995b50c3bb548a3d917
+          name: 'Memory pressure (full 60s)'
+          type: DEPENDENT
+          key: custom.psi.mem.full60
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of the last minute in which EVERY task was stalled waiting for memory. This is the real out-of-memory signal: a ZFS node can sit at 86 percent memory used with this at zero, because the ARC hands its memory back on demand. Anything sustained above a few percent means work is not progressing. -1 inside a container, where /proc/pressure is the host''s.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.memory.full60
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: memory
+          triggers:
+            - uuid: 94ff976a8f9f4a6cb979e2c3cc786678
+              expression: 'min(/Homelab pressure/custom.psi.mem.full60,5m)>{$PSI.MEM.FULL.WARN} and last(/Homelab pressure/custom.psi.container)=0'
+              name: 'Memory pressure: work stalled on {HOST.NAME} ({ITEM.LASTVALUE1} of the last minute)'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
+              priority: HIGH
+              description: 'Every task on this machine spent a meaningful share of each minute waiting for memory, for five minutes. This is the honest out-of-memory signal, unlike a utilization percentage: on a ZFS host the cache counts as used but is given back on demand, so a node can read 86 percent used with no pressure at all (pve1, 2026-09-20). Sustained full memory pressure means work is not progressing. To act: find what grew (the guest rows on the dashboard, or ps sorted by resident size), and check whether swap is being written. The cache is never the cause. Auto-recovers when pressure falls. Added 2026-09-20, Kan a2nbba25qtqw.'
+              tags:
+                - tag: scope
+                  value: capacity
+        - uuid: e9d5baeb12ce413da7c8a19724710b39
+          name: 'Memory pressure (some 60s)'
+          type: DEPENDENT
+          key: custom.psi.mem.some60
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of the last minute in which at least one task was stalled waiting for memory. Rises before the full figure does, so it is the early warning. -1 inside a container.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.memory.some60
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: memory
+        - uuid: a80c44ddfb824b389bf32719eae71507
+          name: 'CPU pressure (some 60s)'
+          type: DEPENDENT
+          key: custom.psi.cpu.some60
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of the last minute in which at least one runnable task was waiting for a CPU. Unlike utilization this catches throttling and oversubscription: a machine can show modest CPU use while its work queues. -1 inside a container.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.cpu.some60
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: cpu
+        - uuid: 9829b7b2da1a4d3bbc46559e4e2c844c
+          name: 'CPU pressure (some 300s)'
+          type: DEPENDENT
+          key: custom.psi.cpu.some300
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: 'The same figure averaged over five minutes, which is what the trigger uses so a brief burst does not page. -1 inside a container.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.cpu.some300
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: cpu
+          triggers:
+            - uuid: 69a166d633f04898b4f025e728f65f0d
+              expression: 'min(/Homelab pressure/custom.psi.cpu.some300,10m)>{$PSI.CPU.SOME.WARN} and last(/Homelab pressure/custom.psi.container)=0'
+              name: 'CPU pressure: work waiting for a CPU on {HOST.NAME} ({ITEM.LASTVALUE1} of five minutes)'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
+              priority: WARNING
+              description: 'At least one runnable task waited for a CPU during more than the threshold share of five minutes, for ten minutes. This catches oversubscription and throttling, which utilization does not: a machine can show modest CPU use while its work queues, and a Docker host can show load without any waiting at all (dkr, 2026-09-20, load 1.2 with 98 percent idle and zero pressure). To act: compare CPU use per guest on the node, and check whether a guest has fewer cores than its steady work needs. Auto-recovers. Added 2026-09-20, Kan a2nbba25qtqw.'
+              tags:
+                - tag: scope
+                  value: capacity
+        - uuid: be1c5df0ddf5448984d15e8ddea3b2d1
+          name: 'IO pressure (full 60s)'
+          type: DEPENDENT
+          key: custom.psi.io.full60
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of the last minute in which every task was stalled on storage. Collected here for completeness; the older "Linux IO pressure stall (PSI)" template on page 112 carries the IO alerting today, and the two should be consolidated. -1 inside a container.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.io.full60
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: kernel
+        - uuid: fdc5e3010b374aafaa2c42936d19f7c1
+          name: 'Pressure read inside a container'
+          type: DEPENDENT
+          key: custom.psi.container
+          delay: '0'
+          description: '1 when this template is linked to a container, where /proc/pressure reports the HOST machine rather than the container, so every value above is -1 and the triggers are suppressed. Per-container pressure comes from the cgroup files through the "Homelab LXC" template instead. Should be 0 on every host this template is linked to.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.container
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: kernel
