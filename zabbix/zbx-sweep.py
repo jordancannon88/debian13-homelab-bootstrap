@@ -61,8 +61,18 @@ def label(it):
 
 
 def why_dead(it):
+    """Why this item is not monitoring anything, or None if it is fine.
+
+    An item with history disabled ALWAYS reports no last value, because item.get
+    reads history. That is the normal pattern for a master item holding a large JSON
+    blob for dependent items to parse, so judging it by lastclock marks every healthy
+    master item dead. smart.disk.get is one: it reads empty on every host in the
+    fleet, including the two where SMART alerts are firing right now. Only the
+    item's supported state can judge those."""
     if it.get("state") == "1":
         return "UNSUPPORTED"
+    if str(it.get("history", "")) in ("0", "0s"):
+        return None                       # keeps no history by design, not dead
     if str(it.get("lastclock", "0")) == "0":
         return "no data, ever"
     return None
@@ -78,7 +88,7 @@ if cmd not in ("strays", "dead"):
 hosts = sorted({h["host"] for h in api("host.get", {"output": ["host"]})})
 items = api("item.get", {
     "output": ["itemid", "key_", "name", "lastvalue", "lastclock", "state", "error",
-               "status", "templateid", "flags"],
+               "status", "templateid", "flags", "history"],
     "selectHosts": ["host"], "monitored": True})
 
 # Collect the findings first, then decide how much of them to print.
