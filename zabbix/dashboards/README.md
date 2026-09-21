@@ -470,7 +470,8 @@ families read as different kinds of measurement at a glance. Pressure is a share
 time, bounded and meaningful as an area under a curve; throughput is a rate, and a
 filled rate graph invites reading the area as a total, which it is not.
 
-The `Draw` type on a data set (Line, Points, Staircase, Bar) would differentiate them
-further. It was not used here because its enum values were not verified, and an
-unverified numeric field value on this dashboard has already produced a widget that
-wrote successfully and then refused to render.
+The network and mesh graphs also use **Staircase** (`ds.N.type` = 2). The Draw radio
+order in the widget form is Line, Points, Staircase, Bar, so the enum is 0 to 3 in that
+order; verified working on 2026-09-21. There is a correctness argument as well as a
+visual one: a rate is constant across its sampling interval, so a step states what was
+measured, while a sloped line invents values between polls.

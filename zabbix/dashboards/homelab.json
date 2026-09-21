@@ -2049,6 +2049,11 @@
               "value": "0"
             },
             {
+              "name": "ds.0.type",
+              "type": 1,
+              "value": "2"
+            },
+            {
               "name": "ds.0.width",
               "type": 1,
               "value": "3"
@@ -2077,6 +2082,11 @@
               "name": "ds.1.transparency",
               "type": 1,
               "value": "0"
+            },
+            {
+              "name": "ds.1.type",
+              "type": 1,
+              "value": "2"
             },
             {
               "name": "ds.1.width",
@@ -2109,6 +2119,11 @@
               "value": "0"
             },
             {
+              "name": "ds.2.type",
+              "type": 1,
+              "value": "2"
+            },
+            {
               "name": "ds.2.width",
               "type": 1,
               "value": "3"
@@ -2139,6 +2154,11 @@
               "value": "0"
             },
             {
+              "name": "ds.3.type",
+              "type": 1,
+              "value": "2"
+            },
+            {
               "name": "ds.3.width",
               "type": 1,
               "value": "3"
@@ -2167,6 +2187,11 @@
               "name": "ds.4.transparency",
               "type": 1,
               "value": "0"
+            },
+            {
+              "name": "ds.4.type",
+              "type": 1,
+              "value": "2"
             },
             {
               "name": "ds.4.width",
@@ -2224,6 +2249,11 @@
               "value": "0"
             },
             {
+              "name": "ds.0.type",
+              "type": 1,
+              "value": "2"
+            },
+            {
               "name": "ds.0.width",
               "type": 1,
               "value": "3"
@@ -2252,6 +2282,11 @@
               "name": "ds.1.transparency",
               "type": 1,
               "value": "0"
+            },
+            {
+              "name": "ds.1.type",
+              "type": 1,
+              "value": "2"
             },
             {
               "name": "ds.1.width",
@@ -2284,6 +2319,11 @@
               "value": "0"
             },
             {
+              "name": "ds.2.type",
+              "type": 1,
+              "value": "2"
+            },
+            {
               "name": "ds.2.width",
               "type": 1,
               "value": "3"
@@ -2314,6 +2354,11 @@
               "value": "0"
             },
             {
+              "name": "ds.3.type",
+              "type": 1,
+              "value": "2"
+            },
+            {
               "name": "ds.3.width",
               "type": 1,
               "value": "3"
@@ -2342,6 +2387,11 @@
               "name": "ds.4.transparency",
               "type": 1,
               "value": "0"
+            },
+            {
+              "name": "ds.4.type",
+              "type": 1,
+              "value": "2"
             },
             {
               "name": "ds.4.width",
@@ -2399,6 +2449,11 @@
               "value": "0"
             },
             {
+              "name": "ds.0.type",
+              "type": 1,
+              "value": "2"
+            },
+            {
               "name": "ds.0.width",
               "type": 1,
               "value": "3"
@@ -2429,6 +2484,11 @@
               "value": "0"
             },
             {
+              "name": "ds.1.type",
+              "type": 1,
+              "value": "2"
+            },
+            {
               "name": "ds.1.width",
               "type": 1,
               "value": "3"
@@ -2457,6 +2517,11 @@
               "name": "ds.2.transparency",
               "type": 1,
               "value": "0"
+            },
+            {
+              "name": "ds.2.type",
+              "type": 1,
+              "value": "2"
             },
             {
               "name": "ds.2.width",
