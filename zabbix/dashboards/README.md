@@ -503,3 +503,26 @@ reason the throughput graphs are not filled.
 it by serial and size, for example "V9HDUJWL 6 TB", and `Busy drives` lists every disk
 at or above `PSI_BUSY_MIN`. Both are text, so neither can be graphed; read them in
 Latest data.
+
+### Three graph families, and the Busiest drives table
+
+Draw type separates the kinds of measurement (`ds.N.type`, Line 0, Points 1,
+Staircase 2, Bar 3):
+
+| Family | Draw | Style |
+|---|---|---|
+| CPU and memory pressure | Line | filled, translucent |
+| Disk: IO pressure, Busiest disk | **Bar** | share of time, 0-100 |
+| Network: in, out, mesh | Staircase | unfilled, opaque, width 3 |
+
+Colours stay per node across all of them, so a node is one colour everywhere.
+
+**Busiest drives** sits under the graphs: one row per node with the busiest drive named
+by serial and size, its busy percentage, and the list of every drive at or above
+`PSI_BUSY_MIN`. A Top hosts widget rather than five Item value widgets, so all five
+nodes read as one table.
+
+It exists because those two items are **text** and cannot appear on a graph at all. The
+graph above says a disk was saturated; this says which disk, as `V9HDUJWL 6 TB` rather
+than `sdb`, which is the naming the whole fleet uses because device letters move between
+boots and differ per node for the same physical drive.

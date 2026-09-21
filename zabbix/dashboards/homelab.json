@@ -817,6 +817,11 @@
               "value": "2"
             },
             {
+              "name": "ds.0.type",
+              "type": 1,
+              "value": "3"
+            },
+            {
               "name": "ds.0.width",
               "type": "0",
               "value": "2"
@@ -845,6 +850,11 @@
               "name": "ds.1.transparency",
               "type": "0",
               "value": "2"
+            },
+            {
+              "name": "ds.1.type",
+              "type": 1,
+              "value": "3"
             },
             {
               "name": "ds.1.width",
@@ -877,6 +887,11 @@
               "value": "2"
             },
             {
+              "name": "ds.2.type",
+              "type": 1,
+              "value": "3"
+            },
+            {
               "name": "ds.2.width",
               "type": "0",
               "value": "2"
@@ -907,6 +922,11 @@
               "value": "2"
             },
             {
+              "name": "ds.3.type",
+              "type": 1,
+              "value": "3"
+            },
+            {
               "name": "ds.3.width",
               "type": "0",
               "value": "2"
@@ -935,6 +955,11 @@
               "name": "ds.4.transparency",
               "type": "0",
               "value": "2"
+            },
+            {
+              "name": "ds.4.type",
+              "type": 1,
+              "value": "3"
             },
             {
               "name": "ds.4.width",
@@ -989,7 +1014,7 @@
           "view_mode": "0",
           "width": "72",
           "x": "0",
-          "y": 31
+          "y": 35
         },
         {
           "fields": [],
@@ -999,7 +1024,7 @@
           "view_mode": "0",
           "width": "72",
           "x": "0",
-          "y": 40
+          "y": 44
         },
         {
           "fields": [
@@ -2579,6 +2604,11 @@
               "value": "2"
             },
             {
+              "name": "ds.0.type",
+              "type": 1,
+              "value": "3"
+            },
+            {
               "name": "ds.0.width",
               "type": 1,
               "value": "2"
@@ -2607,6 +2637,11 @@
               "name": "ds.1.transparency",
               "type": 1,
               "value": "2"
+            },
+            {
+              "name": "ds.1.type",
+              "type": 1,
+              "value": "3"
             },
             {
               "name": "ds.1.width",
@@ -2639,6 +2674,11 @@
               "value": "2"
             },
             {
+              "name": "ds.2.type",
+              "type": 1,
+              "value": "3"
+            },
+            {
               "name": "ds.2.width",
               "type": 1,
               "value": "2"
@@ -2669,6 +2709,11 @@
               "value": "2"
             },
             {
+              "name": "ds.3.type",
+              "type": 1,
+              "value": "3"
+            },
+            {
               "name": "ds.3.width",
               "type": 1,
               "value": "2"
@@ -2697,6 +2742,11 @@
               "name": "ds.4.transparency",
               "type": 1,
               "value": "2"
+            },
+            {
+              "name": "ds.4.type",
+              "type": 1,
+              "value": "3"
             },
             {
               "name": "ds.4.width",
@@ -2730,6 +2780,96 @@
           "width": 36,
           "x": 36,
           "y": 19
+        },
+        {
+          "fields": [
+            {
+              "name": "column",
+              "type": 1,
+              "value": "0"
+            },
+            {
+              "name": "columns.0.data",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "columns.0.name",
+              "type": 1,
+              "value": "Name"
+            },
+            {
+              "name": "columns.1.data",
+              "type": 1,
+              "value": "1"
+            },
+            {
+              "name": "columns.1.item",
+              "type": 1,
+              "value": "Busiest drive"
+            },
+            {
+              "name": "columns.1.name",
+              "type": 1,
+              "value": "Busiest drive"
+            },
+            {
+              "name": "columns.2.data",
+              "type": 1,
+              "value": "1"
+            },
+            {
+              "name": "columns.2.decimal_places",
+              "type": 1,
+              "value": "0"
+            },
+            {
+              "name": "columns.2.item",
+              "type": 1,
+              "value": "Busiest disk utilisation"
+            },
+            {
+              "name": "columns.2.name",
+              "type": 1,
+              "value": "Busy %"
+            },
+            {
+              "name": "columns.3.data",
+              "type": 1,
+              "value": "1"
+            },
+            {
+              "name": "columns.3.item",
+              "type": 1,
+              "value": "Busy drives"
+            },
+            {
+              "name": "columns.3.name",
+              "type": 1,
+              "value": "Drives at or above threshold"
+            },
+            {
+              "name": "groupids.0",
+              "type": 1,
+              "value": "7"
+            },
+            {
+              "name": "hosts.0",
+              "type": 1,
+              "value": "pve*"
+            },
+            {
+              "name": "rf_rate",
+              "type": 1,
+              "value": "60"
+            }
+          ],
+          "height": 4,
+          "name": "Busiest drives",
+          "type": "tophosts",
+          "width": 72,
+          "x": 0,
+          "y": 31
         }
       ]
     }
