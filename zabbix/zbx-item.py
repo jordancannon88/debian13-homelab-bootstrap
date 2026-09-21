@@ -10,6 +10,9 @@ units and whether a trigger already exists.
   python3 zbx-item.py 59480 55544 50816        by item id
   python3 zbx-item.py --key cpu_temp           by key substring, any host
   python3 zbx-item.py --name 'Temperature'     by visible name substring
+  python3 zbx-item.py --groups                 host groups, with ids and host counts
+  python3 zbx-item.py --name X --host pve2     restrict to one host
+  python3 zbx-item.py --name X --brief         one line per item, no trigger lookup
 
 For each item it prints the host, key, name, units, value type, last value with its
 age, and every trigger whose expression references it. "no triggers" means nothing
@@ -50,22 +53,54 @@ def ago(clock):
     return f"{d / 3600:.1f}h ago"
 
 
-a = sys.argv[1:]
+a = [x for x in sys.argv[1:] if not x.startswith("--")]
+opts = sys.argv[1:]
+brief = "--brief" in opts
+host_filter = None
+if "--host" in opts:
+    i = opts.index("--host")
+    host_filter = opts[i + 1] if i + 1 < len(opts) else None
+    if host_filter in a:
+        a.remove(host_filter)
+
+if "--groups" in opts:
+    # Dashboard widgets address hosts by group id, so the id is what you need and
+    # the interface only shows the name.
+    groups = api("hostgroup.get", {"output": ["groupid", "name"],
+                                   "selectHosts": ["host"]})
+    for g in sorted(groups, key=lambda g: g["name"]):
+        hs = sorted(h["host"] for h in g.get("hosts", []))
+        if not hs:
+            continue
+        print(f"  {g['groupid']:>3}  {g['name']:<28} {len(hs):>3}  {', '.join(hs)}")
+    raise SystemExit(0)
+
 if not a:
     raise SystemExit(__doc__)
 
 out = ["itemid", "key_", "name", "units", "value_type", "lastvalue", "lastclock",
        "state", "error", "status"]
-if a[0] == "--key":
-    params = {"output": out, "search": {"key_": a[1]}, "selectHosts": ["host"]}
-elif a[0] == "--name":
-    params = {"output": out, "search": {"name": a[1]}, "selectHosts": ["host"]}
+# `a` holds only the positional arguments, so the search mode is read from the flags.
+if "--key" in opts:
+    params = {"output": out, "search": {"key_": a[0]}, "selectHosts": ["host"]}
+elif "--name" in opts:
+    params = {"output": out, "search": {"name": a[0]}, "selectHosts": ["host"]}
 else:
     params = {"output": out, "itemids": a, "selectHosts": ["host"]}
 
+if host_filter:
+    params["host"] = host_filter
 items = api("item.get", params)
 if not items:
     raise SystemExit("no items matched")
+
+if brief:
+    for it in sorted(items, key=lambda i: (i["hosts"][0]["host"] if i.get("hosts") else "",
+                                           i["key_"])):
+        h = it["hosts"][0]["host"] if it.get("hosts") else "?"
+        print(f"  {h:<16} {it['key_']:<52} {it['name']}")
+    print(f"\n{len(items)} item(s)")
+    raise SystemExit(0)
 
 for it in sorted(items, key=lambda i: (i["hosts"][0]["host"] if i.get("hosts") else "",
                                        i["key_"])):
