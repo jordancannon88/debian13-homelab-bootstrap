@@ -220,3 +220,26 @@ the `Homelab pressure` template is linked to bare metal and VMs only, since
 `/proc/pressure` inside a container reports the host. Container pressure comes from
 the cgroup through `Homelab LXC` under different item names, so showing it needs
 either its own widget or matching item names across the two templates.
+
+### The Filesystems widget
+
+Added 2026-09-21, between the VM tables and the pressure graphs. Until then the
+dashboard had no storage view at all, through a week whose incidents were pve1's SSD
+filling, pms0's array, and a scrub saturating a USB disk.
+
+It shows the **root filesystem only**: `FS [/]: Space: Used, in %` and
+`FS [/]: Space: Available`, group 2 (Linux servers), amber 80 and red 90.
+
+Root only, because a Top hosts widget renders one row per host and the volumes that
+matter differ per machine: `rpool`, `rpool/ROOT`, `local-zfs-hdd`, `local-zfs-nvme`
+and `/var/lib/vz` on the nodes, `/mnt/data/d1-80r`, `/mnt/data/d3-4nr`,
+`/mnt/new-d1`, `/mnt/inspect` and `/mnt/parity/p1-kln` on pms0. A wildcard item
+pattern would match several on one host and show an arbitrary one, which is worse
+than showing none. Those volumes want their own widget, keyed to the specific paths.
+
+The item names are `FS [<path>]: Space: Used, in %`, not "Space utilization", which
+is what the stock template called it in earlier versions. Check the real name with
+`zabbix/zbx-item.py --key vfs.fs --host <host> --brief` before pointing a column at it.
+
+Note that group 2 contains `pxc1`, which has no filesystem items, so it renders as a
+blank row here for the same reason it does in the Nodes widgets.

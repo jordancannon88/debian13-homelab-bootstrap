@@ -1562,7 +1562,7 @@
           "view_mode": "0",
           "width": "36",
           "x": "0",
-          "y": "13"
+          "y": 18
         },
         {
           "fields": [
@@ -1738,7 +1738,7 @@
           "view_mode": "0",
           "width": "36",
           "x": "36",
-          "y": "13"
+          "y": 18
         },
         {
           "fields": [
@@ -1914,7 +1914,7 @@
           "view_mode": "0",
           "width": "72",
           "x": "0",
-          "y": "18"
+          "y": 23
         },
         {
           "fields": [
@@ -1940,7 +1940,7 @@
           "view_mode": "0",
           "width": "72",
           "x": "0",
-          "y": "24"
+          "y": 29
         },
         {
           "fields": [],
@@ -1950,7 +1950,122 @@
           "view_mode": "0",
           "width": "72",
           "x": "0",
-          "y": "33"
+          "y": 38
+        },
+        {
+          "fields": [
+            {
+              "name": "column",
+              "type": 1,
+              "value": "0"
+            },
+            {
+              "name": "columns.0.data",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "columns.0.item",
+              "type": 1,
+              "value": ""
+            },
+            {
+              "name": "columns.0.name",
+              "type": 1,
+              "value": "Name"
+            },
+            {
+              "name": "columns.0.text",
+              "type": 1,
+              "value": ""
+            },
+            {
+              "name": "columns.1.base_color",
+              "type": 1,
+              "value": "4CAF50"
+            },
+            {
+              "name": "columns.1.data",
+              "type": 1,
+              "value": "1"
+            },
+            {
+              "name": "columns.1.display",
+              "type": 1,
+              "value": "3"
+            },
+            {
+              "name": "columns.1.item",
+              "type": 1,
+              "value": "FS [/]: Space: Used, in %"
+            },
+            {
+              "name": "columns.1.max",
+              "type": 1,
+              "value": "100"
+            },
+            {
+              "name": "columns.1.min",
+              "type": 1,
+              "value": "0"
+            },
+            {
+              "name": "columns.1.name",
+              "type": 1,
+              "value": "Root used"
+            },
+            {
+              "name": "columns.2.data",
+              "type": 1,
+              "value": "1"
+            },
+            {
+              "name": "columns.2.item",
+              "type": 1,
+              "value": "FS [/]: Space: Available"
+            },
+            {
+              "name": "columns.2.name",
+              "type": 1,
+              "value": "Root free"
+            },
+            {
+              "name": "columnsthresholds.1.color.0",
+              "type": 1,
+              "value": "FCCB1D"
+            },
+            {
+              "name": "columnsthresholds.1.color.1",
+              "type": 1,
+              "value": "E65660"
+            },
+            {
+              "name": "columnsthresholds.1.threshold.0",
+              "type": 1,
+              "value": "80"
+            },
+            {
+              "name": "columnsthresholds.1.threshold.1",
+              "type": 1,
+              "value": "90"
+            },
+            {
+              "name": "groupids.0",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "rf_rate",
+              "type": 1,
+              "value": "60"
+            }
+          ],
+          "height": 5,
+          "name": "Filesystems",
+          "type": "tophosts",
+          "width": 72,
+          "x": 0,
+          "y": 13
         }
       ]
     }
