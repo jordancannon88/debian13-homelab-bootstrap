@@ -20,6 +20,9 @@ restorable.
   python3 zbx-dashboard.py put <file>                 create or update from a file
   python3 zbx-dashboard.py diff <file>                show what would change
 
+Sharing is never captured and never written. Who may see or edit a dashboard is
+managed in the interface; this tool only carries widgets and layout.
+
 Reads the API token from ~/.config/zabbix/token, the same one the template
 imports use. The role needs dashboard.get, and dashboard.create plus
 dashboard.update for `put`.
@@ -30,7 +33,15 @@ URL = os.environ.get("ZBX_URL", "https://zabbix.local.cannon.dev/api_jsonrpc.php
 TOKEN_FILE = os.environ.get("ZBX_TOKEN_FILE", os.path.expanduser("~/.config/zabbix/token"))
 
 # Fields the server owns and that must not be sent back on a write.
-STRIP_DASHBOARD = {"dashboardid", "userid", "templateid", "uuid"}
+#
+# Sharing is deliberately in this list. A dashboard definition describes widgets
+# and layout; who may see or edit it is an access decision that belongs to the
+# server, not to a file in a repository. Sending `users`, `userGroups` or
+# `private` back would silently revert sharing to whatever it happened to be when
+# the capture was taken, which is exactly what happened on 2026-09-21: a capture
+# predating a new share reverted that share on every write.
+STRIP_DASHBOARD = {"dashboardid", "userid", "templateid", "uuid",
+                   "users", "userGroups", "private"}
 STRIP_PAGE = {"dashboard_pageid", "dashboardid"}
 STRIP_WIDGET = {"widgetid", "dashboard_pageid"}
 STRIP_FIELD = {"widget_fieldid", "widgetid"}
@@ -126,7 +137,8 @@ def main():
             print("\n".join(delta) if delta else f"{name!r} matches the server")
             return
         if existing:
-            want2 = dict(want)
+            want2 = {k: v for k, v in want.items()
+                     if k not in ("users", "userGroups", "private")}
             want2["dashboardid"] = existing[0]["dashboardid"]
             api("dashboard.update", want2)
             print(f"updated {name!r} (id {existing[0]['dashboardid']})")

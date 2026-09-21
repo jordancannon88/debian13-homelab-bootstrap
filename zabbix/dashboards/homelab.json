@@ -928,11 +928,6 @@
               "value": ""
             },
             {
-              "name": "columns.1.aggregate_function",
-              "type": "0",
-              "value": "2"
-            },
-            {
               "name": "columns.1.data",
               "type": "0",
               "value": "1"
@@ -946,16 +941,6 @@
               "name": "columns.1.name",
               "type": "1",
               "value": "Uptime"
-            },
-            {
-              "name": "columns.1.time_period.from",
-              "type": "1",
-              "value": "now-15m"
-            },
-            {
-              "name": "columns.1.time_period.to",
-              "type": "1",
-              "value": "now"
             },
             {
               "name": "groupids.0",
@@ -1292,7 +1277,7 @@
             {
               "name": "columns.3.item",
               "type": "1",
-              "value": "Memory pressure (some 60s)"
+              "value": "Memory pressure (full 60s)"
             },
             {
               "name": "columns.3.name",
@@ -1407,12 +1392,80 @@
           "view_mode": "0",
           "width": "72",
           "x": "0",
+          "y": "28"
+        },
+        {
+          "fields": [
+            {
+              "name": "ds.0.color",
+              "type": "1",
+              "value": "FF465C"
+            },
+            {
+              "name": "ds.0.fill",
+              "type": "0",
+              "value": "3"
+            },
+            {
+              "name": "ds.0.hosts.0",
+              "type": "1",
+              "value": "pve0"
+            },
+            {
+              "name": "ds.0.hosts.1",
+              "type": "1",
+              "value": "pve1"
+            },
+            {
+              "name": "ds.0.hosts.2",
+              "type": "1",
+              "value": "pve2"
+            },
+            {
+              "name": "ds.0.hosts.3",
+              "type": "1",
+              "value": "pve3"
+            },
+            {
+              "name": "ds.0.hosts.4",
+              "type": "1",
+              "value": "pve4"
+            },
+            {
+              "name": "ds.0.items.0",
+              "type": "1",
+              "value": "IO pressure (full 10s)"
+            },
+            {
+              "name": "ds.0.transparency",
+              "type": "0",
+              "value": "3"
+            },
+            {
+              "name": "ds.0.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "legend_lines",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "righty",
+              "type": "0",
+              "value": "0"
+            }
+          ],
+          "height": "6",
+          "name": "Disk IO pressure, PVE nodes",
+          "type": "svggraph",
+          "view_mode": "0",
+          "width": "72",
+          "x": "0",
           "y": "22"
         }
       ]
     }
-  ],
-  "private": "0",
-  "userGroups": [],
-  "users": []
+  ]
 }

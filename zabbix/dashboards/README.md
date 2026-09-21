@@ -11,7 +11,18 @@ dashboard is reviewable in a commit and restorable after a bad edit.
     python3 zbx-dashboard.py put <file>               write one back
 
 The API role needs `dashboard.get` to capture and diff, and the create and
-update methods to write back.
+update methods to write back. Writing also needs the dashboard shared with the
+API user as read-write, and the role's Monitoring > Dashboards interface element
+enabled: without the latter the write is refused with a method-permission error
+even though the method is on the allow list.
+
+Sharing is never captured and never written. Who may see or edit a dashboard is
+an access decision that belongs to the server, not to a file in a repository. An
+early version sent `users`, `userGroups` and `private` back with every write,
+which silently reverted a share granted after the capture was taken.
+
+Host and item patterns in a graph data set accept `*` only. `pve?` matches
+nothing and draws an empty graph.
 
 ## The trap these captures exist to catch
 
