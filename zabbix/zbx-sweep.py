@@ -78,16 +78,37 @@ items = api("item.get", {
 
 # Collect the findings first, then decide how much of them to print.
 found = {}
+# Zabbix's own key namespaces. A host named after one of these cannot be
+# distinguished from an ordinary key, so it is excluded as a needle. The first
+# version of this matched a host named "net" against every net.if.* item in the
+# fleet and reported 1201 findings across all 17 hosts, none of them real.
+RESERVED = {
+    "agent", "db", "dir", "eventlog", "icmpping", "icmppingloss", "icmppingsec",
+    "jmx", "kernel", "log", "logrt", "modbus", "mqtt", "net", "perf_counter",
+    "perf_counter_en", "proc", "proc_info", "sensor", "service", "system", "vfs",
+    "vm", "web", "wmi", "zabbix",
+}
+
+
+def first_segment(key):
+    """The part before the first dot or bracket: pve4.cpuTemperature -> pve4."""
+    return re.split(r"[.\[]", key, maxsplit=1)[0]
+
+
 if cmd == "strays":
-    # A key "names" a host when the name appears as a whole word: pve4.cpuTemperature
-    # names pve4, while vfs.fs.size[/pve4data] does not, and pve1 must not match
-    # inside pve10.
-    pats = {n: re.compile(rf"(?<![A-Za-z0-9]){re.escape(n)}(?![A-Za-z0-9])") for n in hosts}
+    # The clone signature is specific: the key is NAMED for a host, as in
+    # pve4.cpuTemperature. Matching the host name anywhere in the key is far too
+    # loose, because ordinary keys embed paths and interface names.
+    needles = {h for h in hosts if h not in RESERVED}
+    ignored = sorted(set(hosts) - needles)
     for it in items:
         host = it["hosts"][0]["host"]
-        named = [n for n in hosts if n != host and pats[n].search(it["key_"])]
-        if named:
-            found.setdefault(host, []).append((it, ", ".join(named)))
+        seg = first_segment(it["key_"])
+        if seg in needles and seg != host:
+            found.setdefault(host, []).append((it, seg))
+    if ignored:
+        print(f"ignoring host name(s) that collide with Zabbix key namespaces: "
+              f"{', '.join(ignored)}\n")
 else:
     for it in items:
         if it.get("status") == "1":
