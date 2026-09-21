@@ -1044,11 +1044,6 @@
               "value": "Uptime"
             },
             {
-              "name": "columns.1.text",
-              "type": 1,
-              "value": ""
-            },
-            {
               "name": "columns.2.base_color",
               "type": 1,
               "value": "4CAF50"
@@ -1089,6 +1084,11 @@
               "value": "CPU %"
             },
             {
+              "name": "columns.3.base_color",
+              "type": 1,
+              "value": "4CAF50"
+            },
+            {
               "name": "columns.3.data",
               "type": 1,
               "value": "1"
@@ -1099,9 +1099,24 @@
               "value": "2"
             },
             {
+              "name": "columns.3.display",
+              "type": 1,
+              "value": "3"
+            },
+            {
               "name": "columns.3.item",
               "type": 1,
               "value": "Load per CPU (5m)"
+            },
+            {
+              "name": "columns.3.max",
+              "type": 1,
+              "value": "1.5"
+            },
+            {
+              "name": "columns.3.min",
+              "type": 1,
+              "value": "0"
             },
             {
               "name": "columns.3.name",
@@ -1574,6 +1589,11 @@
               "value": "CPU %"
             },
             {
+              "name": "columns.3.base_color",
+              "type": 1,
+              "value": "4CAF50"
+            },
+            {
               "name": "columns.3.data",
               "type": 1,
               "value": "1"
@@ -1584,9 +1604,24 @@
               "value": "2"
             },
             {
+              "name": "columns.3.display",
+              "type": 1,
+              "value": "3"
+            },
+            {
               "name": "columns.3.item",
               "type": 1,
               "value": "Load per CPU (5m)"
+            },
+            {
+              "name": "columns.3.max",
+              "type": 1,
+              "value": "1.5"
+            },
+            {
+              "name": "columns.3.min",
+              "type": 1,
+              "value": "0"
             },
             {
               "name": "columns.3.name",
