@@ -248,3 +248,25 @@ is what the stock template called it in earlier versions. Check the real name wi
 
 Note that group 2 contains `pxc1`, which has no filesystem items, so it renders as a
 blank row here for the same reason it does in the Nodes widgets.
+
+### The Nodes widget
+
+Merged 2026-09-21 from three separate widgets, "Top Stats for Nodes", "Top CPU Usage
+for Nodes" and "Top Memory Usage for Nodes", into one full-width table. Twelve columns:
+name, uptime, CPU count, CPU use, the three load averages, CPU pressure, total RAM,
+RAM use excluding ARC, memory pressure, IO pressure.
+
+Three tables side by side each repeated the host name and forced the eye across three
+column groups to read one machine. One row per node reads as one machine.
+
+The merge was done by lifting each column out of the source widgets programmatically,
+carrying its display mode and thresholds with it, rather than retyping them. A
+threshold retyped is a threshold that silently changes, which is the fault this
+dashboard already had once: memory pressure amber at 10 and red at 50 while its
+trigger fired at 10.
+
+Two columns were renamed so the merged table is unambiguous, since both source
+widgets called their pressure column "Pressure": they are now "CPU pressure" and
+"Mem pressure", with "IO pressure" alongside.
+
+Group 7 with a `pve*` pattern, so the pxc1 pseudo-host stays out.
