@@ -52,7 +52,12 @@ def api(method, params):
 
 
 def label(it):
-    return "templated" if it.get("templateid", "0") != "0" else "host-level"
+    """How the item came to exist. templateid is 0 for DISCOVERED items as well as
+    hand-made ones, so reading it alone counts LLD output as hand-made: dkr's 68
+    docker.container_info items are discovered, not someone's typing."""
+    if str(it.get("flags", "0")) == "4":
+        return "discovered"
+    return "templated" if it.get("templateid", "0") != "0" else "by hand"
 
 
 def why_dead(it):
@@ -73,7 +78,7 @@ if cmd not in ("strays", "dead"):
 hosts = sorted({h["host"] for h in api("host.get", {"output": ["host"]})})
 items = api("item.get", {
     "output": ["itemid", "key_", "name", "lastvalue", "lastclock", "state", "error",
-               "status", "templateid"],
+               "status", "templateid", "flags"],
     "selectHosts": ["host"], "monitored": True})
 
 # Collect the findings first, then decide how much of them to print.
@@ -128,9 +133,16 @@ if only is None:
     width = max(len(h) for h in found)
     total = sum(len(v) for v in found.values())
     for host in sorted(found, key=lambda h: (-len(found[h]), h)):
-        print(f"  {host:<{width}}  {len(found[host]):>3}")
-    scope = "" if "--templated" in flags or cmd == "strays" else " host-level"
+        kinds = {}
+        for it, _ in found[host]:
+            kinds[label(it)] = kinds.get(label(it), 0) + 1
+        detail = ", ".join(f"{n} {k}" for k, n in sorted(kinds.items()))
+        print(f"  {host:<{width}}  {len(found[host]):>3}   {detail}")
+    scope = "" if "--templated" in flags or cmd == "strays" else " non-templated"
     print(f"\n{total}{scope} item(s) across {len(found)} of {len(hosts)} hosts.")
+    print("'by hand' is the column that matters: discovered items come from an LLD"
+          "\nrule, so many of them dead usually means one broken collector, not"
+          "\nmany forgotten decisions.")
     print(f"Detail for one host:  python3 zbx-sweep.py {cmd} <host>"
           + ("  [--templated]" if cmd == "dead" else ""))
     raise SystemExit(0)
