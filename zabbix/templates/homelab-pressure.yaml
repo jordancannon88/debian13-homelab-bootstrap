@@ -7,13 +7,16 @@ zabbix_export:
     - uuid: c6c8a2ee73fb42f7a9fbb69dc61b017e
       template: 'Homelab pressure'
       name: 'Homelab pressure'
-      description: 'Pressure stall information for memory and CPU, the two families the fleet did not collect before 2026-09-20. Pressure answers how much time work spent waiting for a resource, where utilization only answers how much is in use, and the two disagree in both directions: pve1 read 86 percent memory used with zero memory pressure because the ZFS cache gives memory back on demand, and dkr carried load 1.2 with 98 percent idle and zero IO pressure because container health checks inflate load. Host side: /usr/local/bin/psi-json.sh through the UserParameter custom.psi, installed by debian13-homelab-bootstrap monitoring.sh (setup_pressure). Link to bare-metal nodes and VMs only: inside a container /proc/pressure is the host machine, so the values come back -1 and the triggers are suppressed; per-container pressure comes from the "Homelab LXC" template. IO pressure alerting still lives in the older "Linux IO pressure stall (PSI)" template (page 112) and the two should be consolidated. Source of truth: zabbix/templates/homelab-pressure.yaml in that repo. Docs: catalog link/376. Kan a2nbba25qtqw.'
+      description: 'Pressure stall information for memory and CPU, the two families the fleet did not collect before 2026-09-20. Pressure answers how much time work spent waiting for a resource, where utilization only answers how much is in use, and the two disagree in both directions: pve1 read 86 percent memory used with zero memory pressure because the ZFS cache gives memory back on demand, and dkr carried load 1.2 with 98 percent idle and zero IO pressure because container health checks inflate load. Host side: /usr/local/bin/psi-json.sh through the UserParameter custom.psi, installed by debian13-homelab-bootstrap monitoring.sh (setup_pressure). Link to bare-metal nodes and VMs only: inside a container /proc/pressure is the host machine, so the values come back -1 and the triggers are suppressed; per-container pressure comes from the "Homelab LXC" template. Since 2026-09-20 this template also carries the IO alerting ported from the older "Linux IO pressure stall (PSI)" template (page 112): same threshold, now as a macro, plus the container guard the old one lacked. That old template stays linked with its trigger disabled so its history since June remains readable, and is unlinked later once that history is no longer wanted (Kan ujmybyozsies). Source of truth: zabbix/templates/homelab-pressure.yaml in that repo. Docs: catalog link/376. Kan a2nbba25qtqw.'
       groups:
         - name: Templates/Custom
       macros:
         - macro: '{$PSI.MEM.FULL.WARN}'
           value: '10'
           description: 'Percent of the last minute in which every task was stalled on memory, above which the host pages. Deliberately low: sustained full memory pressure means work is not progressing.'
+        - macro: '{$PSI.IO.FULL.WARN}'
+          value: '10'
+          description: 'Percent of the last ten seconds in which every task was stalled on storage, above which the host raises a Warning. Ported from the older Linux IO pressure stall (PSI) template, which used a hardcoded 10.'
         - macro: '{$PSI.CPU.SOME.WARN}'
           value: '50'
           description: 'Percent of five minutes in which at least one task waited for a CPU, above which the host raises a Warning.'
@@ -120,6 +123,51 @@ zabbix_export:
               tags:
                 - tag: scope
                   value: capacity
+        - uuid: 0ab5d70c644b41e68e45e8a529919d70
+          name: 'IO pressure (some 10s)'
+          type: DEPENDENT
+          key: custom.psi.io.some10
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of the last ten seconds in which at least one task was stalled on storage. Ported from the older Linux IO pressure stall (PSI) template (psi.io.some.avg10) so one template owns all three pressure families. -1 inside a container, where /proc/pressure is the host machine.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.io.some10
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: storage
+        - uuid: 46739ff8348545afae1b80f774737145
+          name: 'IO pressure (full 10s)'
+          type: DEPENDENT
+          key: custom.psi.io.full10
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: 'Share of the last ten seconds in which EVERY task was stalled on storage. This is the figure that caught the pve1 SSD stall of 2026-09-17, where a stalled disk blocked ZFS and froze the firewall VM with it. Ported from psi.io.full.avg10 in the older template. -1 inside a container.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.io.full10
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: storage
+          triggers:
+            - uuid: cb4d6e1354f34893921a6c6f395e0559
+              expression: 'min(/Homelab pressure/custom.psi.io.full10,5m)>{$PSI.IO.FULL.WARN} and last(/Homelab pressure/custom.psi.container)=0'
+              name: 'IO pressure: storage stalling on {HOST.NAME} ({ITEM.LASTVALUE1} of the last ten seconds)'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
+              priority: WARNING
+              description: 'For five minutes, every task on this machine spent at least the threshold share of each ten second window waiting on storage. The storage path is a sustained bottleneck: look for a backup, a migration, a scrub, a resync, or a disk that has begun to stall. On 2026-09-17 this signal was a stalled SSD on pve1 blocking ZFS txg_sync, which froze the opn1 firewall VM and took DNS and routing off the LAN with it (Kan jk9mlmclsl9m, report link/396). Ported from the older "Linux IO pressure stall (PSI)" template, with two differences: the threshold is now the macro {$PSI.IO.FULL.WARN} rather than a hardcoded 10, and the container guard suppresses it where /proc/pressure reports the host rather than the container, which is why the old one had to be disabled by hand on every LXC host. Added 2026-09-20, Kan ujmybyozsies.'
+              tags:
+                - tag: scope
+                  value: performance
         - uuid: be1c5df0ddf5448984d15e8ddea3b2d1
           name: 'IO pressure (full 60s)'
           type: DEPENDENT

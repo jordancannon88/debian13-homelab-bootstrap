@@ -1,0 +1,76 @@
+# ARCHIVED COPY, 2026-09-20. This is the only copy of the "Linux IO pressure stall
+# (PSI)" template's source, which until now lived as a loose file at
+# ~/zabbix-template-psi-io.yaml on the dev box and nowhere else. Kept here so it
+# cannot be lost.
+#
+# Its IO alerting was ported into "Homelab pressure" (zabbix/templates/homelab-pressure.yaml)
+# with two improvements: the threshold became the macro {$PSI.IO.FULL.WARN} instead of
+# a hardcoded 10, and the trigger gained a container guard, because /proc/pressure
+# inside a container reports the host machine, which is why this one had to be
+# disabled by hand on every LXC host by zbx-lxc-silence.py.
+#
+# Do NOT re-import this. The live template stays linked with its trigger disabled so
+# its history since June remains readable, and is unlinked and cleared later once
+# that history is no longer wanted. Kan ujmybyozsies.
+
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: 7df96b18c230490a9a0a9e2307226338
+      name: Templates
+  templates:
+    - uuid: a1b2c3d4e5f64789a0b1c2d3e4f50001
+      template: 'Linux IO pressure stall PSI'
+      name: 'Linux IO pressure stall (PSI)'
+      description: 'IO Pressure Stall Information from /proc/pressure/io, mirroring the Proxmox summary graph. One raw active-agent item; some/full avg10 extracted as dependent items. Requires kernel PSI (Debian/Proxmox default).'
+      groups:
+        - name: Templates
+      tags:
+        - tag: class
+          value: custom
+      items:
+        - uuid: a1b2c3d4e5f64789a0b1c2d3e4f50002
+          name: 'IO pressure stall (raw)'
+          type: ZABBIX_ACTIVE
+          key: 'vfs.file.contents[/proc/pressure/io]'
+          delay: 1m
+          history: '0'
+          value_type: TEXT
+          trends: '0'
+          description: 'Raw contents of /proc/pressure/io; parsed by the dependent items.'
+        - uuid: a1b2c3d4e5f64789a0b1c2d3e4f50003
+          name: 'IO pressure stall (some, avg10)'
+          type: DEPENDENT
+          key: psi.io.some.avg10
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: '% of time over the last 10s that at least one task was stalled waiting on IO.'
+          preprocessing:
+            - type: REGEX
+              parameters:
+                - 'some avg10=([0-9.]+)'
+                - '\1'
+          master_item:
+            key: 'vfs.file.contents[/proc/pressure/io]'
+        - uuid: a1b2c3d4e5f64789a0b1c2d3e4f50004
+          name: 'IO pressure stall (full, avg10)'
+          type: DEPENDENT
+          key: psi.io.full.avg10
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: '% of time over the last 10s that ALL non-idle tasks were stalled waiting on IO (the serious one).'
+          preprocessing:
+            - type: REGEX
+              parameters:
+                - 'full avg10=([0-9.]+)'
+                - '\1'
+          master_item:
+            key: 'vfs.file.contents[/proc/pressure/io]'
+          triggers:
+            - uuid: a1b2c3d4e5f64789a0b1c2d3e4f50005
+              expression: 'min(/Linux IO pressure stall PSI/psi.io.full.avg10,5m)>10'
+              name: 'High IO pressure stall on {HOST.NAME} (full > 10% for 5m)'
+              priority: WARNING
+              description: 'For the whole of the last 5 minutes, all non-idle tasks were stalled waiting on IO at least 10% of the time (PSI full avg10). The storage path is a sustained bottleneck — check for running backups, migrations, scrubs, or a degraded disk.'
