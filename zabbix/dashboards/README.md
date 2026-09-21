@@ -92,3 +92,23 @@ graph empty while the tables and gauges read live values, because those use last
 value and ignore the range. Check the selector before doubting a definition, and
 prefer a relative range such as "Last 1 hour", since an absolute one goes stale
 the moment you leave it.
+
+## Line colours on the pressure graphs
+
+Red and amber are reserved. Zabbix paints problem severity in those colours
+everywhere else in the interface, so a host line in red or yellow reads as an
+alert when it is only a host. The three pressure graphs therefore use cool
+colours only, the same colour for a node on all three, so a line can be followed
+across CPU, memory and IO without re-reading the legend:
+
+| Node | Colour |
+|---|---|
+| pve0 | `2774A4` blue |
+| pve1 | `1A7C11` green |
+| pve2 | `6C59DC` violet |
+| pve3 | `00A6BF` cyan |
+| pve4 | `A64BC4` purple-magenta |
+
+pve3 was amber and pve4 was red until 2026-09-21. Keep any node added later in
+the cool half of the wheel, and give it a hue away from violet and magenta, which
+are the closest pair in the set above.
