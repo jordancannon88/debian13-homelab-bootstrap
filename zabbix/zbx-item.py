@@ -85,12 +85,16 @@ for it in sorted(items, key=lambda i: (i["hosts"][0]["host"] if i.get("hosts") e
         print(f"  error      {it['error']}")
 
     trigs = api("trigger.get", {"itemids": [it["itemid"]],
-                                "output": ["description", "priority", "status", "value"],
-                                "expandDescription": True, "expandExpression": True,
-                                "selectFunctions": "extend"})
+                                "output": ["description", "priority", "status", "value",
+                                           "expression", "templateid", "comments"],
+                                "expandDescription": True, "expandExpression": True})
     if not trigs:
         print("  triggers   NONE. Nothing alerts on this metric.")
     for t in trigs:
         state = "PROBLEM" if t.get("value") == "1" else "ok"
         dis = ", DISABLED" if t.get("status") == "1" else ""
-        print(f"  trigger    [{t['priority']}] {t['description']}  ({state}{dis})")
+        # templateid 0 means the trigger was made on the host by hand, so nothing
+        # keeps it consistent with the same trigger on any other host.
+        src = "from a template" if t.get("templateid", "0") != "0" else "host-level, by hand"
+        print(f"  trigger    [{t['priority']}] {t['description']}  ({state}{dis}, {src})")
+        print(f"             {t.get('expression')}")
