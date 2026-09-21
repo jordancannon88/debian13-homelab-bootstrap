@@ -140,6 +140,40 @@ zabbix_export:
           tags:
             - tag: component
               value: storage
+        - uuid: d14884f9a8734468b1e8cf4cc4e49237
+          name: 'Busy drives'
+          type: DEPENDENT
+          key: custom.psi.busy
+          delay: '0'
+          value_type: CHAR
+          trends: '0'
+          description: 'Every whole disk that was at or above 50 percent busy during a one second sample, worst first, named by serial and size. A node here has up to three real disks and one pressure figure covers all of them, so this is what says where the waiting comes from. It lists all of them rather than only the worst, because two disks can be saturated at once: on 2026-09-21 pve3 had its USB disk pinned by a scrub while its NVMe also carried work, and naming only one would have hidden the other. Raise or lower the threshold with PSI_BUSY_MIN in the collector.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.busy
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: storage
+        - uuid: f8bc906515964e90a10ae5baa860a2a1
+          name: 'All disks, busy percent'
+          type: DEPENDENT
+          key: custom.psi.disks
+          delay: '0'
+          value_type: CHAR
+          trends: '0'
+          description: 'Every whole disk with its busy percentage for the same one second sample, worst first, whatever the threshold. Use it when the Busy drives list is empty but something still looks wrong, or to see which of a node''s three disks carries the routine load.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.disks
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: storage
         - uuid: f8bf6ca748d44cd2be0bef0cb8685f01
           name: 'Busiest drive'
           type: DEPENDENT
@@ -212,7 +246,7 @@ zabbix_export:
             - uuid: cb4d6e1354f34893921a6c6f395e0559
               expression: 'min(/Homelab pressure/custom.psi.io.full10,5m)>{$PSI.IO.FULL.WARN} and last(/Homelab pressure/custom.psi.container)=0'
               name: 'IO pressure: storage stalling on {HOST.NAME} ({ITEM.LASTVALUE1} of the last ten seconds)'
-              opdata: 'busiest drive: {?last(/Homelab pressure/custom.psi.busiest_drive)} ({?last(/Homelab pressure/custom.psi.busiest)}) at {?last(/Homelab pressure/custom.psi.busiest_pct)}%'
+              opdata: 'busy drives: {?last(/Homelab pressure/custom.psi.busy)} | all: {?last(/Homelab pressure/custom.psi.disks)}'
               url: 'https://bookstack.local.cannon.dev/link/376'
               url_name: Runbook
               priority: WARNING
