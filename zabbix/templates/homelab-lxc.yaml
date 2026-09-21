@@ -147,7 +147,7 @@ zabbix_export:
             - tag: component
               value: cpu
         - uuid: a4adc6152acf47eaa393e6f4a13c5299
-          name: 'LXC: io_full10'
+          name: 'IO pressure (full 10s)'
           type: DEPENDENT
           key: custom.lxc.io_full10
           delay: '0'

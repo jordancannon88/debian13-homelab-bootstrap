@@ -525,6 +525,11 @@
               "value": "7"
             },
             {
+              "name": "hosts.0",
+              "type": 1,
+              "value": "pve*"
+            },
+            {
               "name": "reference",
               "type": "1",
               "value": "DGIXJ"
@@ -736,6 +741,11 @@
               "value": "7"
             },
             {
+              "name": "hosts.0",
+              "type": 1,
+              "value": "pve*"
+            },
+            {
               "name": "reference",
               "type": "1",
               "value": "TZAQN"
@@ -895,6 +905,11 @@
               "name": "groupids.0",
               "type": "2",
               "value": "7"
+            },
+            {
+              "name": "hosts.0",
+              "type": 1,
+              "value": "pve*"
             },
             {
               "name": "reference",
