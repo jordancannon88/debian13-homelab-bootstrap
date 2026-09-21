@@ -1,0 +1,214 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: 5718b4e702dc4435b9488f818afc8435
+      name: 'Templates/OPNsense'
+  templates:
+    - uuid: dfb9e0bae2c6479c9bb13847eaf76e5f
+      template: 'OPNsense net-snmp'
+      name: 'OPNsense net-snmp'
+      description: 'OPNsense / FreeBSD net-snmp host resources via UCD-SNMP-MIB (.1.3.6.1.4.1.2021): CPU, load average, memory, swap. Attach to an SNMPv3 host (e.g. opn1). Complements Network Generic Device by SNMP. Built 2026-09-05, Kan ih9eb08org5z.'
+      groups:
+        - name: 'Templates/OPNsense'
+      items:
+        - uuid: d258c32e03e7489b8c66f9f1e956d9bd
+          name: 'CPU: idle'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.4.1.2021.11.11.0'
+          key: 'ucd.cpu.idle'
+          delay: 1m
+          value_type: UNSIGNED
+          units: '%'
+          tags:
+            - tag: component
+              value: cpu
+        - uuid: b090fb362e914efdad7face2d153af33
+          name: 'CPU: user'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.4.1.2021.11.9.0'
+          key: 'ucd.cpu.user'
+          delay: 1m
+          value_type: UNSIGNED
+          units: '%'
+          tags:
+            - tag: component
+              value: cpu
+        - uuid: 03fe021d03264d549850990de83df332
+          name: 'CPU: system'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.4.1.2021.11.10.0'
+          key: 'ucd.cpu.system'
+          delay: 1m
+          value_type: UNSIGNED
+          units: '%'
+          tags:
+            - tag: component
+              value: cpu
+        - uuid: 39555e78c41a4cc9bdb3919d7e7149a7
+          name: 'Number of CPUs'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.4.1.2021.11.67.0'
+          key: 'ucd.cpu.num'
+          delay: 5m
+          value_type: UNSIGNED
+          tags:
+            - tag: component
+              value: cpu
+        - uuid: 685fa5565f904b8db92d111df95a9198
+          name: 'Load average (own, 1m)'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.4.1.2021.10.1.3.1'
+          key: 'ucd.load.1'
+          delay: 1m
+          value_type: FLOAT
+          tags:
+            - tag: component
+              value: cpu
+        - uuid: 3c06d0c1be494090b970a117a4de4969
+          name: 'Load average (own, 5m)'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.4.1.2021.10.1.3.2'
+          key: 'ucd.load.5'
+          delay: 1m
+          value_type: FLOAT
+          tags:
+            - tag: component
+              value: cpu
+          triggers:
+            - uuid: e7fd283e94a641b1a0d810cc2817ba95
+              expression: 'min(/OPNsense net-snmp/ucd.load.5,15m)>6'
+              name: 'OPNsense: load average (5m) over 6 for 15m'
+              priority: WARNING
+        - uuid: bdbaa4d284ea4889bec0fce74fd9d127
+          name: 'Load average (own, 15m)'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.4.1.2021.10.1.3.3'
+          key: 'ucd.load.15'
+          delay: 1m
+          value_type: FLOAT
+          tags:
+            - tag: component
+              value: cpu
+        - uuid: 4e84e711540c4540946d6dab2d69148f
+          name: 'Total memory'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.4.1.2021.4.5.0'
+          key: 'ucd.mem.total'
+          delay: 5m
+          value_type: UNSIGNED
+          units: 'B'
+          preprocessing:
+            - type: MULTIPLIER
+              parameters:
+                - '1024'
+          tags:
+            - tag: component
+              value: memory
+        - uuid: 1b925d6cafc246088b6357a639206b14
+          name: 'Available memory'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.4.1.2021.4.6.0'
+          key: 'ucd.mem.avail'
+          delay: 1m
+          value_type: UNSIGNED
+          units: 'B'
+          preprocessing:
+            - type: MULTIPLIER
+              parameters:
+                - '1024'
+          tags:
+            - tag: component
+              value: memory
+        - uuid: 1bb865cef70143ab8f0422f4728a5032
+          name: 'Swap: total'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.4.1.2021.4.3.0'
+          key: 'ucd.swap.total'
+          delay: 5m
+          value_type: UNSIGNED
+          units: 'B'
+          preprocessing:
+            - type: MULTIPLIER
+              parameters:
+                - '1024'
+          tags:
+            - tag: component
+              value: memory
+        - uuid: 4f5436efa8c140088959d94e2a92f4b1
+          name: 'Swap: available'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.4.1.2021.4.4.0'
+          key: 'ucd.swap.avail'
+          delay: 1m
+          value_type: UNSIGNED
+          units: 'B'
+          preprocessing:
+            - type: MULTIPLIER
+              parameters:
+                - '1024'
+          tags:
+            - tag: component
+              value: memory
+        - uuid: f0cbcf77a08948d49fb5b154326af1fa
+          name: 'CPU use (own)'
+          type: CALCULATED
+          key: 'ucd.cpu.util'
+          delay: 1m
+          value_type: FLOAT
+          params: '100-last(//ucd.cpu.idle)'
+          units: '%'
+          tags:
+            - tag: component
+              value: cpu
+          triggers:
+            - uuid: d14847447bb4407bbae1f3725cee1d9c
+              expression: 'min(/OPNsense net-snmp/ucd.cpu.util,15m)>90'
+              name: 'OPNsense: CPU utilization over 90% for 15m'
+              priority: WARNING
+        - uuid: 984d038872fc43f886bb95f38c43518d
+          name: 'Memory utilization'
+          type: CALCULATED
+          key: 'ucd.mem.util'
+          delay: 1m
+          value_type: FLOAT
+          params: '100*(last(//ucd.mem.total)-last(//ucd.mem.avail))/last(//ucd.mem.total)'
+          units: '%'
+          tags:
+            - tag: component
+              value: memory
+          triggers:
+            - uuid: 537058768abe46f592e3fc78f8e90b6c
+              expression: 'min(/OPNsense net-snmp/ucd.mem.util,10m)>90'
+              name: 'OPNsense: memory utilization over 90% for 10m'
+              priority: AVERAGE
+        - uuid: 0d16f5571577491dbc26a53ad4f69c2b
+          name: 'Swap: utilization'
+          type: CALCULATED
+          key: 'ucd.swap.util'
+          delay: 5m
+          value_type: FLOAT
+          params: '100*(last(//ucd.swap.total)-last(//ucd.swap.avail))/last(//ucd.swap.total)'
+          units: '%'
+          tags:
+            - tag: component
+              value: memory
+          triggers:
+            - uuid: 176e2993f3d94c8aa2d0cd385af25c68
+              expression: 'min(/OPNsense net-snmp/ucd.swap.util,15m)>50'
+              name: 'OPNsense: swap utilization over 50% for 15m'
+              priority: WARNING
+        - uuid: 09c015bdbc7f4b5f8b172e53ba9722b3
+          name: 'System uptime'
+          type: SNMP_AGENT
+          snmp_oid: '1.3.6.1.2.1.25.1.1.0'
+          key: 'snmp.sys.uptime'
+          delay: 1m
+          value_type: UNSIGNED
+          units: 'uptime'
+          preprocessing:
+            - type: MULTIPLIER
+              parameters:
+                - '0.01'
+          tags:
+            - tag: component
+              value: system
