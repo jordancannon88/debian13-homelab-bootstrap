@@ -475,3 +475,31 @@ order in the widget form is Line, Points, Staircase, Bar, so the enum is 0 to 3 
 order; verified working on 2026-09-21. There is a correctness argument as well as a
 visual one: a rate is constant across its sampling interval, so a step states what was
 measured, while a sloped line invents values between polls.
+
+### Busiest disk, beside IO pressure
+
+`Busiest disk utilisation` from the pressure collector: the percentage of the last
+second in which the busiest disk on that machine never went idle. One item per host, so
+one line per node, axis pinned 0 to 100.
+
+**Why this and not per-device read and write rates.** Block-device discovery gives only
+`{#DEVNAME}`, so a `*: Disk utilization` pattern also matches every `zd*` ZFS volume,
+thirteen of them on pve2 alone, double-counting their parent disks, and svggraph
+patterns have no exclusion syntax. Hardcoding `sda`, `sdc` lists instead would silently
+point at the wrong disk after a reboot, since device letters move and differ per node.
+This item sidesteps all of that: the collector picks the busiest real disk itself and
+already excludes volumes, partitions and device-mapper nodes.
+
+**Read it against IO pressure, not instead of it.** Pressure says work was *stalled*;
+utilization says a device was *never idle*. A disk at 100% with no pressure is busy and
+coping, which is what a scrub looks like. Both high together is the pve1 SSD stall of
+2026-09-17 and the pve3 scrub of 2026-09-21. Hence side by side.
+
+Filled and translucent like the pressure graphs rather than the unfilled network style,
+because this is a share of time and the area under it means something, which is the same
+reason the throughput graphs are not filled.
+
+**Which** disk is busiest is not on the graph. The companion item `Busiest drive` names
+it by serial and size, for example "V9HDUJWL 6 TB", and `Busy drives` lists every disk
+at or above `PSI_BUSY_MIN`. Both are text, so neither can be graphed; read them in
+Latest data.

@@ -961,7 +961,7 @@
           "name": "Disk IO pressure, PVE nodes",
           "type": "svggraph",
           "view_mode": "0",
-          "width": "72",
+          "width": 36,
           "x": "0",
           "y": 19
         },
@@ -2550,6 +2550,186 @@
           "width": 24,
           "x": 48,
           "y": 25
+        },
+        {
+          "fields": [
+            {
+              "name": "ds.0.color",
+              "type": 1,
+              "value": "2774A4"
+            },
+            {
+              "name": "ds.0.fill",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.0.hosts.0",
+              "type": 1,
+              "value": "pve0"
+            },
+            {
+              "name": "ds.0.items.0",
+              "type": 1,
+              "value": "Busiest disk utilisation"
+            },
+            {
+              "name": "ds.0.transparency",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.0.width",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.1.color",
+              "type": 1,
+              "value": "1A7C11"
+            },
+            {
+              "name": "ds.1.fill",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.1.hosts.0",
+              "type": 1,
+              "value": "pve1"
+            },
+            {
+              "name": "ds.1.items.0",
+              "type": 1,
+              "value": "Busiest disk utilisation"
+            },
+            {
+              "name": "ds.1.transparency",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.1.width",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.2.color",
+              "type": 1,
+              "value": "6C59DC"
+            },
+            {
+              "name": "ds.2.fill",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.2.hosts.0",
+              "type": 1,
+              "value": "pve2"
+            },
+            {
+              "name": "ds.2.items.0",
+              "type": 1,
+              "value": "Busiest disk utilisation"
+            },
+            {
+              "name": "ds.2.transparency",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.2.width",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.3.color",
+              "type": 1,
+              "value": "00A6BF"
+            },
+            {
+              "name": "ds.3.fill",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.3.hosts.0",
+              "type": 1,
+              "value": "pve3"
+            },
+            {
+              "name": "ds.3.items.0",
+              "type": 1,
+              "value": "Busiest disk utilisation"
+            },
+            {
+              "name": "ds.3.transparency",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.3.width",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.4.color",
+              "type": 1,
+              "value": "A64BC4"
+            },
+            {
+              "name": "ds.4.fill",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.4.hosts.0",
+              "type": 1,
+              "value": "pve4"
+            },
+            {
+              "name": "ds.4.items.0",
+              "type": 1,
+              "value": "Busiest disk utilisation"
+            },
+            {
+              "name": "ds.4.transparency",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.4.width",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "lefty_max",
+              "type": 1,
+              "value": "100"
+            },
+            {
+              "name": "lefty_min",
+              "type": 1,
+              "value": "0"
+            },
+            {
+              "name": "legend_lines",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "righty",
+              "type": 1,
+              "value": "0"
+            }
+          ],
+          "height": 6,
+          "name": "Busiest disk, PVE nodes",
+          "type": "svggraph",
+          "width": 36,
+          "x": 36,
+          "y": 19
         }
       ]
     }
