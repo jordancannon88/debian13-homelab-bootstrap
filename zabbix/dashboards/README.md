@@ -227,8 +227,13 @@ Added 2026-09-21, between the VM tables and the pressure graphs. Until then the
 dashboard had no storage view at all, through a week whose incidents were pve1's SSD
 filling, pms0's array, and a scrub saturating a USB disk.
 
-It shows the **root filesystem only**: `FS [/]: Space: Used, in %` and
-`FS [/]: Space: Available`, group 2 (Linux servers), amber 80 and red 90.
+Split in two on 2026-09-21, side by side: **Filesystems, nodes** (group 7 with a
+`pve*` pattern, so the pxc1 pseudo-host stays out) and **Filesystems, VMs and
+containers** (group 6). A node's root filesystem and a guest's are different concerns
+and belong in different lists; mixing sixteen machines of three kinds in one table
+made neither readable. Both show `FS [/]: Space: Used, in %` and
+`FS [/]: Space: Available`, amber 80 and red 90. Height 7 rather than 5 because group
+6 holds eleven machines, and side-by-side widgets share a height.
 
 Root only, because a Top hosts widget renders one row per host and the volumes that
 matter differ per machine: `rpool`, `rpool/ROOT`, `local-zfs-hdd`, `local-zfs-nvme`
