@@ -157,12 +157,18 @@ a host being re-added, or rediscovery, the gauge goes blank rather than erroring
 nothing tells you it stopped working. Check them with `zabbix/zbx-item.py` after any
 such change.
 
-**Nothing alerts on CPU temperature.** No Homelab template carries a temperature
-item or trigger for the CPU; the disk temperature work on Kan s24n9c7q8aye covers
-SMART only. So these gauges are the only place a hot CPU appears, and a gauge warns
-whoever happens to be looking at the dashboard. That is the same fault as a
-threshold that disagrees with its trigger, one step worse: there is no trigger at
-all.
+**CPU temperature alerting was off on four of the five nodes.** Corrected from an
+earlier claim here that nothing alerted on it at all: ten triggers exist, two per
+node, built by hand on each host rather than from a template. Eight of them were
+disabled and only pve4 was alerting, so the gauges gave the appearance of coverage.
+The thresholds are 90 and 100 °C and the hottest node sits in the sixties, so they
+were not switched off for being noisy; they were switched off and never turned back
+on. Repaired 2026-09-21 with `zabbix/zbx-cputemp.py`, which also replaces `last()`
+with `min()` over a window so one bad sensor read cannot page.
+
+The items are keyed per host, `pve0.cpuTemperature` through `pve4.cpuTemperature`, so
+no template can own them as they stand and nothing keeps the five hosts consistent.
+That is the structural fix and it is a separate piece of work.
 
 Scale and thresholds, set 2026-09-21: range 20 to 100, blue from 20, green from 45,
 amber at 85, red at 95. The range was 0 to 120, which spent its top fifth on values
