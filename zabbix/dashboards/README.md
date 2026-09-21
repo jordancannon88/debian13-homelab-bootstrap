@@ -417,3 +417,25 @@ deliberately: it is the only key every host is guaranteed to have, so neither ha
 drop a host the other keeps. If you change the sort, the host filter, the group, or the
 Host limit on one half, change it on the other, or a row's name stops belonging to its
 numbers, silently.
+
+### The network graphs
+
+Two graphs side by side under the IO pressure graph: `Network in, PVE nodes` and
+`Network out, PVE nodes`, one line per node in the same colour it has on every other
+graph.
+
+**They key on `vmbr0`, not the physical NIC.** The physical interface has a different
+name on each node, `enp89s0` on pve2 and `nic0` on pve0, so an item pattern naming it
+would silently omit nodes. `Interface vmbr0: Bits received` was verified present on all
+five before the graph was built. Anything added later that graphs a per-node interface
+name needs the same check.
+
+In and out are separate graphs rather than one. Ten data sets on a single graph would
+give each node two lines of the same colour, and there is no dash or line-style option
+on an svggraph data set to tell them apart, so one graph would be unreadable.
+
+What this does NOT show: the Thunderbolt mesh links `en02` and `en03`, which is where
+migration and replication traffic goes, and the per-guest `tap*` and `veth*`
+interfaces. The mesh is worth its own graph if replication throughput ever needs
+watching; it is deliberately not mixed in here, because at 20G it would flatten the
+LAN lines to nothing on a shared axis.
