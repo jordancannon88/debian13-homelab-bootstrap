@@ -2192,7 +2192,7 @@
           "height": 6,
           "name": "Network in, PVE nodes",
           "type": "svggraph",
-          "width": 36,
+          "width": 24,
           "x": 0,
           "y": 25
         },
@@ -2367,8 +2367,123 @@
           "height": 6,
           "name": "Network out, PVE nodes",
           "type": "svggraph",
-          "width": 36,
-          "x": 36,
+          "width": 24,
+          "x": 24,
+          "y": 25
+        },
+        {
+          "fields": [
+            {
+              "name": "ds.0.color",
+              "type": 1,
+              "value": "6C59DC"
+            },
+            {
+              "name": "ds.0.fill",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.0.hosts.0",
+              "type": 1,
+              "value": "pve2"
+            },
+            {
+              "name": "ds.0.items.0",
+              "type": 1,
+              "value": "Interface en0*: Bits *"
+            },
+            {
+              "name": "ds.0.transparency",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.0.width",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.1.color",
+              "type": 1,
+              "value": "00A6BF"
+            },
+            {
+              "name": "ds.1.fill",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.1.hosts.0",
+              "type": 1,
+              "value": "pve3"
+            },
+            {
+              "name": "ds.1.items.0",
+              "type": 1,
+              "value": "Interface en0*: Bits *"
+            },
+            {
+              "name": "ds.1.transparency",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.1.width",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.2.color",
+              "type": 1,
+              "value": "A64BC4"
+            },
+            {
+              "name": "ds.2.fill",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.2.hosts.0",
+              "type": 1,
+              "value": "pve4"
+            },
+            {
+              "name": "ds.2.items.0",
+              "type": 1,
+              "value": "Interface en0*: Bits *"
+            },
+            {
+              "name": "ds.2.transparency",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "ds.2.width",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "lefty_min",
+              "type": 1,
+              "value": "0"
+            },
+            {
+              "name": "legend_lines",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "righty",
+              "type": 1,
+              "value": "0"
+            }
+          ],
+          "height": 6,
+          "name": "Mesh throughput, pve2-4",
+          "type": "svggraph",
+          "width": 24,
+          "x": 48,
           "y": 25
         }
       ]

@@ -439,3 +439,22 @@ migration and replication traffic goes, and the per-guest `tap*` and `veth*`
 interfaces. The mesh is worth its own graph if replication throughput ever needs
 watching; it is deliberately not mixed in here, because at 20G it would flatten the
 LAN lines to nothing on a shared axis.
+
+### Mesh throughput
+
+Third graph on the network row, beside in and out, which shrank to 24 units each.
+`Mesh throughput, pve2-4`: the Thunderbolt links, where replication and migration
+traffic actually goes.
+
+Only pve2, pve3 and pve4 are on the mesh, so pve0 and pve1 are absent by design rather
+than by omission. The item pattern is `Interface en0*: Bits *`, which covers both links
+and both directions on each node without hardcoding interface names that differ per
+node. It cannot collide with an ordinary NIC: `enp89s0` and `eno1` do not begin `en0`
+followed by a digit.
+
+It has its own axis on purpose. The mesh runs at 20G against 1G on the LAN, so putting
+them on one graph would flatten the LAN lines to nothing.
+
+Four lines per node share one colour, since both links and both directions match the
+pattern. That is the intended reading: the question this graph answers is whether the
+mesh is busy and which node is driving it, not which of its two links carried what.
