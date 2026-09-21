@@ -392,7 +392,7 @@ the uptime-host template. Memory would need a shared name, and the no-ARC distin
 is real on the nodes and meaningless on the guests, so it is not a rename to make
 casually.
 
-### How the tables are actually aligned
+### The paired-widget split was REVERTED. Do not rebuild it.
 
 Each row is a pair: a narrow identity widget (`Nodes`, `VMs`) holding Name and Uptime
 at 12 grid units, and a usage widget (`Nodes usage`, `VMs usage`) holding the seven
@@ -411,12 +411,22 @@ again:
   across the whole table, so a long host name shifts every other column wherever the
   name sits.
 
-**The fragility to know about.** A pair of widgets only reads correctly while both
-halves list the same hosts in the same order. Both are sorted by the host-name column
-deliberately: it is the only key every host is guaranteed to have, so neither half can
-drop a host the other keeps. If you change the sort, the host filter, the group, or the
-Host limit on one half, change it on the other, or a row's name stops belonging to its
-numbers, silently.
+**It was reverted on 2026-09-21, hours after being built, because it is not safely
+possible.** A Top hosts widget can only order by one of its OWN columns. Removing the
+name column from the usage half therefore made ordering by name impossible there, and it
+silently fell back to ordering by the first remaining column, `CPU %` descending, while
+the identity half still ordered by name. **The rows in each pair stopped corresponding**,
+so a name sat beside another machine's numbers, and nothing indicated it.
+
+Adding a name column back to the usage half restores correctness and simultaneously
+destroys the alignment the split existed for, so the design has no working form. The
+tables are single widgets again, nine columns, ordered by name.
+
+The alignment problem it was trying to solve is therefore still open and remains
+cosmetic: Zabbix sizes columns to content, and `seafile-keeper` is fourteen characters
+against `pve0`'s four. The only real fix is one table over both host groups, which needs
+a shared memory item name first, since the nodes use `Memory use (no ARC)` and the guests
+use `Memory utilization`.
 
 ### The network graphs
 
