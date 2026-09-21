@@ -1960,7 +1960,7 @@
             }
           ],
           "height": 6,
-          "name": "VMs and containers",
+          "name": "VMs",
           "type": "tophosts",
           "width": 72,
           "x": 0,

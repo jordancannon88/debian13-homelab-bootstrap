@@ -271,7 +271,7 @@ widgets called their pressure column "Pressure": they are now "CPU pressure" and
 
 Group 7 with a `pve*` pattern, so the pxc1 pseudo-host stays out.
 
-**VMs and containers** is the same merge over group 6, same twelve columns in the same
+**VMs** is the same merge over group 6, same twelve columns in the same
 order, so a machine reads the same way whichever table it is in. Two columns differ
 underneath, because the items differ: guests use `CPU use (own)` where nodes use
 `CPU utilization`, and the stock `Memory utilization` where nodes use
@@ -367,3 +367,7 @@ mislabel one of them, which is the fault the `(Linux)` suffix already had.
 
 `Root free` was dropped. Percentage used is what you scan for; the absolute figure is
 one click away in Latest data and was costing width in a table that had too little.
+
+The guest table is titled **VMs**. Group 6 also holds six LXC containers (Zabbix,
+frigate, grf, pbs, pbs0, seafile-keeper), so the title is shorter than the contents;
+which template a host carries shows in its item keys, not in this widget.
