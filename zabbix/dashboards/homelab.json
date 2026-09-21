@@ -1049,34 +1049,9 @@
               "value": ""
             },
             {
-              "name": "columns.10.data",
+              "name": "columns.2.base_color",
               "type": 1,
-              "value": "1"
-            },
-            {
-              "name": "columns.10.item",
-              "type": 1,
-              "value": "FS [/]: Space: Available"
-            },
-            {
-              "name": "columns.10.name",
-              "type": 1,
-              "value": "Root free"
-            },
-            {
-              "name": "columns.11.data",
-              "type": 1,
-              "value": "1"
-            },
-            {
-              "name": "columns.11.item",
-              "type": 1,
-              "value": "IO pressure (full 10s)"
-            },
-            {
-              "name": "columns.11.name",
-              "type": 1,
-              "value": "IO pressure"
+              "value": "4CAF50"
             },
             {
               "name": "columns.2.data",
@@ -1089,24 +1064,29 @@
               "value": "0"
             },
             {
+              "name": "columns.2.display",
+              "type": 1,
+              "value": "3"
+            },
+            {
               "name": "columns.2.item",
               "type": 1,
-              "value": "Number of CPUs"
+              "value": "CPU utilization"
+            },
+            {
+              "name": "columns.2.max",
+              "type": 1,
+              "value": "100"
+            },
+            {
+              "name": "columns.2.min",
+              "type": 1,
+              "value": "0"
             },
             {
               "name": "columns.2.name",
               "type": 1,
-              "value": "CPUs"
-            },
-            {
-              "name": "columns.2.text",
-              "type": 1,
-              "value": ""
-            },
-            {
-              "name": "columns.3.base_color",
-              "type": 1,
-              "value": "4CAF50"
+              "value": "CPU %"
             },
             {
               "name": "columns.3.data",
@@ -1114,29 +1094,19 @@
               "value": "1"
             },
             {
-              "name": "columns.3.display",
+              "name": "columns.3.decimal_places",
               "type": 1,
-              "value": "3"
+              "value": "2"
             },
             {
               "name": "columns.3.item",
               "type": 1,
-              "value": "CPU utilization"
-            },
-            {
-              "name": "columns.3.max",
-              "type": 1,
-              "value": "100"
-            },
-            {
-              "name": "columns.3.min",
-              "type": 1,
-              "value": "0"
+              "value": "Load per CPU (5m)"
             },
             {
               "name": "columns.3.name",
               "type": 1,
-              "value": "CPU %"
+              "value": "Load/CPU"
             },
             {
               "name": "columns.4.data",
@@ -1144,14 +1114,24 @@
               "value": "1"
             },
             {
+              "name": "columns.4.decimal_places",
+              "type": 1,
+              "value": "1"
+            },
+            {
               "name": "columns.4.item",
               "type": 1,
-              "value": "Load per CPU (5m)"
+              "value": "CPU pressure (some 300s)"
             },
             {
               "name": "columns.4.name",
               "type": 1,
-              "value": "Load/CPU"
+              "value": "CPU psi"
+            },
+            {
+              "name": "columns.5.base_color",
+              "type": 1,
+              "value": "4CAF50"
             },
             {
               "name": "columns.5.data",
@@ -1159,14 +1139,34 @@
               "value": "1"
             },
             {
+              "name": "columns.5.decimal_places",
+              "type": 1,
+              "value": "0"
+            },
+            {
+              "name": "columns.5.display",
+              "type": 1,
+              "value": "3"
+            },
+            {
               "name": "columns.5.item",
               "type": 1,
-              "value": "CPU pressure (some 300s)"
+              "value": "Memory use (no ARC)"
+            },
+            {
+              "name": "columns.5.max",
+              "type": 1,
+              "value": "100"
+            },
+            {
+              "name": "columns.5.min",
+              "type": 1,
+              "value": "0"
             },
             {
               "name": "columns.5.name",
               "type": 1,
-              "value": "CPU pressure"
+              "value": "RAM %"
             },
             {
               "name": "columns.6.data",
@@ -1174,19 +1174,19 @@
               "value": "1"
             },
             {
+              "name": "columns.6.decimal_places",
+              "type": 1,
+              "value": "1"
+            },
+            {
               "name": "columns.6.item",
               "type": 1,
-              "value": "Total memory"
+              "value": "Memory pressure (full 60s)"
             },
             {
               "name": "columns.6.name",
               "type": 1,
-              "value": "RAM total"
-            },
-            {
-              "name": "columns.6.text",
-              "type": 1,
-              "value": ""
+              "value": "Mem psi"
             },
             {
               "name": "columns.7.base_color",
@@ -1199,6 +1199,11 @@
               "value": "1"
             },
             {
+              "name": "columns.7.decimal_places",
+              "type": 1,
+              "value": "0"
+            },
+            {
               "name": "columns.7.display",
               "type": 1,
               "value": "3"
@@ -1206,7 +1211,7 @@
             {
               "name": "columns.7.item",
               "type": 1,
-              "value": "Memory use (no ARC)"
+              "value": "FS [/]: Space: Used, in %"
             },
             {
               "name": "columns.7.max",
@@ -1221,7 +1226,7 @@
             {
               "name": "columns.7.name",
               "type": 1,
-              "value": "RAM %"
+              "value": "Root used"
             },
             {
               "name": "columns.8.data",
@@ -1229,19 +1234,19 @@
               "value": "1"
             },
             {
+              "name": "columns.8.decimal_places",
+              "type": 1,
+              "value": "1"
+            },
+            {
               "name": "columns.8.item",
               "type": 1,
-              "value": "Memory pressure (full 60s)"
+              "value": "FS [/]: Space: Available"
             },
             {
               "name": "columns.8.name",
               "type": 1,
-              "value": "Mem pressure"
-            },
-            {
-              "name": "columns.9.base_color",
-              "type": 1,
-              "value": "4CAF50"
+              "value": "Root free"
             },
             {
               "name": "columns.9.data",
@@ -1249,49 +1254,39 @@
               "value": "1"
             },
             {
-              "name": "columns.9.display",
+              "name": "columns.9.decimal_places",
               "type": 1,
-              "value": "3"
+              "value": "1"
             },
             {
               "name": "columns.9.item",
               "type": 1,
-              "value": "FS [/]: Space: Used, in %"
-            },
-            {
-              "name": "columns.9.max",
-              "type": 1,
-              "value": "100"
-            },
-            {
-              "name": "columns.9.min",
-              "type": 1,
-              "value": "0"
+              "value": "IO pressure (full 10s)"
             },
             {
               "name": "columns.9.name",
               "type": 1,
-              "value": "Root used"
+              "value": "IO psi"
             },
             {
-              "name": "columnsthresholds.11.color.0",
+              "name": "columnsthresholds.2.color.0",
               "type": 1,
               "value": "FCCB1D"
             },
             {
-              "name": "columnsthresholds.11.color.1",
+              "name": "columnsthresholds.2.color.1",
               "type": 1,
               "value": "E65660"
             },
             {
-              "name": "columnsthresholds.11.threshold.0",
+              "name": "columnsthresholds.2.threshold.0",
               "type": 1,
-              "value": "5"
+              "value": "80"
             },
             {
-              "name": "columnsthresholds.11.threshold.1",
+              "name": "columnsthresholds.2.threshold.1",
               "type": 1,
-              "value": "10"
+              "value": "90"
             },
             {
               "name": "columnsthresholds.3.color.0",
@@ -1306,12 +1301,12 @@
             {
               "name": "columnsthresholds.3.threshold.0",
               "type": 1,
-              "value": "80"
+              "value": "1"
             },
             {
               "name": "columnsthresholds.3.threshold.1",
               "type": 1,
-              "value": "90"
+              "value": "1.5"
             },
             {
               "name": "columnsthresholds.4.color.0",
@@ -1326,12 +1321,12 @@
             {
               "name": "columnsthresholds.4.threshold.0",
               "type": 1,
-              "value": "1"
+              "value": "25"
             },
             {
               "name": "columnsthresholds.4.threshold.1",
               "type": 1,
-              "value": "1.5"
+              "value": "50"
             },
             {
               "name": "columnsthresholds.5.color.0",
@@ -1346,12 +1341,32 @@
             {
               "name": "columnsthresholds.5.threshold.0",
               "type": 1,
-              "value": "25"
+              "value": "80"
             },
             {
               "name": "columnsthresholds.5.threshold.1",
               "type": 1,
-              "value": "50"
+              "value": "90"
+            },
+            {
+              "name": "columnsthresholds.6.color.0",
+              "type": 1,
+              "value": "FCCB1D"
+            },
+            {
+              "name": "columnsthresholds.6.color.1",
+              "type": 1,
+              "value": "E65660"
+            },
+            {
+              "name": "columnsthresholds.6.threshold.0",
+              "type": 1,
+              "value": "5"
+            },
+            {
+              "name": "columnsthresholds.6.threshold.1",
+              "type": 1,
+              "value": "10"
             },
             {
               "name": "columnsthresholds.7.color.0",
@@ -1374,26 +1389,6 @@
               "value": "90"
             },
             {
-              "name": "columnsthresholds.8.color.0",
-              "type": 1,
-              "value": "FCCB1D"
-            },
-            {
-              "name": "columnsthresholds.8.color.1",
-              "type": 1,
-              "value": "E65660"
-            },
-            {
-              "name": "columnsthresholds.8.threshold.0",
-              "type": 1,
-              "value": "5"
-            },
-            {
-              "name": "columnsthresholds.8.threshold.1",
-              "type": 1,
-              "value": "10"
-            },
-            {
               "name": "columnsthresholds.9.color.0",
               "type": 1,
               "value": "FCCB1D"
@@ -1406,12 +1401,12 @@
             {
               "name": "columnsthresholds.9.threshold.0",
               "type": 1,
-              "value": "80"
+              "value": "5"
             },
             {
               "name": "columnsthresholds.9.threshold.1",
               "type": 1,
-              "value": "90"
+              "value": "10"
             },
             {
               "name": "groupids.0",
@@ -1479,34 +1474,9 @@
               "value": "Uptime"
             },
             {
-              "name": "columns.10.data",
+              "name": "columns.2.base_color",
               "type": 1,
-              "value": "1"
-            },
-            {
-              "name": "columns.10.item",
-              "type": 1,
-              "value": "FS [/]: Space: Available"
-            },
-            {
-              "name": "columns.10.name",
-              "type": 1,
-              "value": "Root free"
-            },
-            {
-              "name": "columns.11.data",
-              "type": 1,
-              "value": "1"
-            },
-            {
-              "name": "columns.11.item",
-              "type": 1,
-              "value": "IO pressure (full 10s)"
-            },
-            {
-              "name": "columns.11.name",
-              "type": 1,
-              "value": "IO psi (Linux)"
+              "value": "4CAF50"
             },
             {
               "name": "columns.2.data",
@@ -1519,24 +1489,29 @@
               "value": "0"
             },
             {
+              "name": "columns.2.display",
+              "type": 1,
+              "value": "3"
+            },
+            {
               "name": "columns.2.item",
               "type": 1,
-              "value": "Number of CPUs"
+              "value": "CPU use (own)"
+            },
+            {
+              "name": "columns.2.max",
+              "type": 1,
+              "value": "100"
+            },
+            {
+              "name": "columns.2.min",
+              "type": 1,
+              "value": "0"
             },
             {
               "name": "columns.2.name",
               "type": 1,
-              "value": "CPUs"
-            },
-            {
-              "name": "columns.2.text",
-              "type": 1,
-              "value": ""
-            },
-            {
-              "name": "columns.3.base_color",
-              "type": 1,
-              "value": "4CAF50"
+              "value": "CPU %"
             },
             {
               "name": "columns.3.data",
@@ -1544,29 +1519,19 @@
               "value": "1"
             },
             {
-              "name": "columns.3.display",
+              "name": "columns.3.decimal_places",
               "type": 1,
-              "value": "3"
+              "value": "2"
             },
             {
               "name": "columns.3.item",
               "type": 1,
-              "value": "CPU use (own)"
-            },
-            {
-              "name": "columns.3.max",
-              "type": 1,
-              "value": "100"
-            },
-            {
-              "name": "columns.3.min",
-              "type": 1,
-              "value": "0"
+              "value": "Load per CPU (5m)"
             },
             {
               "name": "columns.3.name",
               "type": 1,
-              "value": "CPU %"
+              "value": "Load/CPU"
             },
             {
               "name": "columns.4.data",
@@ -1574,14 +1539,24 @@
               "value": "1"
             },
             {
+              "name": "columns.4.decimal_places",
+              "type": 1,
+              "value": "1"
+            },
+            {
               "name": "columns.4.item",
               "type": 1,
-              "value": "Load per CPU (5m)"
+              "value": "CPU pressure (some 300s)"
             },
             {
               "name": "columns.4.name",
               "type": 1,
-              "value": "Load/CPU"
+              "value": "CPU psi"
+            },
+            {
+              "name": "columns.5.base_color",
+              "type": 1,
+              "value": "4CAF50"
             },
             {
               "name": "columns.5.data",
@@ -1589,14 +1564,34 @@
               "value": "1"
             },
             {
+              "name": "columns.5.decimal_places",
+              "type": 1,
+              "value": "0"
+            },
+            {
+              "name": "columns.5.display",
+              "type": 1,
+              "value": "3"
+            },
+            {
               "name": "columns.5.item",
               "type": 1,
-              "value": "CPU pressure (some 300s)"
+              "value": "Memory utilization"
+            },
+            {
+              "name": "columns.5.max",
+              "type": 1,
+              "value": "100"
+            },
+            {
+              "name": "columns.5.min",
+              "type": 1,
+              "value": "0"
             },
             {
               "name": "columns.5.name",
               "type": 1,
-              "value": "CPU psi (Linux)"
+              "value": "RAM %"
             },
             {
               "name": "columns.6.data",
@@ -1604,19 +1599,19 @@
               "value": "1"
             },
             {
+              "name": "columns.6.decimal_places",
+              "type": 1,
+              "value": "1"
+            },
+            {
               "name": "columns.6.item",
               "type": 1,
-              "value": "Total memory"
+              "value": "Memory pressure (full 60s)"
             },
             {
               "name": "columns.6.name",
               "type": 1,
-              "value": "RAM total"
-            },
-            {
-              "name": "columns.6.text",
-              "type": 1,
-              "value": ""
+              "value": "Mem psi"
             },
             {
               "name": "columns.7.base_color",
@@ -1629,6 +1624,11 @@
               "value": "1"
             },
             {
+              "name": "columns.7.decimal_places",
+              "type": 1,
+              "value": "0"
+            },
+            {
               "name": "columns.7.display",
               "type": 1,
               "value": "3"
@@ -1636,7 +1636,7 @@
             {
               "name": "columns.7.item",
               "type": 1,
-              "value": "Memory utilization"
+              "value": "FS [/]: Space: Used, in %"
             },
             {
               "name": "columns.7.max",
@@ -1651,7 +1651,7 @@
             {
               "name": "columns.7.name",
               "type": 1,
-              "value": "RAM %"
+              "value": "Root used"
             },
             {
               "name": "columns.8.data",
@@ -1659,19 +1659,19 @@
               "value": "1"
             },
             {
+              "name": "columns.8.decimal_places",
+              "type": 1,
+              "value": "1"
+            },
+            {
               "name": "columns.8.item",
               "type": 1,
-              "value": "Memory pressure (full 60s)"
+              "value": "FS [/]: Space: Available"
             },
             {
               "name": "columns.8.name",
               "type": 1,
-              "value": "Mem psi (Linux)"
-            },
-            {
-              "name": "columns.9.base_color",
-              "type": 1,
-              "value": "4CAF50"
+              "value": "Root free"
             },
             {
               "name": "columns.9.data",
@@ -1679,49 +1679,39 @@
               "value": "1"
             },
             {
-              "name": "columns.9.display",
+              "name": "columns.9.decimal_places",
               "type": 1,
-              "value": "3"
+              "value": "1"
             },
             {
               "name": "columns.9.item",
               "type": 1,
-              "value": "FS [/]: Space: Used, in %"
-            },
-            {
-              "name": "columns.9.max",
-              "type": 1,
-              "value": "100"
-            },
-            {
-              "name": "columns.9.min",
-              "type": 1,
-              "value": "0"
+              "value": "IO pressure (full 10s)"
             },
             {
               "name": "columns.9.name",
               "type": 1,
-              "value": "Root used"
+              "value": "IO psi"
             },
             {
-              "name": "columnsthresholds.11.color.0",
+              "name": "columnsthresholds.2.color.0",
               "type": 1,
               "value": "FCCB1D"
             },
             {
-              "name": "columnsthresholds.11.color.1",
+              "name": "columnsthresholds.2.color.1",
               "type": 1,
               "value": "E65660"
             },
             {
-              "name": "columnsthresholds.11.threshold.0",
+              "name": "columnsthresholds.2.threshold.0",
               "type": 1,
-              "value": "5"
+              "value": "80"
             },
             {
-              "name": "columnsthresholds.11.threshold.1",
+              "name": "columnsthresholds.2.threshold.1",
               "type": 1,
-              "value": "10"
+              "value": "90"
             },
             {
               "name": "columnsthresholds.3.color.0",
@@ -1736,12 +1726,12 @@
             {
               "name": "columnsthresholds.3.threshold.0",
               "type": 1,
-              "value": "80"
+              "value": "1"
             },
             {
               "name": "columnsthresholds.3.threshold.1",
               "type": 1,
-              "value": "90"
+              "value": "1.5"
             },
             {
               "name": "columnsthresholds.4.color.0",
@@ -1756,12 +1746,12 @@
             {
               "name": "columnsthresholds.4.threshold.0",
               "type": 1,
-              "value": "1"
+              "value": "25"
             },
             {
               "name": "columnsthresholds.4.threshold.1",
               "type": 1,
-              "value": "1.5"
+              "value": "50"
             },
             {
               "name": "columnsthresholds.5.color.0",
@@ -1776,12 +1766,32 @@
             {
               "name": "columnsthresholds.5.threshold.0",
               "type": 1,
-              "value": "25"
+              "value": "80"
             },
             {
               "name": "columnsthresholds.5.threshold.1",
               "type": 1,
-              "value": "50"
+              "value": "90"
+            },
+            {
+              "name": "columnsthresholds.6.color.0",
+              "type": 1,
+              "value": "FCCB1D"
+            },
+            {
+              "name": "columnsthresholds.6.color.1",
+              "type": 1,
+              "value": "E65660"
+            },
+            {
+              "name": "columnsthresholds.6.threshold.0",
+              "type": 1,
+              "value": "5"
+            },
+            {
+              "name": "columnsthresholds.6.threshold.1",
+              "type": 1,
+              "value": "10"
             },
             {
               "name": "columnsthresholds.7.color.0",
@@ -1804,26 +1814,6 @@
               "value": "90"
             },
             {
-              "name": "columnsthresholds.8.color.0",
-              "type": 1,
-              "value": "FCCB1D"
-            },
-            {
-              "name": "columnsthresholds.8.color.1",
-              "type": 1,
-              "value": "E65660"
-            },
-            {
-              "name": "columnsthresholds.8.threshold.0",
-              "type": 1,
-              "value": "5"
-            },
-            {
-              "name": "columnsthresholds.8.threshold.1",
-              "type": 1,
-              "value": "10"
-            },
-            {
               "name": "columnsthresholds.9.color.0",
               "type": 1,
               "value": "FCCB1D"
@@ -1836,12 +1826,12 @@
             {
               "name": "columnsthresholds.9.threshold.0",
               "type": 1,
-              "value": "80"
+              "value": "5"
             },
             {
               "name": "columnsthresholds.9.threshold.1",
               "type": 1,
-              "value": "90"
+              "value": "10"
             },
             {
               "name": "groupids.0",

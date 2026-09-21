@@ -310,3 +310,27 @@ opn1 fills the other nine columns. `Number of CPUs`, `Total memory` and
 `Memory utilization` already matched the shared names; `CPU use (own)` and the three
 load averages were renamed in the OPNsense template to match, and the load renames
 then became moot when those columns were removed.
+
+### Readability, 2026-09-21
+
+Twelve columns across a 72-unit grid is about six units each, which is why values ran
+into each other. **The Top hosts widget has no per-column width control**, so the only
+levers are fewer columns, fewer digits and shorter headers. All three were used.
+
+Dropped `Number of CPUs` and `Total memory` from both tables. Both are static facts
+about a machine rather than things you watch, and `Load per CPU (5m)` already divides
+the CPU count back in, so the information is not lost. Ten columns now, identical in
+both tables so a column sits in the same place in each.
+
+Decimal places set per column, because digits are width: whole numbers for the three
+percentages and for root used, two for load per CPU, one for the pressures. A CPU
+percentage to two decimals says nothing a whole number does not and costs about as
+much space as another column across the table.
+
+**The `(Linux)` suffix on the pressure headers was removed.** It was added so opn1's
+permanently blank pressure cells would read as not applicable rather than broken, and
+it was the widest thing in the table. It was also only half true: six of the eleven
+guests are Linux containers whose pressure is blank for a completely different reason,
+the collector not emitting it (Kan 2iqfax5bk20f). A label that names the wrong cause
+is worse than none. Once that card is done, opn1 is the only blank left and its reason
+is on Kan 388vehxckua5.
