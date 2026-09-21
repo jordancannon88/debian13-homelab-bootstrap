@@ -391,3 +391,29 @@ column, `CPU utilization` against `CPU use (own)` and `Memory use (no ARC)` agai
 the uptime-host template. Memory would need a shared name, and the no-ARC distinction
 is real on the nodes and meaningless on the guests, so it is not a rename to make
 casually.
+
+### How the tables are actually aligned
+
+Each row is a pair: a narrow identity widget (`Nodes`, `VMs`) holding Name and Uptime
+at 12 grid units, and a usage widget (`Nodes usage`, `VMs usage`) holding the seven
+numeric columns at 60. Because both identity widgets are the same width and both usage
+widgets hold only numeric content, the numeric columns land in the same places in each
+row, which is what stacking them made impossible before.
+
+Two things that do NOT work, both tried on 2026-09-21, recorded so they are not tried
+again:
+
+- **Setting `columns.N.width`.** The API accepted the field and the widget then
+  rendered "Widget is not fully configured". A write that succeeds and leaves a broken
+  widget is worse than one that fails, so do not experiment with column fields on the
+  live dashboard.
+- **Moving the variable-width columns to the right end.** Zabbix distributes width
+  across the whole table, so a long host name shifts every other column wherever the
+  name sits.
+
+**The fragility to know about.** A pair of widgets only reads correctly while both
+halves list the same hosts in the same order. Both are sorted by the host-name column
+deliberately: it is the only key every host is guaranteed to have, so neither half can
+drop a host the other keeps. If you change the sort, the host filter, the group, or the
+Host limit on one half, change it on the other, or a row's name stops belonging to its
+numbers, silently.
