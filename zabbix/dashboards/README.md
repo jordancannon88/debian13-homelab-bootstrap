@@ -282,3 +282,31 @@ Its CPU pressure and Mem pressure columns are blank for `pbs`, `pbs0` and
 `seafile-keeper` until Kan 2iqfax5bk20f is done: the LXC collector emits CPU pressure
 only at avg10 while the column reads avg300, and never reads `memory.pressure`. IO
 pressure does populate for them, because the item names were made to match.
+
+### Load averages dropped, disk space folded in (2026-09-21)
+
+The three load-average columns came out of both tables and the two Filesystems
+widgets were folded into them as `Root used` and `Root free`. Eleven columns each,
+with IO pressure sitting next to the disk figures.
+
+Load average was the weakest thing on the dashboard. On Linux it counts D-state
+threads as well as runnable ones, so it conflates CPU demand with IO waiting, which
+is exactly what the pressure columns beside it separate properly. Three columns of it
+crowded out storage, which had no representation at all until that morning.
+
+**The guest table names its pressure headers "CPU psi (Linux)", "Mem psi (Linux)" and
+"IO psi (Linux)".** A Top hosts column header is independent of the item name it
+matches on, so this costs nothing and fixes a real confusion: opn1 is OPNsense, which
+is FreeBSD, and pressure stall information is a Linux kernel feature read from
+/proc/pressure and the cgroup files. Those three cells can never fill for opn1. The
+header now says why, so the blank reads as not applicable rather than broken. It had
+been reported as a fault three times.
+
+Do NOT fill them with a sentinel value such as -1. It pollutes history, group
+aggregates, thresholds and sort order, and it is the same measures-nothing pattern
+that cost an afternoon on 2026-09-21.
+
+opn1 fills the other nine columns. `Number of CPUs`, `Total memory` and
+`Memory utilization` already matched the shared names; `CPU use (own)` and the three
+load averages were renamed in the OPNsense template to match, and the load renames
+then became moot when those columns were removed.
