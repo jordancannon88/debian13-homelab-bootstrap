@@ -1,5 +1,5 @@
 {
-  "auto_start": "1",
+  "auto_start": "0",
   "display_period": "30",
   "name": "Homelab",
   "pages": [
@@ -89,8 +89,8 @@
           "name": "PVE0",
           "type": "gauge",
           "view_mode": "0",
-          "width": "15",
-          "x": "0",
+          "width": 15,
+          "x": 0,
           "y": "0"
         },
         {
@@ -175,8 +175,8 @@
           "name": "PVE1",
           "type": "gauge",
           "view_mode": "0",
-          "width": "15",
-          "x": "15",
+          "width": 15,
+          "x": 15,
           "y": "0"
         },
         {
@@ -261,8 +261,8 @@
           "name": "PVE2",
           "type": "gauge",
           "view_mode": "0",
-          "width": "15",
-          "x": "30",
+          "width": 14,
+          "x": 30,
           "y": "0"
         },
         {
@@ -347,8 +347,8 @@
           "name": "PVE3",
           "type": "gauge",
           "view_mode": "0",
-          "width": "14",
-          "x": "45",
+          "width": 14,
+          "x": 44,
           "y": "0"
         },
         {
@@ -433,8 +433,8 @@
           "name": "PVE4",
           "type": "gauge",
           "view_mode": "0",
-          "width": "13",
-          "x": "59",
+          "width": 14,
+          "x": 58,
           "y": "0"
         },
         {
@@ -442,7 +442,7 @@
             {
               "name": "column",
               "type": "0",
-              "value": "1"
+              "value": "0"
             },
             {
               "name": "columns.0.data",
@@ -472,7 +472,7 @@
             {
               "name": "columns.1.item",
               "type": "1",
-              "value": "System uptime"
+              "value": "Uptime (own)"
             },
             {
               "name": "columns.1.name",
@@ -483,6 +483,41 @@
               "name": "columns.1.text",
               "type": "1",
               "value": ""
+            },
+            {
+              "name": "columns.2.data",
+              "type": 1,
+              "value": "1"
+            },
+            {
+              "name": "columns.2.item",
+              "type": 1,
+              "value": "IO pressure (full 10s)"
+            },
+            {
+              "name": "columns.2.name",
+              "type": 1,
+              "value": "IO"
+            },
+            {
+              "name": "columnsthresholds.2.color.0",
+              "type": 1,
+              "value": "FCCB1D"
+            },
+            {
+              "name": "columnsthresholds.2.color.1",
+              "type": 1,
+              "value": "E65660"
+            },
+            {
+              "name": "columnsthresholds.2.threshold.0",
+              "type": 1,
+              "value": "5"
+            },
+            {
+              "name": "columnsthresholds.2.threshold.1",
+              "type": 1,
+              "value": "10"
             },
             {
               "name": "groupids.0",
@@ -497,7 +532,7 @@
             {
               "name": "rf_rate",
               "type": "0",
-              "value": "10"
+              "value": "60"
             }
           ],
           "height": "4",
@@ -513,7 +548,7 @@
             {
               "name": "column",
               "type": "0",
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "columns.0.data",
@@ -708,7 +743,7 @@
             {
               "name": "rf_rate",
               "type": "0",
-              "value": "10"
+              "value": "60"
             }
           ],
           "height": "4",
@@ -724,7 +759,7 @@
             {
               "name": "column",
               "type": "0",
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "columns.0.data",
@@ -759,7 +794,7 @@
             {
               "name": "columns.1.name",
               "type": "1",
-              "value": "Count"
+              "value": "Total"
             },
             {
               "name": "columns.1.text",
@@ -869,7 +904,7 @@
             {
               "name": "rf_rate",
               "type": "0",
-              "value": "10"
+              "value": "60"
             }
           ],
           "height": "4",
@@ -885,7 +920,7 @@
             {
               "name": "column",
               "type": "0",
-              "value": "1"
+              "value": "0"
             },
             {
               "name": "columns.0.data",
@@ -923,6 +958,41 @@
               "value": "Uptime"
             },
             {
+              "name": "columns.2.data",
+              "type": 1,
+              "value": "1"
+            },
+            {
+              "name": "columns.2.item",
+              "type": 1,
+              "value": "IO pressure (full 10s)"
+            },
+            {
+              "name": "columns.2.name",
+              "type": 1,
+              "value": "IO"
+            },
+            {
+              "name": "columnsthresholds.2.color.0",
+              "type": 1,
+              "value": "FCCB1D"
+            },
+            {
+              "name": "columnsthresholds.2.color.1",
+              "type": 1,
+              "value": "E65660"
+            },
+            {
+              "name": "columnsthresholds.2.threshold.0",
+              "type": 1,
+              "value": "5"
+            },
+            {
+              "name": "columnsthresholds.2.threshold.1",
+              "type": 1,
+              "value": "10"
+            },
+            {
               "name": "groupids.0",
               "type": "2",
               "value": "6"
@@ -935,7 +1005,7 @@
             {
               "name": "rf_rate",
               "type": "0",
-              "value": "10"
+              "value": "60"
             }
           ],
           "height": "6",
@@ -951,7 +1021,7 @@
             {
               "name": "column",
               "type": "0",
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "columns.0.data",
@@ -1146,7 +1216,7 @@
             {
               "name": "rf_rate",
               "type": "0",
-              "value": "10"
+              "value": "60"
             }
           ],
           "height": "6",
@@ -1162,7 +1232,7 @@
             {
               "name": "column",
               "type": "0",
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "columns.0.data",
@@ -1197,7 +1267,7 @@
             {
               "name": "columns.1.name",
               "type": "1",
-              "value": "Count"
+              "value": "Total"
             },
             {
               "name": "columns.1.text",
@@ -1307,7 +1377,7 @@
             {
               "name": "rf_rate",
               "type": "0",
-              "value": "10"
+              "value": "60"
             }
           ],
           "height": "6",
@@ -1469,6 +1539,11 @@
               "name": "ds.4.width",
               "type": "0",
               "value": "2"
+            },
+            {
+              "name": "lefty_min",
+              "type": 1,
+              "value": "0"
             },
             {
               "name": "legend_lines",
@@ -1642,6 +1717,11 @@
               "value": "2"
             },
             {
+              "name": "lefty_min",
+              "type": 1,
+              "value": "0"
+            },
+            {
               "name": "legend_lines",
               "type": "0",
               "value": "2"
@@ -1813,6 +1893,11 @@
               "value": "2"
             },
             {
+              "name": "lefty_min",
+              "type": 1,
+              "value": "0"
+            },
+            {
               "name": "legend_lines",
               "type": "0",
               "value": "2"
@@ -1841,7 +1926,7 @@
             {
               "name": "show",
               "type": "0",
-              "value": "3"
+              "value": "2"
             },
             {
               "name": "show_tags",

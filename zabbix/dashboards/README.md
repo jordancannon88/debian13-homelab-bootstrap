@@ -175,3 +175,48 @@ amber at 85, red at 95. The range was 0 to 120, which spent its top fifth on val
 no sensor in the fleet can reach and put every real reading in the lower half of the
 arc. 100 is roughly where these CPUs begin thermal throttling, so the top of the arc
 now means something. Amber was at 80, which a NUC reaches under an ordinary backup.
+
+## Review of 2026-09-21
+
+Twenty-seven changes across nine findings.
+
+**`Current problems` was in History mode** (`show: 3`). History is driven by the
+dashboard time selector, so a problem open for longer than the selected window does
+not appear in a widget named "Current problems". Now `show: 2`, Problems, which
+ignores the time selector and cannot hide an open problem. This is the same class of
+trap as the absolute time window that made the graphs look empty, and it is worse,
+because an empty graph is obviously wrong while a short problem list is not.
+
+**The pressure graphs had no Y-axis floor.** Auto-scaling means an idle period's
+noise fills the frame and reads like a real event. `lefty_min: 0` on all three, so
+the three graphs are also comparable with each other.
+
+**Every Top hosts widget sorted by a value column**, so hosts reordered on each
+refresh and a glanced-at table could not be read by position. All six now sort by
+Name. Sorting by value is right for a "worst offenders" widget; these are fleet
+inventories.
+
+**IO pressure had a graph but no column**, while CPU and memory had both. IO is the
+one that actually fires: the pve1 SSD stall of 2026-09-17 and the pve3 scrub of
+2026-09-21 were both IO pressure events. Added to both Stats widgets, which were
+nearly empty, with 5 amber and 10 red to match `{$PSI.IO.FULL.WARN}`.
+
+Also: `Total memory` was labelled "Count"; the Nodes widget read `System uptime`
+while the VMs widget read `Uptime (own)`, defeating the point of the "(own)" items,
+which exist so one column matches every machine type; gauge widths were 15/15/15/14/13
+and are now 15/15/14/14/14; refresh was 10s on six widgets re-querying six times a
+minute, now 60s; and the slideshow was enabled on a single-page dashboard.
+
+### Two things about the host groups, not fixed here
+
+**Group 7 "Hypervisors" contains `pxc1`**, the Proxmox cluster pseudo-host, as well as
+the five nodes. It has no CPU, memory or uptime items, so it appears as an empty row
+in all three Nodes widgets. Either exclude it or accept the blank row deliberately.
+
+**Group 6 "Virtual machines" contains the LXC containers** `pbs`, `pbs0` and
+`seafile-keeper` alongside the real VMs. Their CPU and load columns work, because the
+"(own)" items cover containers too, but **the Pressure columns are blank for them**:
+the `Homelab pressure` template is linked to bare metal and VMs only, since
+`/proc/pressure` inside a container reports the host. Container pressure comes from
+the cgroup through `Homelab LXC` under different item names, so showing it needs
+either its own widget or matching item names across the two templates.
