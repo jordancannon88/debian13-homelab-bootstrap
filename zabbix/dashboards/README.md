@@ -512,10 +512,24 @@ Staircase 2, Bar 3):
 | Family | Draw | Style |
 |---|---|---|
 | CPU and memory pressure | Line | filled, translucent |
-| Disk: IO pressure, Busiest disk | **Bar** | share of time, 0-100 |
+| Disk: IO pressure, Busiest disk | **Points** | size 6, opaque, share of time 0-100 |
 | Network: in, out, mesh | Staircase | unfilled, opaque, width 3 |
 
 Colours stay per node across all of them, so a node is one colour everywhere.
+
+The disk graphs were tried as Bar first and read badly: five overlapping series meant the
+front one hid the rest, and raising transparency to 6 did not rescue it. Zabbix has no
+hollow or outline bar, because for a Bar the bar is the fill, so `fill: 0` renders
+nothing rather than an outline. Points at size 6 against the default 3, fully opaque,
+is what worked. It also suits the data: IO is spiky, and a line draws slopes between
+samples that were never measured.
+
+Verified field names on an svggraph data set, since one wrong guess left a widget
+unrenderable earlier the same day: `ds.N.type` (Line 0, Points 1, Staircase 2, Bar 3),
+`ds.N.pointsize` (1-10, default 3), `ds.N.fill`, `ds.N.width`, `ds.N.transparency`
+(0 opaque to 10 invisible), `lefty_min`, `lefty_max`. There is NO per-column width field
+on a Top hosts widget: `columns.N.width` is accepted by the API and then renders
+"Widget is not fully configured".
 
 **Busiest drives** sits under the graphs: one row per node with the busiest drive named
 by serial and size, its busy percentage, and the list of every drive at or above

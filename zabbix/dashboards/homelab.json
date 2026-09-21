@@ -812,14 +812,19 @@
               "value": "IO pressure (full 10s)"
             },
             {
+              "name": "ds.0.pointsize",
+              "type": 1,
+              "value": "6"
+            },
+            {
               "name": "ds.0.transparency",
               "type": "0",
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.0.type",
               "type": 1,
-              "value": "3"
+              "value": "1"
             },
             {
               "name": "ds.0.width",
@@ -847,14 +852,19 @@
               "value": "IO pressure (full 10s)"
             },
             {
+              "name": "ds.1.pointsize",
+              "type": 1,
+              "value": "6"
+            },
+            {
               "name": "ds.1.transparency",
               "type": "0",
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.1.type",
               "type": 1,
-              "value": "3"
+              "value": "1"
             },
             {
               "name": "ds.1.width",
@@ -882,14 +892,19 @@
               "value": "IO pressure (full 10s)"
             },
             {
+              "name": "ds.2.pointsize",
+              "type": 1,
+              "value": "6"
+            },
+            {
               "name": "ds.2.transparency",
               "type": "0",
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.2.type",
               "type": 1,
-              "value": "3"
+              "value": "1"
             },
             {
               "name": "ds.2.width",
@@ -917,14 +932,19 @@
               "value": "IO pressure (full 10s)"
             },
             {
+              "name": "ds.3.pointsize",
+              "type": 1,
+              "value": "6"
+            },
+            {
               "name": "ds.3.transparency",
               "type": "0",
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.3.type",
               "type": 1,
-              "value": "3"
+              "value": "1"
             },
             {
               "name": "ds.3.width",
@@ -952,14 +972,19 @@
               "value": "IO pressure (full 10s)"
             },
             {
+              "name": "ds.4.pointsize",
+              "type": 1,
+              "value": "6"
+            },
+            {
               "name": "ds.4.transparency",
               "type": "0",
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.4.type",
               "type": 1,
-              "value": "3"
+              "value": "1"
             },
             {
               "name": "ds.4.width",
@@ -2599,14 +2624,19 @@
               "value": "Busiest disk utilisation"
             },
             {
+              "name": "ds.0.pointsize",
+              "type": 1,
+              "value": "6"
+            },
+            {
               "name": "ds.0.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.0.type",
               "type": 1,
-              "value": "3"
+              "value": "1"
             },
             {
               "name": "ds.0.width",
@@ -2634,14 +2664,19 @@
               "value": "Busiest disk utilisation"
             },
             {
+              "name": "ds.1.pointsize",
+              "type": 1,
+              "value": "6"
+            },
+            {
               "name": "ds.1.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.1.type",
               "type": 1,
-              "value": "3"
+              "value": "1"
             },
             {
               "name": "ds.1.width",
@@ -2669,14 +2704,19 @@
               "value": "Busiest disk utilisation"
             },
             {
+              "name": "ds.2.pointsize",
+              "type": 1,
+              "value": "6"
+            },
+            {
               "name": "ds.2.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.2.type",
               "type": 1,
-              "value": "3"
+              "value": "1"
             },
             {
               "name": "ds.2.width",
@@ -2704,14 +2744,19 @@
               "value": "Busiest disk utilisation"
             },
             {
+              "name": "ds.3.pointsize",
+              "type": 1,
+              "value": "6"
+            },
+            {
               "name": "ds.3.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.3.type",
               "type": 1,
-              "value": "3"
+              "value": "1"
             },
             {
               "name": "ds.3.width",
@@ -2739,14 +2784,19 @@
               "value": "Busiest disk utilisation"
             },
             {
+              "name": "ds.4.pointsize",
+              "type": 1,
+              "value": "6"
+            },
+            {
               "name": "ds.4.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.4.type",
               "type": 1,
-              "value": "3"
+              "value": "1"
             },
             {
               "name": "ds.4.width",
