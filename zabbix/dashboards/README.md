@@ -458,3 +458,19 @@ them on one graph would flatten the LAN lines to nothing.
 Four lines per node share one colour, since both links and both directions match the
 pattern. That is the intended reading: the question this graph answers is whether the
 mesh is busy and which node is driving it, not which of its two links carried what.
+
+### Two graph styles, on purpose
+
+Pressure graphs are filled translucent areas: `fill 2`, `transparency 2`, `width 2`.
+Network and mesh graphs are unfilled opaque lines: `fill 0`, `transparency 0`,
+`width 3`.
+
+The colours are identical, so a node is the same colour on all six graphs, but the two
+families read as different kinds of measurement at a glance. Pressure is a share of
+time, bounded and meaningful as an area under a curve; throughput is a rate, and a
+filled rate graph invites reading the area as a total, which it is not.
+
+The `Draw` type on a data set (Line, Points, Staircase, Bar) would differentiate them
+further. It was not used here because its enum values were not verified, and an
+unverified numeric field value on this dashboard has already produced a widget that
+wrote successfully and then refused to render.

@@ -2031,7 +2031,7 @@
             {
               "name": "ds.0.fill",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.0.hosts.0",
@@ -2046,12 +2046,12 @@
             {
               "name": "ds.0.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.0.width",
               "type": 1,
-              "value": "2"
+              "value": "3"
             },
             {
               "name": "ds.1.color",
@@ -2061,7 +2061,7 @@
             {
               "name": "ds.1.fill",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.1.hosts.0",
@@ -2076,12 +2076,12 @@
             {
               "name": "ds.1.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.1.width",
               "type": 1,
-              "value": "2"
+              "value": "3"
             },
             {
               "name": "ds.2.color",
@@ -2091,7 +2091,7 @@
             {
               "name": "ds.2.fill",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.2.hosts.0",
@@ -2106,12 +2106,12 @@
             {
               "name": "ds.2.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.2.width",
               "type": 1,
-              "value": "2"
+              "value": "3"
             },
             {
               "name": "ds.3.color",
@@ -2121,7 +2121,7 @@
             {
               "name": "ds.3.fill",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.3.hosts.0",
@@ -2136,12 +2136,12 @@
             {
               "name": "ds.3.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.3.width",
               "type": 1,
-              "value": "2"
+              "value": "3"
             },
             {
               "name": "ds.4.color",
@@ -2151,7 +2151,7 @@
             {
               "name": "ds.4.fill",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.4.hosts.0",
@@ -2166,12 +2166,12 @@
             {
               "name": "ds.4.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.4.width",
               "type": 1,
-              "value": "2"
+              "value": "3"
             },
             {
               "name": "lefty_min",
@@ -2206,7 +2206,7 @@
             {
               "name": "ds.0.fill",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.0.hosts.0",
@@ -2221,12 +2221,12 @@
             {
               "name": "ds.0.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.0.width",
               "type": 1,
-              "value": "2"
+              "value": "3"
             },
             {
               "name": "ds.1.color",
@@ -2236,7 +2236,7 @@
             {
               "name": "ds.1.fill",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.1.hosts.0",
@@ -2251,12 +2251,12 @@
             {
               "name": "ds.1.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.1.width",
               "type": 1,
-              "value": "2"
+              "value": "3"
             },
             {
               "name": "ds.2.color",
@@ -2266,7 +2266,7 @@
             {
               "name": "ds.2.fill",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.2.hosts.0",
@@ -2281,12 +2281,12 @@
             {
               "name": "ds.2.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.2.width",
               "type": 1,
-              "value": "2"
+              "value": "3"
             },
             {
               "name": "ds.3.color",
@@ -2296,7 +2296,7 @@
             {
               "name": "ds.3.fill",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.3.hosts.0",
@@ -2311,12 +2311,12 @@
             {
               "name": "ds.3.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.3.width",
               "type": 1,
-              "value": "2"
+              "value": "3"
             },
             {
               "name": "ds.4.color",
@@ -2326,7 +2326,7 @@
             {
               "name": "ds.4.fill",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.4.hosts.0",
@@ -2341,12 +2341,12 @@
             {
               "name": "ds.4.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.4.width",
               "type": 1,
-              "value": "2"
+              "value": "3"
             },
             {
               "name": "lefty_min",
@@ -2381,7 +2381,7 @@
             {
               "name": "ds.0.fill",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.0.hosts.0",
@@ -2396,12 +2396,12 @@
             {
               "name": "ds.0.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.0.width",
               "type": 1,
-              "value": "2"
+              "value": "3"
             },
             {
               "name": "ds.1.color",
@@ -2411,7 +2411,7 @@
             {
               "name": "ds.1.fill",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.1.hosts.0",
@@ -2426,12 +2426,12 @@
             {
               "name": "ds.1.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.1.width",
               "type": 1,
-              "value": "2"
+              "value": "3"
             },
             {
               "name": "ds.2.color",
@@ -2441,7 +2441,7 @@
             {
               "name": "ds.2.fill",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.2.hosts.0",
@@ -2456,12 +2456,12 @@
             {
               "name": "ds.2.transparency",
               "type": 1,
-              "value": "2"
+              "value": "0"
             },
             {
               "name": "ds.2.width",
               "type": 1,
-              "value": "2"
+              "value": "3"
             },
             {
               "name": "lefty_min",
