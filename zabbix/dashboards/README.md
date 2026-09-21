@@ -57,3 +57,38 @@ pre-reboot value for the length of the window, hiding the restart.
                 if str(c.get('aggregate_function', '0')) != '0':
                     print(w.get('name'), c.get('name'), 'aggregates')
     PY
+
+## What the captured Homelab dashboard contains
+
+Sixteen widgets in one page: five per-node gauges, six Top hosts tables (uptime,
+CPU and memory, once for nodes and once for guests), three pressure graphs, the
+problems list and the system information panel.
+
+The three pressure graphs each carry one data set per node rather than a single
+data set listing five hosts. That is deliberate: a data set gets one colour, so a
+single set of five hosts leaves Zabbix to assign colours from a palette in
+whatever order it resolves them, and the same node ends up a different colour on
+each graph. One set per node pins it:
+
+| Node | Colour |
+|---|---|
+| pve0 | 2774A4 blue |
+| pve1 | 1A7C11 green |
+| pve2 | 6C59DC violet |
+| pve3 | FFA400 amber |
+| pve4 | F63100 red |
+
+The items differ per graph on purpose. CPU uses the five minute "some" figure the
+alert thresholds against, so it moves deliberately rather than spiking on every
+command. Memory and IO use "full", which means every task was stalled rather than
+merely one waiting, and is what their alerts use.
+
+## An empty graph is usually the time selector
+
+The dashboard's time range lives in the viewing user's profile, not in the
+dashboard, so it is neither captured nor restored by a `put`. On 2026-09-21 the
+selector was left on an absolute two hour window from 11 June, which drew every
+graph empty while the tables and gauges read live values, because those use last
+value and ignore the range. Check the selector before doubting a definition, and
+prefer a relative range such as "Last 1 hour", since an absolute one goes stale
+the moment you leave it.
