@@ -572,6 +572,13 @@ setup_tbmesh() {
 # device that stopped answering; on 2026-09-17 a stalled SSD on pve1 froze the
 # firewall VM for 40 minutes. Every bare-metal node and VM gets it; containers
 # have no kernel journal of their own.
+#
+# Since 2026-09-21 it also installs kernel-crash-json.sh, which answers a question
+# nothing in the fleet could answer before: did this machine go down hard. pve1 hard
+# locked that day and monitoring said only "has been restarted", which reports that
+# uptime reset and nothing about why, while a SMART alert and a NIC alert fired
+# alongside and both pointed at the wrong cause. The same check immediately found a
+# pve3 crash around 2026-09-14 that nobody had noticed at all. Report page 486.
 setup_kernel_watch() {
   if ! install_zbx_helper kernel-hung-tasks.sh 0755; then
     warn "Kernel watch helper not available — skipped."
@@ -581,8 +588,12 @@ setup_kernel_watch() {
   if getent group systemd-journal >/dev/null 2>&1 && id zabbix >/dev/null 2>&1; then
     usermod -aG systemd-journal zabbix
   fi
-  write_agent_dropin kernel-watch.conf 'UserParameter=custom.kernel.hung_tasks,/usr/local/bin/kernel-hung-tasks.sh'
-  record "Zabbix kernel watch" "installed (custom.kernel.hung_tasks)"
+  if ! install_zbx_helper kernel-crash-json.sh 0755; then
+    warn "Kernel crash helper not available — the unclean-shutdown check will be missing."
+  fi
+  write_agent_dropin kernel-watch.conf 'UserParameter=custom.kernel.hung_tasks,/usr/local/bin/kernel-hung-tasks.sh
+UserParameter=custom.kernel.crash,/usr/local/bin/kernel-crash-json.sh'
+  record "Zabbix kernel watch" "installed (custom.kernel.hung_tasks, custom.kernel.crash)"
 }
 
 # setup_pressure — the "Homelab pressure" template's host side: psi-json.sh

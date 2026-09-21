@@ -11,6 +11,136 @@ zabbix_export:
       groups:
         - name: Templates/Custom
       items:
+        - uuid: 8f39af4d921c4ab7aaf987ea8ccebdcf
+          name: 'Crash check (raw)'
+          type: ZABBIX_ACTIVE
+          key: custom.kernel.crash
+          value_type: TEXT
+          delay: 5m
+          history: 7d
+          trends: '0'
+          description: 'JSON from /usr/local/bin/kernel-crash-json.sh: oops, lockup and netdev-watchdog counts for this boot and the previous one, plus whether the previous boot ended without a shutdown record. Built after pve1 hard-locked on 2026-09-21 and the only thing monitoring said was "has been restarted", which reports that uptime reset and nothing about why. The two alerts that did fire alongside it, a SMART self-test and a NIC watchdog, were both consequences and both pointed at the wrong cause. Report page 486.'
+          tags:
+            - tag: component
+              value: kernel
+        - uuid: c9fdbf7c9b93486b85d0ef94ea89d3d3
+          name: 'Kernel oops or BUG this boot'
+          type: DEPENDENT
+          key: custom.kernel.oops
+          master_item:
+            key: custom.kernel.crash
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.this.oops'
+          description: 'Count of "Oops:" and "BUG: kernel NULL pointer" lines in the CURRENT boot. Non-zero means the kernel faulted while this machine is still running, which may be survivable or may be the first minute of a lockup.'
+          tags:
+            - tag: component
+              value: kernel
+          triggers:
+            - uuid: 022062c9b4af4405ab37132e12d2d272
+              expression: 'last(/Homelab kernel/custom.kernel.oops)>0'
+              name: 'Kernel oops or BUG on {HOST.NAME} this boot ({ITEM.LASTVALUE1})'
+              url: 'https://bookstack.local.cannon.dev/link/486'
+              url_name: 'Incident report'
+              priority: HIGH
+              manual_close: 'YES'
+              description: 'The kernel faulted. Capture evidence BEFORE the machine reboots, because journalctl -b -1 shifts index on every reboot and apt autoremove deletes the running kernel''s System.map and vmlinuz, which are what any real analysis needs. See the collection list on Kan bdfszlt5eddx. Manual close, because a fault that scrolled past is still a fault.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: d199c649c1504c90b378a3de06343c44
+          name: 'Kernel lockups this boot'
+          type: DEPENDENT
+          key: custom.kernel.lockup
+          master_item:
+            key: custom.kernel.crash
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.this.lockup'
+          description: 'Count of "hard LOCKUP" and "soft lockup - CPU" lines in the CURRENT boot. A hard lockup means a CPU stopped servicing interrupts; on pve1 on 2026-09-21 one locked CPU stopped userspace petting the watchdog, and softdog reset the node.'
+          tags:
+            - tag: component
+              value: kernel
+          triggers:
+            - uuid: f2158eb3190b4d7fb7d84e85b0b04b19
+              expression: 'last(/Homelab kernel/custom.kernel.lockup)>0'
+              name: 'CPU lockup on {HOST.NAME} this boot ({ITEM.LASTVALUE1})'
+              url: 'https://bookstack.local.cannon.dev/link/486'
+              url_name: 'Incident report'
+              priority: HIGH
+              manual_close: 'YES'
+              description: 'A CPU stopped making progress. If it is a hard lockup the machine may reset itself within seconds, so collect evidence immediately. Manual close.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 0b3f94655567448e8bbfb508bef1b045
+          name: 'Previous boot ended without a shutdown'
+          type: DEPENDENT
+          key: custom.kernel.prev_unclean
+          master_item:
+            key: custom.kernel.crash
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.prev.unclean'
+          description: 'From wtmp, not the journal: last(1) writes "crash" in place of an end time for any boot that stopped without a shutdown record. Covers a hang, a panic, a watchdog reset and power loss alike. The first version of this check grepped the journal for systemd shutdown markers and was wrong, reporting all seven retained boots on pve1 as unclean, because journald stops before those messages reach persistent storage.'
+          tags:
+            - tag: component
+              value: kernel
+          triggers:
+            - uuid: 8713d028d90c46a893996fa0a1944824
+              expression: 'last(/Homelab kernel/custom.kernel.prev_unclean)=1'
+              name: '{HOST.NAME} went down hard last time, no clean shutdown'
+              opdata: '{ITEM.LASTVALUE2}'
+              url: 'https://bookstack.local.cannon.dev/link/486'
+              url_name: 'Incident report'
+              priority: HIGH
+              manual_close: 'YES'
+              description: 'This machine stopped without being asked: a hang, a panic, a watchdog reset or power loss. Until 2026-09-21 nothing reported this at all, which is how a pve3 crash around 2026-09-14 went unnoticed entirely and how pve1''s hard lockup showed up only as three misleading alerts. The Crash detail item carries the evidence. This stays open until closed by hand, on purpose: the flag does not clear until the next reboot, and a machine that crashed and was never looked at should keep asking.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 09a7837cbbb44ea594841e0f36da6d0c
+          name: 'Crash detail'
+          type: DEPENDENT
+          key: custom.kernel.crash_detail
+          value_type: TEXT
+          master_item:
+            key: custom.kernel.crash
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.prev.detail'
+          description: 'One line naming the evidence, so the alert does not send anyone hunting: the oops, lockup and netdev-watchdog counts from the previous boot and its last log line. Reads "clean" when the previous boot shut down properly.'
+          tags:
+            - tag: component
+              value: kernel
+        - uuid: 8c2afbcbac064ab79f1183e4f36ec0e4
+          name: 'Crash check can see a previous boot'
+          type: DEPENDENT
+          key: custom.kernel.prev_have
+          master_item:
+            key: custom.kernel.crash
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.prev.have'
+          description: 'Whether wtmp holds any reboot record to compare against. Zero means this check cannot work on this host and is reporting nothing, which must never be mistaken for a clean result. Observed on pve2 on 2026-09-21: wtmpdb exists and begins in February but holds no reboot rows at all.'
+          tags:
+            - tag: component
+              value: kernel
+          triggers:
+            - uuid: 75a9061c74d14fcf9cdfee1c3aedda93
+              expression: 'last(/Homelab kernel/custom.kernel.prev_have)=0'
+              name: 'Crash detection cannot work on {HOST.NAME}, wtmp has no reboot records'
+              priority: WARNING
+              manual_close: 'YES'
+              description: 'The unclean-shutdown check has nothing to compare against on this host, so it reports nothing rather than reporting clean. Monitoring that silently measures nothing is the failure this whole template exists to catch, so it says so out loud. Seen on pve2. Fix the wtmp or wtmpdb state, or accept and close, but do not read the absence of a crash alert on this host as evidence it has not crashed.'
+              tags:
+                - tag: scope
+                  value: availability
         - uuid: cb18c67f7f4b4214811a9efda79b858d
           name: 'Kernel hung tasks this boot'
           type: ZABBIX_ACTIVE
