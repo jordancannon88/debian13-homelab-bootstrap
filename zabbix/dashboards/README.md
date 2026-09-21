@@ -112,3 +112,33 @@ across CPU, memory and IO without re-reading the legend:
 pve3 was amber and pve4 was red until 2026-09-21. Keep any node added later in
 the cool half of the wheel, and give it a hue away from violet and magenta, which
 are the closest pair in the set above.
+
+## Thresholds on the Top hosts columns
+
+The rule, applied 2026-09-21: **red is the number the trigger actually fires at.**
+A dashboard whose colours disagree with the alerting is worse than no colours,
+because it teaches a reading that the alerts then contradict.
+
+| Column | Amber | Red | Trigger it matches |
+|---|---|---|---|
+| CPU utilization, CPU use (own) | 80 | 90 | `{$CPU.UTIL.CRIT}`, `{$LXC.CPU.UTIL.CRIT}` = 90 |
+| Memory use (no ARC), Memory utilization | 80 | 90 | `{$MEMORY.UTIL.NOARC.MAX}` = 90 |
+| CPU pressure (some 300s) | 25 | 50 | `{$PSI.CPU.SOME.WARN}` = 50 |
+| Memory pressure (full 60s) | 5 | 10 | `{$PSI.MEM.FULL.WARN}` = 10 |
+
+Amber is set differently for the two kinds of metric, on purpose. Utilization is a
+level, so only the approach to the limit is interesting and amber sits ten points
+below the trigger. Pressure already measures waiting, so half the trigger is a
+meaningful early band.
+
+Three faults were fixed. Memory pressure went amber at 10 and red at 50, so the
+column still read as mild after the High trigger had already fired at 10; that was
+the serious one. Both utilization columns went amber at 50, which is ordinary load
+on a hypervisor and had every node yellow through every backup window, which is how
+a colour stops being read at all. And the CPU widgets used a different palette from
+the memory widgets for the same three steps, so the same meaning had two
+appearances. Everything now uses `FCCB1D` and `E65660`, the pair the pressure
+columns already used.
+
+Red and amber are correct here, unlike on the graph lines above, because these
+colours carry severity rather than identity.
