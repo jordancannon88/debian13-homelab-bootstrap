@@ -509,6 +509,17 @@ zabbix_export:
                   value: '{#GUEST}'
                 - tag: target
                   value: '{#TARGET}'
+              trigger_prototypes:
+                - uuid: dc625e111d744a86b726c60ff3c19f8f
+                  expression: 'min(/Homelab Proxmox events/custom.pve.replication.enabled[{#JOB}],{$REPL_DISABLED_GRACE})=0'
+                  name: 'Replication: job {#JOB} (guest {#GUEST}) to {#TARGET} has been disabled for over {$REPL_DISABLED_GRACE}'
+                  url: 'https://bookstack.local.cannon.dev/link/436'
+                  url_name: Runbook
+                  priority: WARNING
+                  description: 'This replication job is switched off, so guest {#GUEST} has no fresh copy on {#TARGET}. Disabling a job is a normal maintenance step, which is why this waits {$REPL_DISABLED_GRACE} before saying anything, but a job left off is invisible otherwise: nothing else in the system reports it, and the guest simply stops being protected. Every mistake of this shape in the 2026-09-21 disk work was of the form "something was turned off and nothing noticed", including a guard script whose handback sat on the one code path that would not run. If the job belongs to CT 901 the stakes are higher, because those two jobs are the only fresh second copy of the PBS datastore that every backup on the cluster writes to. Re-enable with `pvesr enable {#JOB}` on the node, or decide the job is genuinely retired and delete it rather than leaving it disabled. Clears on its own once the job is enabled again.'
+                  tags:
+                    - tag: scope
+                      value: availability
             - uuid: a9ea496211f54282b89b5275ed026df0
               name: 'Replication [{#JOB}] guest {#GUEST} to {#TARGET}: next scheduled sync'
               type: DEPENDENT
@@ -554,6 +565,9 @@ zabbix_export:
         - tag: class
           value: custom
       macros:
+        - macro: '{$REPL_DISABLED_GRACE}'
+          value: 6h
+          description: 'How long a replication job may stay disabled before it is reported. Long enough for a deliberate maintenance window such as a pool scrub, short enough that a job left off overnight is noticed.'
         - macro: '{$REPL_LATE_GRACE}'
           value: 2h
           description: 'Warning when an enabled replication job is this long past the next sync time pvesr scheduled for it. Schedule-aware, so 15-minute and nightly jobs share one value.'
