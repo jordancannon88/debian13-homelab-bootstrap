@@ -334,3 +334,21 @@ guests are Linux containers whose pressure is blank for a completely different r
 the collector not emitting it (Kan 2iqfax5bk20f). A label that names the wrong cause
 is worse than none. Once that card is done, opn1 is the only blank left and its reason
 is on Kan 388vehxckua5.
+
+### The pressure columns are bars, scaled to their triggers
+
+Set 2026-09-21. The three psi columns use the same indicator display as CPU %, RAM %
+and Root used, but **not** on a 0 to 100 scale. Pressure percentages live in single
+digits, so a real event on a 0-100 bar looks like nothing at all.
+
+Each bar is scaled to its own trigger threshold instead, so a full bar means the alert
+is firing: CPU psi 0-50 against `{$PSI.CPU.SOME.WARN}`, Mem psi 0-10 against
+`{$PSI.MEM.FULL.WARN}`, IO psi 0-10 against `{$PSI.IO.FULL.WARN}`. If any of those
+macros is changed, change the column max with it or the bar stops meaning anything.
+
+A value above the threshold clamps the bar at full, which is acceptable because it is
+already red at that point.
+
+Side effect worth keeping: with the pressures drawn as bars, Load/CPU is the only
+plain number among them, which separates it from CPU % visually. That pair reading as
+one run-together value was the original complaint.
