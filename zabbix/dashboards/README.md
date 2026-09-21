@@ -371,3 +371,21 @@ one click away in Latest data and was costing width in a table that had too litt
 The guest table is titled **VMs**. Group 6 also holds six LXC containers (Zabbix,
 frigate, grf, pbs, pbs0, seafile-keeper), so the title is shorter than the contents;
 which template a host carries shows in its item keys, not in this widget.
+
+### Why Name and Uptime sit on the right
+
+Zabbix sizes Top hosts columns to their content, and the two tables hold different
+content: `seafile-keeper` is fourteen characters against `pve0`'s four. With the host
+name first, every numeric column after it started at a different x in each table, so
+the two tables did not line up when stacked.
+
+Columns lay out left to right, so the variable-width ones go last and the numbers
+share a left edge. The name still reads as a trailing label.
+
+This is the cheap fix. The guaranteed one is a single widget over both host groups,
+which needs one template change first: the two tables use different items for the same
+column, `CPU utilization` against `CPU use (own)` and `Memory use (no ARC)` against
+`Memory utilization`. CPU is free, since the nodes already carry `CPU use (own)` from
+the uptime-host template. Memory would need a shared name, and the no-ARC distinction
+is real on the nodes and meaningless on the guests, so it is not a rename to make
+casually.
