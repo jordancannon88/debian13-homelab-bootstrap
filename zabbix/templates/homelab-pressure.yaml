@@ -140,6 +140,23 @@ zabbix_export:
           tags:
             - tag: component
               value: storage
+        - uuid: f8bf6ca748d44cd2be0bef0cb8685f01
+          name: 'Busiest drive'
+          type: DEPENDENT
+          key: custom.psi.busiest_drive
+          delay: '0'
+          value_type: CHAR
+          trends: '0'
+          description: 'The busiest disk named the way the homelab names drives, by serial and size: "V9HDUJWL 6 TB" rather than "sdb". Device letters move between boots and say nothing about which physical disk is involved, which matters when a drive is under probation or is the one a report is about. Resolved from the by-id symlink built from the ATA identity, so the USB enclosure being re-enumerated does not change it. Falls back to the device letter where no identity can be resolved, for example a virtual disk.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.busiest_drive
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: storage
         - uuid: 20678c1f4378484896ee10b904842272
           name: 'Busiest disk utilisation'
           type: DEPENDENT
@@ -195,7 +212,7 @@ zabbix_export:
             - uuid: cb4d6e1354f34893921a6c6f395e0559
               expression: 'min(/Homelab pressure/custom.psi.io.full10,5m)>{$PSI.IO.FULL.WARN} and last(/Homelab pressure/custom.psi.container)=0'
               name: 'IO pressure: storage stalling on {HOST.NAME} ({ITEM.LASTVALUE1} of the last ten seconds)'
-              opdata: 'busiest disk: {?last(/Homelab pressure/custom.psi.busiest)} at {?last(/Homelab pressure/custom.psi.busiest_pct)}%'
+              opdata: 'busiest drive: {?last(/Homelab pressure/custom.psi.busiest_drive)} ({?last(/Homelab pressure/custom.psi.busiest)}) at {?last(/Homelab pressure/custom.psi.busiest_pct)}%'
               url: 'https://bookstack.local.cannon.dev/link/376'
               url_name: Runbook
               priority: WARNING

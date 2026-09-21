@@ -74,7 +74,37 @@ if [[ -r /proc/diskstats ]]; then
   (( busiest_pct < 0 )) && busiest_pct=0
 fi
 
-printf '{"container":%s,"busiest":"%s","busiest_pct":%s,' "$container" "$busiest" "$busiest_pct"
+# Name the drive the way Jordan does, by serial and size, not by the kernel's letter:
+# "V9HDUJWL 6 TB" rather than "sdb". Device letters move between boots and say nothing
+# about which physical disk is involved. /sys/block/<dev>/device/../../serial carries
+# the USB enclosure's serial rather than the drive's, so the drive's own serial comes
+# from the by-id symlink the kernel builds from the ATA identity, which survives
+# re-enumeration. Falls back to the device letter when nothing can be resolved.
+busiest_drive="$busiest"
+if [[ "$busiest" != "none" ]]; then
+  for link in /dev/disk/by-id/*; do
+    [[ -e "$link" ]] || continue
+    case "$link" in *-part[0-9]*) continue;; esac
+    [[ "$(readlink -f "$link" 2>/dev/null)" == "/dev/$busiest" ]] || continue
+    case "$link" in
+      */nvme-eui.*) continue;;   # the EUI form has no serial to extract
+      */ata-*|*/nvme-*|*/scsi-SATA*)
+        serial="${link##*_}"
+        [[ "$serial" == "$link" || -z "$serial" ]] && continue
+        size_b="$(cat "/sys/block/$busiest/size" 2>/dev/null || echo 0)"
+        size_tb="$(awk -v s="$size_b" 'BEGIN{ printf "%.0f", s * 512 / 1000000000000 }')"
+        if (( size_tb >= 1 )); then
+          busiest_drive="$serial ${size_tb} TB"
+        else
+          size_gb="$(awk -v s="$size_b" 'BEGIN{ printf "%.0f", s * 512 / 1000000000 }')"
+          busiest_drive="$serial ${size_gb} GB"
+        fi
+        break;;
+    esac
+  done
+fi
+
+printf '{"container":%s,"busiest":"%s","busiest_drive":"%s","busiest_pct":%s,' "$container" "$busiest" "$busiest_drive" "$busiest_pct"
 emit cpu;    printf ','
 emit memory; printf ','
 emit io
