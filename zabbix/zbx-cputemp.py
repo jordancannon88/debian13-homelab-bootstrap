@@ -24,10 +24,24 @@ Thresholds are deliberately unchanged. 90 and 100 are sound for these CPUs, and
 moving a threshold in the same pass as enabling a trigger would make it impossible to
 say which change caused any new alert.
 
+Separately, --strays finds the same item copied onto hosts it does not belong to.
+Verifying the repair turned up `pve4.cpuTemperature` on pbs, pbs0, pms0, pxc1 and
+seafile-keeper, each with two enabled triggers, every item unsupported with "Unknown
+metric" and none of them ever having returned a value. Those hosts were created by
+cloning pve4 in the interface, which carries its host-level items and triggers with
+it. Ten triggers that could never fire, on five items that never collected, reading
+as CPU temperature monitoring for machines that have none.
+
+Deleting an item deletes the triggers that depend only on it. To make that safe,
+--strays refuses to touch anything that has ever collected a value, and only
+considers an item whose key names a host other than the one it sits on.
+
 Prints what it would do and changes nothing unless --apply is given.
 
-  python3 zbx-cputemp.py            show the plan
-  python3 zbx-cputemp.py --apply    make the changes
+  python3 zbx-cputemp.py             show the plan for pve0-pve4
+  python3 zbx-cputemp.py --apply     make those changes
+  python3 zbx-cputemp.py --strays    show the stray copies on other hosts
+  python3 zbx-cputemp.py --strays --apply   delete them
 
 Run from a machine that can reach the Zabbix frontend (the laptop; the dev box is
 firewalled off). Needs trigger.get and, for --apply, trigger.update on the API role.
@@ -58,6 +72,48 @@ def api(method, params):
 apply = "--apply" in sys.argv
 print("PLAN ONLY, nothing will change. Re-run with --apply to make these changes.\n"
       if not apply else "APPLYING.\n")
+
+if "--strays" in sys.argv:
+    items = api("item.get", {
+        "output": ["itemid", "key_", "lastvalue", "lastclock", "state", "error"],
+        "search": {"key_": "cpuTemperature"}, "selectHosts": ["host"]})
+    doomed, kept = [], []
+    for it in items:
+        host = it["hosts"][0]["host"] if it.get("hosts") else "?"
+        owner = it["key_"].split(".")[0]          # the host the key names
+        if owner == host:
+            continue                              # belongs here, leave alone
+        # Never delete something that has collected data. An item with history is a
+        # judgement call, not a stray, whatever its key looks like.
+        if str(it.get("lastclock", "0")) != "0":
+            kept.append((host, it, "HAS COLLECTED DATA, refusing"))
+            continue
+        trigs = api("trigger.get", {"itemids": [it["itemid"]],
+                                    "output": ["description", "status"],
+                                    "expandDescription": True})
+        doomed.append((host, it, trigs))
+    if not doomed and not kept:
+        print("no stray copies found")
+    for host, it, trigs in doomed:
+        state = "UNSUPPORTED" if it.get("state") == "1" else "no data, ever"
+        print(f"{host}: item {it['key_']}  ({state})")
+        if it.get("error"):
+            print(f"    {it['error']}")
+        for t in trigs:
+            dis = " DISABLED" if t.get("status") == "1" else " enabled"
+            print(f"    trigger goes with it: {t['description']}{dis}")
+    for host, it, why in kept:
+        print(f"{host}: item {it['key_']}  {why}")
+    if doomed and not apply:
+        n = sum(len(t) for _, _, t in doomed)
+        print(f"\n{len(doomed)} items and the {n} triggers on them would be deleted."
+              f"\nNone has ever collected a value, so no history is lost."
+              f"\nRe-run with --strays --apply.")
+    elif doomed:
+        api("item.delete", [it["itemid"] for _, it, _ in doomed])
+        print(f"\n{len(doomed)} items deleted, with their triggers.")
+        print("Verify with: python3 zbx-item.py --key cpuTemperature")
+    sys.exit(0)
 
 planned = []
 for host in HOSTS:
