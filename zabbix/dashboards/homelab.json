@@ -1056,12 +1056,12 @@
             {
               "name": "columns.10.item",
               "type": 1,
-              "value": "FS [/]: Space: Available"
+              "value": "IO pressure (full 10s)"
             },
             {
               "name": "columns.10.name",
               "type": 1,
-              "value": "Root free"
+              "value": "IO pressure"
             },
             {
               "name": "columns.2.data",
@@ -1209,24 +1209,39 @@
               "value": "Mem pressure"
             },
             {
+              "name": "columns.8.base_color",
+              "type": 1,
+              "value": "4CAF50"
+            },
+            {
               "name": "columns.8.data",
               "type": 1,
               "value": "1"
             },
             {
+              "name": "columns.8.display",
+              "type": 1,
+              "value": "3"
+            },
+            {
               "name": "columns.8.item",
               "type": 1,
-              "value": "IO pressure (full 10s)"
+              "value": "FS [/]: Space: Used, in %"
+            },
+            {
+              "name": "columns.8.max",
+              "type": 1,
+              "value": "100"
+            },
+            {
+              "name": "columns.8.min",
+              "type": 1,
+              "value": "0"
             },
             {
               "name": "columns.8.name",
               "type": 1,
-              "value": "IO pressure"
-            },
-            {
-              "name": "columns.9.base_color",
-              "type": 1,
-              "value": "4CAF50"
+              "value": "Root used"
             },
             {
               "name": "columns.9.data",
@@ -1234,29 +1249,34 @@
               "value": "1"
             },
             {
-              "name": "columns.9.display",
-              "type": 1,
-              "value": "3"
-            },
-            {
               "name": "columns.9.item",
               "type": 1,
-              "value": "FS [/]: Space: Used, in %"
-            },
-            {
-              "name": "columns.9.max",
-              "type": 1,
-              "value": "100"
-            },
-            {
-              "name": "columns.9.min",
-              "type": 1,
-              "value": "0"
+              "value": "FS [/]: Space: Available"
             },
             {
               "name": "columns.9.name",
               "type": 1,
-              "value": "Root used"
+              "value": "Root free"
+            },
+            {
+              "name": "columnsthresholds.10.color.0",
+              "type": 1,
+              "value": "FCCB1D"
+            },
+            {
+              "name": "columnsthresholds.10.color.1",
+              "type": 1,
+              "value": "E65660"
+            },
+            {
+              "name": "columnsthresholds.10.threshold.0",
+              "type": 1,
+              "value": "5"
+            },
+            {
+              "name": "columnsthresholds.10.threshold.1",
+              "type": 1,
+              "value": "10"
             },
             {
               "name": "columnsthresholds.3.color.0",
@@ -1351,30 +1371,10 @@
             {
               "name": "columnsthresholds.8.threshold.0",
               "type": 1,
-              "value": "5"
-            },
-            {
-              "name": "columnsthresholds.8.threshold.1",
-              "type": 1,
-              "value": "10"
-            },
-            {
-              "name": "columnsthresholds.9.color.0",
-              "type": 1,
-              "value": "FCCB1D"
-            },
-            {
-              "name": "columnsthresholds.9.color.1",
-              "type": 1,
-              "value": "E65660"
-            },
-            {
-              "name": "columnsthresholds.9.threshold.0",
-              "type": 1,
               "value": "80"
             },
             {
-              "name": "columnsthresholds.9.threshold.1",
+              "name": "columnsthresholds.8.threshold.1",
               "type": 1,
               "value": "90"
             },
@@ -1451,12 +1451,12 @@
             {
               "name": "columns.10.item",
               "type": 1,
-              "value": "FS [/]: Space: Available"
+              "value": "IO pressure (full 10s)"
             },
             {
               "name": "columns.10.name",
               "type": 1,
-              "value": "Root free"
+              "value": "IO psi (Linux)"
             },
             {
               "name": "columns.2.data",
@@ -1604,24 +1604,39 @@
               "value": "Mem psi (Linux)"
             },
             {
+              "name": "columns.8.base_color",
+              "type": 1,
+              "value": "4CAF50"
+            },
+            {
               "name": "columns.8.data",
               "type": 1,
               "value": "1"
             },
             {
+              "name": "columns.8.display",
+              "type": 1,
+              "value": "3"
+            },
+            {
               "name": "columns.8.item",
               "type": 1,
-              "value": "IO pressure (full 10s)"
+              "value": "FS [/]: Space: Used, in %"
+            },
+            {
+              "name": "columns.8.max",
+              "type": 1,
+              "value": "100"
+            },
+            {
+              "name": "columns.8.min",
+              "type": 1,
+              "value": "0"
             },
             {
               "name": "columns.8.name",
               "type": 1,
-              "value": "IO psi (Linux)"
-            },
-            {
-              "name": "columns.9.base_color",
-              "type": 1,
-              "value": "4CAF50"
+              "value": "Root used"
             },
             {
               "name": "columns.9.data",
@@ -1629,29 +1644,34 @@
               "value": "1"
             },
             {
-              "name": "columns.9.display",
-              "type": 1,
-              "value": "3"
-            },
-            {
               "name": "columns.9.item",
               "type": 1,
-              "value": "FS [/]: Space: Used, in %"
-            },
-            {
-              "name": "columns.9.max",
-              "type": 1,
-              "value": "100"
-            },
-            {
-              "name": "columns.9.min",
-              "type": 1,
-              "value": "0"
+              "value": "FS [/]: Space: Available"
             },
             {
               "name": "columns.9.name",
               "type": 1,
-              "value": "Root used"
+              "value": "Root free"
+            },
+            {
+              "name": "columnsthresholds.10.color.0",
+              "type": 1,
+              "value": "FCCB1D"
+            },
+            {
+              "name": "columnsthresholds.10.color.1",
+              "type": 1,
+              "value": "E65660"
+            },
+            {
+              "name": "columnsthresholds.10.threshold.0",
+              "type": 1,
+              "value": "5"
+            },
+            {
+              "name": "columnsthresholds.10.threshold.1",
+              "type": 1,
+              "value": "10"
             },
             {
               "name": "columnsthresholds.3.color.0",
@@ -1746,30 +1766,10 @@
             {
               "name": "columnsthresholds.8.threshold.0",
               "type": 1,
-              "value": "5"
-            },
-            {
-              "name": "columnsthresholds.8.threshold.1",
-              "type": 1,
-              "value": "10"
-            },
-            {
-              "name": "columnsthresholds.9.color.0",
-              "type": 1,
-              "value": "FCCB1D"
-            },
-            {
-              "name": "columnsthresholds.9.color.1",
-              "type": 1,
-              "value": "E65660"
-            },
-            {
-              "name": "columnsthresholds.9.threshold.0",
-              "type": 1,
               "value": "80"
             },
             {
-              "name": "columnsthresholds.9.threshold.1",
+              "name": "columnsthresholds.8.threshold.1",
               "type": 1,
               "value": "90"
             },
