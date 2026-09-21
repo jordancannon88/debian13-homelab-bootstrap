@@ -142,3 +142,30 @@ columns already used.
 
 Red and amber are correct here, unlike on the graph lines above, because these
 colours carry severity rather than identity.
+
+## The CPU temperature gauges
+
+Five gauge widgets, one per node, `description: CPU °C`. Two things about them are
+worth knowing before touching them.
+
+**They reference items by numeric id**, because a Zabbix gauge is a single-item
+widget and takes an itemid, not a host and item name the way the Top hosts columns
+do. Two consequences. This file only restores correctly onto the server it was
+captured from: the ids 59480, 55544, 50816, 54958 and 50815 mean nothing elsewhere.
+And if one of those items is ever recreated, by a re-import with Delete missing on,
+a host being re-added, or rediscovery, the gauge goes blank rather than erroring, so
+nothing tells you it stopped working. Check them with `zabbix/zbx-item.py` after any
+such change.
+
+**Nothing alerts on CPU temperature.** No Homelab template carries a temperature
+item or trigger for the CPU; the disk temperature work on Kan s24n9c7q8aye covers
+SMART only. So these gauges are the only place a hot CPU appears, and a gauge warns
+whoever happens to be looking at the dashboard. That is the same fault as a
+threshold that disagrees with its trigger, one step worse: there is no trigger at
+all.
+
+Scale and thresholds, set 2026-09-21: range 20 to 100, blue from 20, green from 45,
+amber at 85, red at 95. The range was 0 to 120, which spent its top fifth on values
+no sensor in the fleet can reach and put every real reading in the lower half of the
+arc. 100 is roughly where these CPUs begin thermal throttling, so the top of the arc
+now means something. Amber was at 80, which a NUC reaches under an ordinary backup.

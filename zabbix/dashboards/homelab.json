@@ -17,7 +17,7 @@
             {
               "name": "description",
               "type": "1",
-              "value": "CPU"
+              "value": "CPU \u00b0C"
             },
             {
               "name": "itemid.0",
@@ -27,12 +27,12 @@
             {
               "name": "max",
               "type": "1",
-              "value": "120"
+              "value": "100"
             },
             {
               "name": "min",
               "type": "1",
-              "value": "0"
+              "value": "20"
             },
             {
               "name": "th_show_arc",
@@ -46,43 +46,43 @@
             },
             {
               "name": "thresholds.0.color",
-              "type": "1",
+              "type": 1,
               "value": "64B5F6"
             },
             {
               "name": "thresholds.0.threshold",
-              "type": "1",
-              "value": "0"
+              "type": 1,
+              "value": "20"
             },
             {
               "name": "thresholds.1.color",
-              "type": "1",
+              "type": 1,
               "value": "4CAF50"
             },
             {
               "name": "thresholds.1.threshold",
-              "type": "1",
-              "value": "50"
+              "type": 1,
+              "value": "45"
             },
             {
               "name": "thresholds.2.color",
-              "type": "1",
+              "type": 1,
               "value": "FFA000"
             },
             {
               "name": "thresholds.2.threshold",
-              "type": "1",
-              "value": "80"
+              "type": 1,
+              "value": "85"
             },
             {
               "name": "thresholds.3.color",
-              "type": "1",
+              "type": 1,
               "value": "E65660"
             },
             {
               "name": "thresholds.3.threshold",
-              "type": "1",
-              "value": "90"
+              "type": 1,
+              "value": "95"
             }
           ],
           "height": "3",
@@ -103,7 +103,7 @@
             {
               "name": "description",
               "type": "1",
-              "value": "CPU"
+              "value": "CPU \u00b0C"
             },
             {
               "name": "itemid.0",
@@ -113,12 +113,12 @@
             {
               "name": "max",
               "type": "1",
-              "value": "120"
+              "value": "100"
             },
             {
               "name": "min",
               "type": "1",
-              "value": "0"
+              "value": "20"
             },
             {
               "name": "th_show_arc",
@@ -132,43 +132,43 @@
             },
             {
               "name": "thresholds.0.color",
-              "type": "1",
+              "type": 1,
               "value": "64B5F6"
             },
             {
               "name": "thresholds.0.threshold",
-              "type": "1",
-              "value": "0"
+              "type": 1,
+              "value": "20"
             },
             {
               "name": "thresholds.1.color",
-              "type": "1",
+              "type": 1,
               "value": "4CAF50"
             },
             {
               "name": "thresholds.1.threshold",
-              "type": "1",
-              "value": "50"
+              "type": 1,
+              "value": "45"
             },
             {
               "name": "thresholds.2.color",
-              "type": "1",
+              "type": 1,
               "value": "FFA000"
             },
             {
               "name": "thresholds.2.threshold",
-              "type": "1",
-              "value": "80"
+              "type": 1,
+              "value": "85"
             },
             {
               "name": "thresholds.3.color",
-              "type": "1",
+              "type": 1,
               "value": "E65660"
             },
             {
               "name": "thresholds.3.threshold",
-              "type": "1",
-              "value": "90"
+              "type": 1,
+              "value": "95"
             }
           ],
           "height": "3",
@@ -189,7 +189,7 @@
             {
               "name": "description",
               "type": "1",
-              "value": "CPU"
+              "value": "CPU \u00b0C"
             },
             {
               "name": "itemid.0",
@@ -199,12 +199,12 @@
             {
               "name": "max",
               "type": "1",
-              "value": "120"
+              "value": "100"
             },
             {
               "name": "min",
               "type": "1",
-              "value": "0"
+              "value": "20"
             },
             {
               "name": "th_show_arc",
@@ -218,43 +218,43 @@
             },
             {
               "name": "thresholds.0.color",
-              "type": "1",
+              "type": 1,
               "value": "64B5F6"
             },
             {
               "name": "thresholds.0.threshold",
-              "type": "1",
-              "value": "0"
+              "type": 1,
+              "value": "20"
             },
             {
               "name": "thresholds.1.color",
-              "type": "1",
+              "type": 1,
               "value": "4CAF50"
             },
             {
               "name": "thresholds.1.threshold",
-              "type": "1",
-              "value": "50"
+              "type": 1,
+              "value": "45"
             },
             {
               "name": "thresholds.2.color",
-              "type": "1",
+              "type": 1,
               "value": "FFA000"
             },
             {
               "name": "thresholds.2.threshold",
-              "type": "1",
-              "value": "80"
+              "type": 1,
+              "value": "85"
             },
             {
               "name": "thresholds.3.color",
-              "type": "1",
+              "type": 1,
               "value": "E65660"
             },
             {
               "name": "thresholds.3.threshold",
-              "type": "1",
-              "value": "90"
+              "type": 1,
+              "value": "95"
             }
           ],
           "height": "3",
@@ -275,7 +275,7 @@
             {
               "name": "description",
               "type": "1",
-              "value": "CPU"
+              "value": "CPU \u00b0C"
             },
             {
               "name": "itemid.0",
@@ -285,12 +285,12 @@
             {
               "name": "max",
               "type": "1",
-              "value": "120"
+              "value": "100"
             },
             {
               "name": "min",
               "type": "1",
-              "value": "0"
+              "value": "20"
             },
             {
               "name": "th_show_arc",
@@ -304,43 +304,43 @@
             },
             {
               "name": "thresholds.0.color",
-              "type": "1",
+              "type": 1,
               "value": "64B5F6"
             },
             {
               "name": "thresholds.0.threshold",
-              "type": "1",
-              "value": "0"
+              "type": 1,
+              "value": "20"
             },
             {
               "name": "thresholds.1.color",
-              "type": "1",
+              "type": 1,
               "value": "4CAF50"
             },
             {
               "name": "thresholds.1.threshold",
-              "type": "1",
-              "value": "50"
+              "type": 1,
+              "value": "45"
             },
             {
               "name": "thresholds.2.color",
-              "type": "1",
+              "type": 1,
               "value": "FFA000"
             },
             {
               "name": "thresholds.2.threshold",
-              "type": "1",
-              "value": "80"
+              "type": 1,
+              "value": "85"
             },
             {
               "name": "thresholds.3.color",
-              "type": "1",
+              "type": 1,
               "value": "E65660"
             },
             {
               "name": "thresholds.3.threshold",
-              "type": "1",
-              "value": "90"
+              "type": 1,
+              "value": "95"
             }
           ],
           "height": "3",
@@ -361,7 +361,7 @@
             {
               "name": "description",
               "type": "1",
-              "value": "CPU"
+              "value": "CPU \u00b0C"
             },
             {
               "name": "itemid.0",
@@ -371,12 +371,12 @@
             {
               "name": "max",
               "type": "1",
-              "value": "120"
+              "value": "100"
             },
             {
               "name": "min",
               "type": "1",
-              "value": "0"
+              "value": "20"
             },
             {
               "name": "th_show_arc",
@@ -390,43 +390,43 @@
             },
             {
               "name": "thresholds.0.color",
-              "type": "1",
+              "type": 1,
               "value": "64B5F6"
             },
             {
               "name": "thresholds.0.threshold",
-              "type": "1",
-              "value": "0"
+              "type": 1,
+              "value": "20"
             },
             {
               "name": "thresholds.1.color",
-              "type": "1",
+              "type": 1,
               "value": "4CAF50"
             },
             {
               "name": "thresholds.1.threshold",
-              "type": "1",
-              "value": "50"
+              "type": 1,
+              "value": "45"
             },
             {
               "name": "thresholds.2.color",
-              "type": "1",
+              "type": 1,
               "value": "FFA000"
             },
             {
               "name": "thresholds.2.threshold",
-              "type": "1",
-              "value": "80"
+              "type": 1,
+              "value": "85"
             },
             {
               "name": "thresholds.3.color",
-              "type": "1",
+              "type": 1,
               "value": "E65660"
             },
             {
               "name": "thresholds.3.threshold",
-              "type": "1",
-              "value": "90"
+              "type": 1,
+              "value": "95"
             }
           ],
           "height": "3",
