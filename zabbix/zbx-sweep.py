@@ -24,6 +24,7 @@ counts tell you which host to look at first.
   python3 zbx-sweep.py dead                counts per host
   python3 zbx-sweep.py dead pve1           detail for one host
   python3 zbx-sweep.py dead pve1 --templated   include templated items too
+  python3 zbx-sweep.py dead --by-key       group by key instead of by host
 
 By default `dead` shows host-level items only, because a templated item that is
 unsupported is usually one template linked where it does not apply, which is a
@@ -137,6 +138,20 @@ else:
 if not found:
     print(f"{len(hosts)} hosts checked, nothing found." if cmd == "strays" else
           f"{len(hosts)} hosts checked, no dead items.")
+    raise SystemExit(0)
+
+if only is None and "--by-key" in flags:
+    # One line per distinct key with the hosts it is dead on. When every host shows
+    # the same small count, the question is which key, not which host.
+    by_key = {}
+    for host, rows in found.items():
+        for it, note in rows:
+            by_key.setdefault(it["key_"], []).append(host)
+    for key in sorted(by_key, key=lambda k: (-len(by_key[k]), k)):
+        hs = sorted(by_key[key])
+        print(f"  {key}")
+        print(f"      {len(hs)} host(s): {', '.join(hs)}")
+    print(f"\n{len(by_key)} distinct key(s), {sum(len(v) for v in by_key.values())} item(s).")
     raise SystemExit(0)
 
 if only is None:
