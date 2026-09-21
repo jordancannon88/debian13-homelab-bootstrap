@@ -249,7 +249,7 @@ is what the stock template called it in earlier versions. Check the real name wi
 Note that group 2 contains `pxc1`, which has no filesystem items, so it renders as a
 blank row here for the same reason it does in the Nodes widgets.
 
-### The Nodes widget
+### The Nodes and guest widgets
 
 Merged 2026-09-21 from three separate widgets, "Top Stats for Nodes", "Top CPU Usage
 for Nodes" and "Top Memory Usage for Nodes", into one full-width table. Twelve columns:
@@ -270,3 +270,15 @@ widgets called their pressure column "Pressure": they are now "CPU pressure" and
 "Mem pressure", with "IO pressure" alongside.
 
 Group 7 with a `pve*` pattern, so the pxc1 pseudo-host stays out.
+
+**VMs and containers** is the same merge over group 6, same twelve columns in the same
+order, so a machine reads the same way whichever table it is in. Two columns differ
+underneath, because the items differ: guests use `CPU use (own)` where nodes use
+`CPU utilization`, and the stock `Memory utilization` where nodes use
+`Memory use (no ARC)`, since only the nodes run ZFS and only they need the cache taken
+out of the figure.
+
+Its CPU pressure and Mem pressure columns are blank for `pbs`, `pbs0` and
+`seafile-keeper` until Kan 2iqfax5bk20f is done: the LXC collector emits CPU pressure
+only at avg10 while the column reads avg300, and never reads `memory.pressure`. IO
+pressure does populate for them, because the item names were made to match.
