@@ -352,3 +352,18 @@ already red at that point.
 Side effect worth keeping: with the pressures drawn as bars, Load/CPU is the only
 plain number among them, which separates it from CPU % visually. That pair reading as
 one run-together value was the original complaint.
+
+### Column naming rule
+
+A resource is called the same thing in every column that measures it. Memory read
+"RAM %" beside "Mem psi", which made one resource look like two.
+
+    Name | Uptime | CPU % | Load/CPU | CPU psi | Mem % | Mem psi | Root % | IO psi
+
+CPU and memory pair exactly. The disk pair deliberately does not: `Root %` is space
+used on the root filesystem and `IO psi` is time stalled on block IO. They are
+different measurements of different things, and giving them a shared word would
+mislabel one of them, which is the fault the `(Linux)` suffix already had.
+
+`Root free` was dropped. Percentage used is what you scan for; the absolute figure is
+one click away in Latest data and was costing width in a table that had too little.
