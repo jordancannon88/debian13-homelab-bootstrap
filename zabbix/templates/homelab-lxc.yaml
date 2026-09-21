@@ -11,6 +11,17 @@ zabbix_export:
       groups:
         - name: Templates/Custom
       items:
+        - uuid: 1b7f6594e8284b8f96f7d9b1bdb7ea1c
+          name: 'Load per CPU (5m)'
+          type: CALCULATED
+          key: custom.lxc.load_per_cpu
+          value_type: FLOAT
+          params: 'last(//custom.lxc.load5m)/last(//custom.lxc.ncpu)'
+          description: 'Five minute run queue divided by the machine's CPU count, so machines of different sizes compare. Sustained above 1 means threads are queuing for a CPU. It is NOT pressure stall information: it does not measure time spent waiting, and on Linux the load average also counts threads blocked on IO, so read it beside the pressure columns rather than instead of them. On FreeBSD the load counts only runnable threads, which makes this a cleaner CPU signal on opn1 than on the Linux guests, and the only CPU contention figure opn1 can produce at all, since FreeBSD has no PSI. Added 2026-09-21.'
+          tags:
+            - tag: component
+              value: cpu
+
         - uuid: 2a9158c3f36c445ab47c1818db35cce6
           name: 'LXC: cpu_some10'
           type: DEPENDENT
