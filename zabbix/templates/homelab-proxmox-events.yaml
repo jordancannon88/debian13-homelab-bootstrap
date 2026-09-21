@@ -511,7 +511,7 @@ zabbix_export:
                   value: '{#TARGET}'
               trigger_prototypes:
                 - uuid: dc625e111d744a86b726c60ff3c19f8f
-                  expression: 'min(/Homelab Proxmox events/custom.pve.replication.enabled[{#JOB}],{$REPL_DISABLED_GRACE})=0'
+                  expression: 'max(/Homelab Proxmox events/custom.pve.replication.enabled[{#JOB}],{$REPL_DISABLED_GRACE})=0'
                   name: 'Replication: job {#JOB} (guest {#GUEST}) to {#TARGET} has been disabled for over {$REPL_DISABLED_GRACE}'
                   url: 'https://bookstack.local.cannon.dev/link/436'
                   url_name: Runbook
