@@ -47,7 +47,34 @@ emit() {   # emit <resource>
     "$(field "$f" full avg10)"  "$(field "$f" full avg60)"  "$(field "$f" full avg300)"
 }
 
-printf '{"container":%s,' "$container"
+# Pressure is a single system-wide figure: /proc/pressure/io carries no per-device
+# attribution, unlike a SMART reading which belongs to one drive. So the alert cannot
+# name a disk from pressure alone. What it CAN do is say which device was busiest at
+# the same moment, from the kernel's per-device busy time (field 10 of /proc/diskstats,
+# io_ticks, milliseconds spent with I/O in flight). Sampled over one second and
+# expressed as a percentage, that is the standard "utilisation" figure. Whole disks
+# only: partitions and device-mapper nodes would double-count their parent.
+busiest="none"
+busiest_pct=-1
+if [[ -r /proc/diskstats ]]; then
+  declare -A t0
+  while read -r _ _ dev rest; do
+    [[ "$dev" =~ ^(sd[a-z]+|nvme[0-9]+n[0-9]+|vd[a-z]+|hd[a-z]+)$ ]] || continue
+    set -- $rest
+    t0["$dev"]="${10:-0}"
+  done < /proc/diskstats
+  sleep 1
+  while read -r _ _ dev rest; do
+    [[ -n "${t0[$dev]:-}" ]] || continue
+    set -- $rest
+    d=$(( ${10:-0} - ${t0[$dev]} ))
+    (( d > busiest_pct )) && { busiest_pct=$d; busiest="$dev"; }
+  done < /proc/diskstats
+  (( busiest_pct > 100 )) && busiest_pct=100
+  (( busiest_pct < 0 )) && busiest_pct=0
+fi
+
+printf '{"container":%s,"busiest":"%s","busiest_pct":%s,' "$container" "$busiest" "$busiest_pct"
 emit cpu;    printf ','
 emit memory; printf ','
 emit io

@@ -123,6 +123,40 @@ zabbix_export:
               tags:
                 - tag: scope
                   value: capacity
+        - uuid: 11966392d455461686cfd28242d0a117
+          name: 'Busiest disk'
+          type: DEPENDENT
+          key: custom.psi.busiest
+          delay: '0'
+          value_type: CHAR
+          trends: '0'
+          description: 'The whole disk with the most time spent servicing I/O during a one second sample, taken at the same moment as the pressure figures. Pressure itself is system-wide and carries no per-device attribution, unlike a SMART reading which belongs to one drive, so this is what answers "which disk is hurting" when a pressure alert fires. Partitions and device-mapper nodes are excluded because they would double-count their parent.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.busiest
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: storage
+        - uuid: 20678c1f4378484896ee10b904842272
+          name: 'Busiest disk utilisation'
+          type: DEPENDENT
+          key: custom.psi.busiest_pct
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: 'Percent of a one second sample during which the busiest disk had at least one I/O in flight, from io_ticks in /proc/diskstats. 100 percent means the device never went idle in that second, which on a USB disk issuing one command at a time is the usual reading during a scrub, a backup or a resync.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.busiest_pct
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: storage
         - uuid: 0ab5d70c644b41e68e45e8a529919d70
           name: 'IO pressure (some 10s)'
           type: DEPENDENT
@@ -161,6 +195,7 @@ zabbix_export:
             - uuid: cb4d6e1354f34893921a6c6f395e0559
               expression: 'min(/Homelab pressure/custom.psi.io.full10,5m)>{$PSI.IO.FULL.WARN} and last(/Homelab pressure/custom.psi.container)=0'
               name: 'IO pressure: storage stalling on {HOST.NAME} ({ITEM.LASTVALUE1} of the last ten seconds)'
+              opdata: 'busiest disk: {?last(/Homelab pressure/custom.psi.busiest)} at {?last(/Homelab pressure/custom.psi.busiest_pct)}%'
               url: 'https://bookstack.local.cannon.dev/link/376'
               url_name: Runbook
               priority: WARNING
