@@ -440,13 +440,8 @@
         {
           "fields": [
             {
-              "name": "column",
-              "type": "1",
-              "value": "0"
-            },
-            {
               "name": "columns.0.data",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
@@ -466,7 +461,7 @@
             },
             {
               "name": "columns.1.data",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
@@ -486,17 +481,17 @@
             },
             {
               "name": "columns.2.data",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.2.decimal_places",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "columns.2.display",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -526,17 +521,12 @@
             },
             {
               "name": "columns.3.data",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
-              "name": "columns.3.decimal_places",
-              "type": "1",
-              "value": "2"
-            },
-            {
               "name": "columns.3.display",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -566,17 +556,17 @@
             },
             {
               "name": "columns.4.data",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.4.decimal_places",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.4.display",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -606,17 +596,17 @@
             },
             {
               "name": "columns.5.data",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.5.decimal_places",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "columns.5.display",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -646,17 +636,17 @@
             },
             {
               "name": "columns.6.data",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.6.decimal_places",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.6.display",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -686,17 +676,17 @@
             },
             {
               "name": "columns.7.data",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.7.decimal_places",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "columns.7.display",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -726,17 +716,17 @@
             },
             {
               "name": "columns.8.data",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.8.decimal_places",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.8.display",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -901,17 +891,12 @@
             },
             {
               "name": "groupids.0",
-              "type": "1",
+              "type": "2",
               "value": "7"
             },
             {
-              "name": "hosts.0",
-              "type": "1",
-              "value": "pve*"
-            },
-            {
               "name": "rf_rate",
-              "type": "1",
+              "type": "0",
               "value": "60"
             }
           ],
@@ -926,13 +911,8 @@
         {
           "fields": [
             {
-              "name": "column",
-              "type": "1",
-              "value": "0"
-            },
-            {
               "name": "columns.0.data",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
@@ -952,7 +932,7 @@
             },
             {
               "name": "columns.1.data",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
@@ -972,17 +952,17 @@
             },
             {
               "name": "columns.2.data",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.2.decimal_places",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "columns.2.display",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -1012,17 +992,12 @@
             },
             {
               "name": "columns.3.data",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
-              "name": "columns.3.decimal_places",
-              "type": "1",
-              "value": "2"
-            },
-            {
               "name": "columns.3.display",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -1052,17 +1027,17 @@
             },
             {
               "name": "columns.4.data",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.4.decimal_places",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.4.display",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -1092,17 +1067,17 @@
             },
             {
               "name": "columns.5.data",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.5.decimal_places",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "columns.5.display",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -1132,17 +1107,17 @@
             },
             {
               "name": "columns.6.data",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.6.decimal_places",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.6.display",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -1172,17 +1147,17 @@
             },
             {
               "name": "columns.7.data",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.7.decimal_places",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "columns.7.display",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -1212,17 +1187,17 @@
             },
             {
               "name": "columns.8.data",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.8.decimal_places",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.8.display",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -1387,12 +1362,12 @@
             },
             {
               "name": "groupids.0",
-              "type": "1",
+              "type": "2",
               "value": "6"
             },
             {
               "name": "rf_rate",
-              "type": "1",
+              "type": "0",
               "value": "60"
             }
           ],
@@ -1780,7 +1755,7 @@
             },
             {
               "name": "ds.0.pointsize",
-              "type": "1",
+              "type": "0",
               "value": "6"
             },
             {
@@ -1790,7 +1765,7 @@
             },
             {
               "name": "ds.0.type",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
@@ -1820,7 +1795,7 @@
             },
             {
               "name": "ds.1.pointsize",
-              "type": "1",
+              "type": "0",
               "value": "6"
             },
             {
@@ -1830,7 +1805,7 @@
             },
             {
               "name": "ds.1.type",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
@@ -1860,7 +1835,7 @@
             },
             {
               "name": "ds.2.pointsize",
-              "type": "1",
+              "type": "0",
               "value": "6"
             },
             {
@@ -1870,7 +1845,7 @@
             },
             {
               "name": "ds.2.type",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
@@ -1900,7 +1875,7 @@
             },
             {
               "name": "ds.3.pointsize",
-              "type": "1",
+              "type": "0",
               "value": "6"
             },
             {
@@ -1910,7 +1885,7 @@
             },
             {
               "name": "ds.3.type",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
@@ -1940,7 +1915,7 @@
             },
             {
               "name": "ds.4.pointsize",
-              "type": "1",
+              "type": "0",
               "value": "6"
             },
             {
@@ -1950,7 +1925,7 @@
             },
             {
               "name": "ds.4.type",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
@@ -1978,7 +1953,7 @@
           "name": "Disk IO pressure, PVE nodes",
           "type": "svggraph",
           "view_mode": "0",
-          "width": "36",
+          "width": "72",
           "x": "0",
           "y": "19"
         },
@@ -1991,7 +1966,7 @@
             },
             {
               "name": "ds.0.fill",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
@@ -2006,22 +1981,22 @@
             },
             {
               "name": "ds.0.pointsize",
-              "type": "1",
+              "type": "0",
               "value": "6"
             },
             {
               "name": "ds.0.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.0.type",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "ds.0.width",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
@@ -2031,7 +2006,7 @@
             },
             {
               "name": "ds.1.fill",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
@@ -2046,22 +2021,22 @@
             },
             {
               "name": "ds.1.pointsize",
-              "type": "1",
+              "type": "0",
               "value": "6"
             },
             {
               "name": "ds.1.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.1.type",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "ds.1.width",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
@@ -2071,7 +2046,7 @@
             },
             {
               "name": "ds.2.fill",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
@@ -2086,22 +2061,22 @@
             },
             {
               "name": "ds.2.pointsize",
-              "type": "1",
+              "type": "0",
               "value": "6"
             },
             {
               "name": "ds.2.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.2.type",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "ds.2.width",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
@@ -2111,7 +2086,7 @@
             },
             {
               "name": "ds.3.fill",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
@@ -2126,22 +2101,22 @@
             },
             {
               "name": "ds.3.pointsize",
-              "type": "1",
+              "type": "0",
               "value": "6"
             },
             {
               "name": "ds.3.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.3.type",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "ds.3.width",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
@@ -2151,7 +2126,7 @@
             },
             {
               "name": "ds.4.fill",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
@@ -2166,22 +2141,22 @@
             },
             {
               "name": "ds.4.pointsize",
-              "type": "1",
+              "type": "0",
               "value": "6"
             },
             {
               "name": "ds.4.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.4.type",
-              "type": "1",
+              "type": "0",
               "value": "1"
             },
             {
               "name": "ds.4.width",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
@@ -2196,12 +2171,12 @@
             },
             {
               "name": "legend_lines",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
               "name": "righty",
-              "type": "1",
+              "type": "0",
               "value": "0"
             }
           ],
@@ -2210,8 +2185,64 @@
           "type": "svggraph",
           "view_mode": "0",
           "width": "36",
+          "x": "0",
+          "y": "25"
+        },
+        {
+          "fields": [
+            {
+              "name": "column",
+              "type": 1,
+              "value": "0"
+            },
+            {
+              "name": "columns.0.data",
+              "type": 1,
+              "value": "2"
+            },
+            {
+              "name": "columns.0.name",
+              "type": 1,
+              "value": "Name"
+            },
+            {
+              "name": "columns.1.data",
+              "type": 1,
+              "value": "1"
+            },
+            {
+              "name": "columns.1.item",
+              "type": 1,
+              "value": "All disks, busy percent"
+            },
+            {
+              "name": "columns.1.name",
+              "type": 1,
+              "value": "Drives, busy percent"
+            },
+            {
+              "name": "groupids.0",
+              "type": "2",
+              "value": "7"
+            },
+            {
+              "name": "hosts.0",
+              "type": 1,
+              "value": "pve*"
+            },
+            {
+              "name": "rf_rate",
+              "type": "0",
+              "value": "60"
+            }
+          ],
+          "height": "6",
+          "name": "Drives, busy percent",
+          "type": "tophosts",
+          "view_mode": "0",
+          "width": "36",
           "x": "36",
-          "y": "19"
+          "y": "25"
         },
         {
           "fields": [
@@ -2222,7 +2253,7 @@
             },
             {
               "name": "ds.0.fill",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
@@ -2237,17 +2268,17 @@
             },
             {
               "name": "ds.0.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.0.type",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
               "name": "ds.0.width",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -2257,7 +2288,7 @@
             },
             {
               "name": "ds.1.fill",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
@@ -2272,17 +2303,17 @@
             },
             {
               "name": "ds.1.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.1.type",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
               "name": "ds.1.width",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -2292,7 +2323,7 @@
             },
             {
               "name": "ds.2.fill",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
@@ -2307,17 +2338,17 @@
             },
             {
               "name": "ds.2.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.2.type",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
               "name": "ds.2.width",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -2327,7 +2358,7 @@
             },
             {
               "name": "ds.3.fill",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
@@ -2342,17 +2373,17 @@
             },
             {
               "name": "ds.3.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.3.type",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
               "name": "ds.3.width",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -2362,7 +2393,7 @@
             },
             {
               "name": "ds.4.fill",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
@@ -2377,17 +2408,17 @@
             },
             {
               "name": "ds.4.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.4.type",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
               "name": "ds.4.width",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -2397,12 +2428,12 @@
             },
             {
               "name": "legend_lines",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
               "name": "righty",
-              "type": "1",
+              "type": "0",
               "value": "0"
             }
           ],
@@ -2412,7 +2443,7 @@
           "view_mode": "0",
           "width": "24",
           "x": "0",
-          "y": 29
+          "y": "31"
         },
         {
           "fields": [
@@ -2423,7 +2454,7 @@
             },
             {
               "name": "ds.0.fill",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
@@ -2438,17 +2469,17 @@
             },
             {
               "name": "ds.0.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.0.type",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
               "name": "ds.0.width",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -2458,7 +2489,7 @@
             },
             {
               "name": "ds.1.fill",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
@@ -2473,17 +2504,17 @@
             },
             {
               "name": "ds.1.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.1.type",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
               "name": "ds.1.width",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -2493,7 +2524,7 @@
             },
             {
               "name": "ds.2.fill",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
@@ -2508,17 +2539,17 @@
             },
             {
               "name": "ds.2.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.2.type",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
               "name": "ds.2.width",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -2528,7 +2559,7 @@
             },
             {
               "name": "ds.3.fill",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
@@ -2543,17 +2574,17 @@
             },
             {
               "name": "ds.3.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.3.type",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
               "name": "ds.3.width",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -2563,7 +2594,7 @@
             },
             {
               "name": "ds.4.fill",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
@@ -2578,17 +2609,17 @@
             },
             {
               "name": "ds.4.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.4.type",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
               "name": "ds.4.width",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -2598,12 +2629,12 @@
             },
             {
               "name": "legend_lines",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
               "name": "righty",
-              "type": "1",
+              "type": "0",
               "value": "0"
             }
           ],
@@ -2613,7 +2644,7 @@
           "view_mode": "0",
           "width": "24",
           "x": "24",
-          "y": 29
+          "y": "31"
         },
         {
           "fields": [
@@ -2624,7 +2655,7 @@
             },
             {
               "name": "ds.0.fill",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
@@ -2639,17 +2670,17 @@
             },
             {
               "name": "ds.0.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.0.type",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
               "name": "ds.0.width",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -2659,7 +2690,7 @@
             },
             {
               "name": "ds.1.fill",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
@@ -2674,17 +2705,17 @@
             },
             {
               "name": "ds.1.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.1.type",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
               "name": "ds.1.width",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -2694,7 +2725,7 @@
             },
             {
               "name": "ds.2.fill",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
@@ -2709,17 +2740,17 @@
             },
             {
               "name": "ds.2.transparency",
-              "type": "1",
+              "type": "0",
               "value": "0"
             },
             {
               "name": "ds.2.type",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
               "name": "ds.2.width",
-              "type": "1",
+              "type": "0",
               "value": "3"
             },
             {
@@ -2729,12 +2760,12 @@
             },
             {
               "name": "legend_lines",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
               "name": "righty",
-              "type": "1",
+              "type": "0",
               "value": "0"
             }
           ],
@@ -2744,98 +2775,7 @@
           "view_mode": "0",
           "width": "24",
           "x": "48",
-          "y": 29
-        },
-        {
-          "fields": [
-            {
-              "name": "column",
-              "type": "1",
-              "value": "0"
-            },
-            {
-              "name": "columns.0.data",
-              "type": "1",
-              "value": "2"
-            },
-            {
-              "name": "columns.0.name",
-              "type": "1",
-              "value": "Name"
-            },
-            {
-              "name": "columns.1.data",
-              "type": "1",
-              "value": "1"
-            },
-            {
-              "name": "columns.1.item",
-              "type": "1",
-              "value": "Busiest drive"
-            },
-            {
-              "name": "columns.1.name",
-              "type": "1",
-              "value": "Busiest drive"
-            },
-            {
-              "name": "columns.2.data",
-              "type": "1",
-              "value": "1"
-            },
-            {
-              "name": "columns.2.decimal_places",
-              "type": "1",
-              "value": "0"
-            },
-            {
-              "name": "columns.2.item",
-              "type": "1",
-              "value": "Busiest disk utilisation"
-            },
-            {
-              "name": "columns.2.name",
-              "type": "1",
-              "value": "Busy %"
-            },
-            {
-              "name": "columns.3.data",
-              "type": "1",
-              "value": "1"
-            },
-            {
-              "name": "columns.3.item",
-              "type": "1",
-              "value": "Busy drives"
-            },
-            {
-              "name": "columns.3.name",
-              "type": "1",
-              "value": "Drives at or above threshold"
-            },
-            {
-              "name": "groupids.0",
-              "type": "1",
-              "value": "7"
-            },
-            {
-              "name": "hosts.0",
-              "type": "1",
-              "value": "pve*"
-            },
-            {
-              "name": "rf_rate",
-              "type": "1",
-              "value": "60"
-            }
-          ],
-          "height": "4",
-          "name": "Busiest drives",
-          "type": "tophosts",
-          "view_mode": "0",
-          "width": "72",
-          "x": "0",
-          "y": 25
+          "y": "31"
         },
         {
           "fields": [
@@ -2861,7 +2801,7 @@
           "view_mode": "0",
           "width": "72",
           "x": "0",
-          "y": "35"
+          "y": "37"
         },
         {
           "fields": [],
@@ -2871,7 +2811,7 @@
           "view_mode": "0",
           "width": "72",
           "x": "0",
-          "y": "44"
+          "y": "46"
         }
       ]
     }
