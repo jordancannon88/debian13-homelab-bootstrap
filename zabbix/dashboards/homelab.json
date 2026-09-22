@@ -1934,6 +1934,46 @@
               "value": "2"
             },
             {
+              "name": "ds.5.color",
+              "type": "1",
+              "value": "546E7A"
+            },
+            {
+              "name": "ds.5.fill",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.5.hosts.0",
+              "type": "1",
+              "value": "pms0"
+            },
+            {
+              "name": "ds.5.items.0",
+              "type": "1",
+              "value": "IO pressure (full 10s)"
+            },
+            {
+              "name": "ds.5.pointsize",
+              "type": "0",
+              "value": "6"
+            },
+            {
+              "name": "ds.5.transparency",
+              "type": "0",
+              "value": "0"
+            },
+            {
+              "name": "ds.5.type",
+              "type": "0",
+              "value": "1"
+            },
+            {
+              "name": "ds.5.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
               "name": "lefty_min",
               "type": "1",
               "value": "0"
@@ -1941,7 +1981,7 @@
             {
               "name": "legend_lines",
               "type": "0",
-              "value": "2"
+              "value": "3"
             },
             {
               "name": "righty",
@@ -1950,7 +1990,7 @@
             }
           ],
           "height": "6",
-          "name": "Disk IO pressure, PVE nodes",
+          "name": "Disk IO pressure, nodes and pms0",
           "type": "svggraph",
           "view_mode": "0",
           "width": 36,
