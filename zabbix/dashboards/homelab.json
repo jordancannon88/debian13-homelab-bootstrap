@@ -2511,24 +2511,34 @@
               "value": "60"
             },
             {
-              "name": "groupids.0",
-              "type": "2",
-              "value": "7"
+              "name": "hostids.0",
+              "type": "3",
+              "value": "10696"
             },
             {
-              "name": "groupids.1",
-              "type": "2",
-              "value": "6"
+              "name": "hostids.1",
+              "type": "3",
+              "value": "10686"
             },
             {
-              "name": "hosts.0",
-              "type": 1,
-              "value": "pve*"
+              "name": "hostids.2",
+              "type": "3",
+              "value": "10669"
             },
             {
-              "name": "hosts.1",
-              "type": 1,
-              "value": "pms0"
+              "name": "hostids.3",
+              "type": "3",
+              "value": "10685"
+            },
+            {
+              "name": "hostids.4",
+              "type": "3",
+              "value": "10670"
+            },
+            {
+              "name": "hostids.5",
+              "type": "3",
+              "value": "10699"
             }
           ],
           "height": "6",

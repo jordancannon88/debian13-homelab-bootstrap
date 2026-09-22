@@ -11,6 +11,8 @@ units and whether a trigger already exists.
   python3 zbx-item.py --key cpu_temp           by key substring, any host
   python3 zbx-item.py --name 'Temperature'     by visible name substring
   python3 zbx-item.py --groups                 host groups, with ids and host counts
+  python3 zbx-item.py --hosts                  every host with its id
+  python3 zbx-item.py --hosts pve              only hosts whose name contains pve
   python3 zbx-item.py --name X --host pve2     restrict to one host
   python3 zbx-item.py --name X --brief         one line per item, no trigger lookup
 
@@ -62,6 +64,22 @@ if "--host" in opts:
     host_filter = opts[i + 1] if i + 1 < len(opts) else None
     if host_filter in a:
         a.remove(host_filter)
+
+if "--hosts" in opts:
+    # A Top hosts widget filters by host ID, not by a name pattern: a "hosts.0"
+    # field holding "pve*" is accepted by the API, ignored by the widget, and the
+    # host group ends up doing all the filtering. That cost an afternoon on
+    # 2026-09-22, when adding the VMs group to the drives table pulled in dev, dkr
+    # and net as well. So the ids have to be looked up, and the interface only ever
+    # shows names.
+    hs = api("host.get", {"output": ["hostid", "host", "status"]})
+    if a:
+        hs = [h for h in hs if a[0].lower() in h["host"].lower()]
+    for h in sorted(hs, key=lambda h: h["host"]):
+        off = "   [host DISABLED]" if h.get("status") == "1" else ""
+        print(f"  {h['hostid']:>6}  {h['host']}{off}")
+    print(f"\n{len(hs)} host(s)")
+    raise SystemExit(0)
 
 if "--groups" in opts:
     # Dashboard widgets address hosts by group id, so the id is what you need and
