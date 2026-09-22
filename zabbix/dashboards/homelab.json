@@ -3210,7 +3210,7 @@
             {
               "name": "show_lines",
               "type": "0",
-              "value": "1"
+              "value": "15"
             },
             {
               "name": "show_timestamp",

@@ -256,15 +256,13 @@ zabbix_export:
               key: 'custom.disk.summary[{#SERIAL}]'
               delay: '0'
               value_type: CHAR
+              history: 7d
               trends: '0'
               description: 'The drive on one line: size, media, space used, hours and health. For a view with room for a drive per row but not a column per fact. Busy percent is deliberately absent, because it moves every minute while everything else here moves once an hour at most.'
               preprocessing:
                 - type: JSONPATH
                   parameters:
                     - "$['drives']['{#SERIAL}']['summary']"
-                - type: DISCARD_UNCHANGED_HEARTBEAT
-                  parameters:
-                    - 1h
               master_item:
                 key: custom.diskinfo
               tags:
