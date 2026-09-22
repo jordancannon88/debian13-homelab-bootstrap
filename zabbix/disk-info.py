@@ -104,36 +104,90 @@ def busy_percent():
             for d in t1}
 
 
-def partitions_of(dev):
-    """Every partition of this disk, plus the disk itself: a filesystem can sit on a
-    whole device with no partition table, which is how some of the array drives are
-    built."""
-    base = f"/sys/block/{dev}"
-    parts = [dev]
+def parent_disk(name):
+    """The whole disk a block device belongs to: sda3 -> sda, nvme0n1p3 -> nvme0n1."""
+    if os.path.exists(f"/sys/class/block/{name}/partition"):
+        return os.path.basename(os.path.dirname(os.path.realpath(f"/sys/class/block/{name}")))
+    return name
+
+
+def base_disks(name, seen=None):
+    """Every whole disk underneath a block device, following device mapper down.
+
+    An LVM volume is /dev/dm-0, which is not a disk and never matches one by name.
+    Its slaves directory names the partitions it is built from, so the walk has to go
+    through it or every LVM filesystem looks like it lives nowhere. Recursion is
+    guarded because stacked mappers can name each other."""
+    seen = set() if seen is None else seen
+    if name in seen:
+        return set()
+    seen.add(name)
+    slaves = f"/sys/class/block/{name}/slaves"
+    if os.path.isdir(slaves):
+        out = set()
+        for s in os.listdir(slaves):
+            out |= base_disks(s, seen)
+        if out:
+            return out
+    return {parent_disk(name)}
+
+
+def zfs_space():
+    """Bytes allocated and usable per member device, from the pool itself.
+
+    Without this every node reads -1, because a ZFS vdev has no mountpoint: the pool
+    is mounted and the member is not. zpool reports size and alloc per leaf device, so
+    the drive can be asked directly rather than inferred from the pool. It needs no
+    root and touches no disk."""
+    out = {}
     try:
-        parts += sorted(p for p in os.listdir(base)
-                        if p.startswith(dev) and os.path.isdir(f"{base}/{p}"))
-    except OSError:
-        pass
-    return parts
+        p = subprocess.run(["zpool", "list", "-vHp"],
+                           capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return out
+    for line in p.stdout.splitlines():
+        if not line.startswith("\t"):
+            continue                      # a pool, not a member
+        f = line.strip().split("\t")
+        if len(f) < 4 or f[0].startswith(("mirror", "raidz", "draid", "spare",
+                                          "log", "cache", "special", "dedup")):
+            continue                      # a vdev grouping, whose children follow
+        try:
+            size, alloc = int(f[1]), int(f[2])
+        except ValueError:
+            continue                      # "-" where a device carries no figures
+        for cand in (f"/dev/disk/by-id/{f[0]}", f"/dev/{f[0]}", f[0]):
+            try:
+                real = os.path.realpath(cand)
+            except OSError:
+                continue
+            if os.path.exists(real):
+                for d in base_disks(os.path.basename(real)):
+                    t, u = out.get(d, (0, 0))
+                    out[d] = (t + size, u + alloc)
+                break
+    return out
 
 
-def space_of(dev):
-    """Bytes used and total across every mounted filesystem living on this disk.
+def space_map():
+    """Bytes used and total per whole disk, across mounted filesystems and ZFS pools.
 
-    Returns -1 where nothing mounted maps to it, which is the honest answer rather
-    than zero. A ZFS pool member has no mountpoint of its own: the pool is mounted,
-    the vdev is not, and claiming 0 percent used for a full drive would be worse than
-    saying nothing. Bind mounts and the same device mounted twice are counted once."""
-    names = set(partitions_of(dev))
-    total = used = 0
+    A disk with nothing that maps to it is absent, and reads -1 later, which is the
+    honest answer rather than zero: claiming a full drive is 0 percent used would be
+    worse than saying nothing. A filesystem spanning several disks is skipped rather
+    than counted against one of them or split between them, because neither would be
+    true."""
+    out = dict(zfs_space())
     seen = set()
     for line in read("/proc/self/mounts").splitlines():
         f = line.split()
         if len(f) < 2 or not f[0].startswith("/dev/"):
             continue
         src = os.path.realpath(f[0])
-        if os.path.basename(src) not in names or src in seen:
+        if src in seen or not os.path.exists(src):
+            continue
+        disks = base_disks(os.path.basename(src))
+        if len(disks) != 1:
             continue
         mp = f[1].replace("\\040", " ")
         try:
@@ -141,9 +195,11 @@ def space_of(dev):
         except OSError:
             continue
         seen.add(src)
-        total += st.f_blocks * st.f_frsize
-        used += (st.f_blocks - st.f_bfree) * st.f_frsize
-    return (total, used) if total else (-1, -1)
+        d = disks.pop()
+        t, u = out.get(d, (0, 0))
+        out[d] = (t + st.f_blocks * st.f_frsize,
+                  u + (st.f_blocks - st.f_bfree) * st.f_frsize)
+    return out
 
 
 def smart(dev, serial):
@@ -204,6 +260,7 @@ def smart(dev, serial):
 
 def main():
     busy = busy_percent()
+    space = space_map()
     data, drives = [], {}
     for dev in disks():
         size_b = int(read(f"/sys/block/{dev}/size", "0") or 0) * 512
@@ -212,7 +269,7 @@ def main():
         key = serial or dev
         model = read(f"/sys/block/{dev}/device/model") or read(f"/sys/block/{dev}/device/model_name")
         rota = read(f"/sys/block/{dev}/queue/rotational", "1") == "1"
-        total, used = space_of(dev)
+        total, used = space.get(dev, (-1, -1))
         s = smart(dev, serial)
         data.append({"{#DEV}": dev, "{#SERIAL}": key, "{#DRIVE}": name,
                      "{#MODEL}": model, "{#MEDIA}": "HDD" if rota else "SSD"})
