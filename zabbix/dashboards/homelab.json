@@ -1953,9 +1953,9 @@
           "name": "Disk IO pressure, PVE nodes",
           "type": "svggraph",
           "view_mode": "0",
-          "width": "72",
-          "x": "0",
-          "y": "19"
+          "width": 36,
+          "x": 0,
+          "y": 19
         },
         {
           "fields": [
@@ -2184,9 +2184,9 @@
           "name": "Busiest disk, PVE nodes",
           "type": "svggraph",
           "view_mode": "0",
-          "width": "36",
-          "x": "0",
-          "y": "25"
+          "width": 36,
+          "x": 36,
+          "y": 19
         },
         {
           "fields": [
@@ -2240,9 +2240,9 @@
           "name": "Drives, busy percent",
           "type": "tophosts",
           "view_mode": "0",
-          "width": "36",
-          "x": "36",
-          "y": "25"
+          "width": 72,
+          "x": 0,
+          "y": 25
         },
         {
           "fields": [
