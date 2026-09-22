@@ -113,6 +113,30 @@ pve3 was amber and pve4 was red until 2026-09-21. Keep any node added later in
 the cool half of the wheel, and give it a hue away from violet and magenta, which
 are the closest pair in the set above.
 
+## What a Top hosts column cannot do
+
+Three limits, all found the hard way on 2026-09-22 while building the drives table.
+
+**Text is cut at 20 characters, whatever the width.** A column holding a list, such
+as `All disks, busy percent`, renders as `V9HDUJWL 6 TB 0%, 50` on a widget spanning
+the whole row exactly as it does on a narrow one. The limit is on characters, not
+pixels, so widening is not a fix. Publish the list as one item per entry and give
+each entry its own column instead. That is why the pressure collector emits
+`Disk 1..4 (by busy)` alongside the text list.
+
+**There is no per-column width.** `columns.N.width` is accepted by the API and then
+makes the widget render "Widget is not fully configured". Zabbix distributes width
+across the whole table, which also means a variable-length column such as a host
+name shifts every column after it and no reordering fixes the alignment.
+
+**The host filter takes ids, not patterns.** A `hosts.N` field holding `pve*` is
+accepted by the API and ignored by the widget, so the host group silently does all
+the filtering. This hides while a widget's only group holds nothing else: the drives
+table looked filtered for a day because the nodes group contains only nodes. Adding
+the VMs group to reach pms0 pulled dev, dkr and net straight in. Use `hostids.N`
+with type 3, from `zabbix/zbx-item.py --hosts`, and prefer it to a group wherever
+the set of hosts is meant to stay fixed.
+
 ## Thresholds on the Top hosts columns
 
 The rule, applied 2026-09-21: **red is the number the trigger actually fires at.**
