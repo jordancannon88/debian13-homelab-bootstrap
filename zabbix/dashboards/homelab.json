@@ -2506,19 +2506,29 @@
               "value": "90"
             },
             {
+              "name": "rf_rate",
+              "type": "0",
+              "value": "60"
+            },
+            {
               "name": "groupids.0",
               "type": "2",
               "value": "7"
             },
             {
+              "name": "groupids.1",
+              "type": "2",
+              "value": "6"
+            },
+            {
               "name": "hosts.0",
-              "type": "1",
+              "type": 1,
               "value": "pve*"
             },
             {
-              "name": "rf_rate",
-              "type": "0",
-              "value": "60"
+              "name": "hosts.1",
+              "type": 1,
+              "value": "pms0"
             }
           ],
           "height": "6",
