@@ -113,6 +113,39 @@ pve3 was amber and pve4 was red until 2026-09-21. Keep any node added later in
 the cool half of the wheel, and give it a hue away from violet and magenta, which
 are the closest pair in the set above.
 
+## A row per drive, and why it is an Item history widget
+
+Nothing in 7.4 draws a stable table with one row per drive and several columns.
+Top hosts is one row per host by construction. Top items assumes an item name means
+the same thing on every host, the way CPU utilization does; drive items are named
+for the drive, so across six hosts it draws a fifteen by six grid with one cell
+filled per row. Honeycomb is one number per tile, so size, usage, hours and health
+cannot share a drive's tile.
+
+Item history is what fits, reading the per drive `summary` item, and three things
+about it were found by trying rather than by reading:
+
+**`layout` 0 and 1 are the opposite way round from the documentation.** The field
+table says 0 is Horizontal and 1 Vertical, and that Vertical displays items
+vertically. In practice 1 puts the items across the top and leaves one row of
+values, nearly all blank, because each item stores on its own second and only the
+newest timestamp shows. 0 is what gives one item per row.
+
+**`show_lines` is the total number of rows, not rows per item.** At 1 the table is
+one row long whatever the item count.
+
+**It is a log, not a table.** It lists the newest N stored values, so an item that
+stores only when it changes appears twice in one refresh and not at all in the next.
+That is why the `summary` item stores every minute instead of discarding unchanged
+values on an hourly heartbeat: fifteen drives storing once a minute make the newest
+fifteen rows exactly the fifteen drives. A poll running late can still catch one
+drive twice at a minute boundary, and it corrects itself on the next refresh.
+
+It also addresses items by id rather than by pattern, so a drive replaced or moved
+between hosts leaves a stale row. `zabbix/zbx-item.py --key custom.disk.summary`
+prints the current list to rebuild from, and the same caveat applies to the five CPU
+temperature gauges further down this file.
+
 ## What a Top hosts column cannot do
 
 Three limits, all found the hard way on 2026-09-22 while building the drives table.
