@@ -97,6 +97,10 @@ drive_name() {
 
 busiest="none"; busiest_drive="none"; busiest_pct=-1
 busy_list=""; all_list=""
+# Centiseconds since boot, as an integer. /proc/uptime always carries two decimals,
+# so stripping the dot yields centiseconds directly with no floating point.
+uptime_cs() { local u _r; read -r u _r < /proc/uptime; printf '%s' "${u%.*}${u#*.}"; }
+
 if [[ -r /proc/diskstats ]]; then
   declare -A t0
   while read -r _ _ dev rest; do
@@ -104,14 +108,26 @@ if [[ -r /proc/diskstats ]]; then
     set -- $rest
     t0["$dev"]="${10:-0}"
   done < /proc/diskstats
+  cs0="$(uptime_cs)"
   sleep 1
+  cs1="$(uptime_cs)"
+  # io_ticks (field 10) counts MILLISECONDS with at least one request in flight, so the
+  # percentage is ticks over elapsed wall time. The first version of this used the raw
+  # tick delta as a percentage and capped it at 100, which treated the one-second window
+  # as if it were 100 ms: every reading came out about ten times too high and any disk
+  # busy more than 10 % of the second pinned at 100 %. Jordan caught it from the dashboard
+  # showing several disks saturated at once. Elapsed time is measured rather than assumed,
+  # because sleep 1 plus the cost of two diskstats passes is always somewhat over 1000 ms.
+  elapsed_ms=$(( (cs1 - cs0) * 10 ))
+  (( elapsed_ms < 1 )) && elapsed_ms=1000
   declare -A pct
   while read -r _ _ dev rest; do
     [[ -n "${t0[$dev]:-}" ]] || continue
     set -- $rest
     d=$(( ${10:-0} - ${t0[$dev]} ))
-    (( d > 100 )) && d=100
     (( d < 0 )) && d=0
+    d=$(( d * 100 / elapsed_ms ))
+    (( d > 100 )) && d=100
     pct["$dev"]=$d
   done < /proc/diskstats
 
