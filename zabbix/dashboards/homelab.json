@@ -1993,9 +1993,9 @@
           "name": "Disk IO pressure, nodes and pms0",
           "type": "svggraph",
           "view_mode": "0",
-          "width": 36,
-          "x": 0,
-          "y": 19
+          "width": "36",
+          "x": "0",
+          "y": "19"
         },
         {
           "fields": [
@@ -2264,20 +2264,15 @@
           "name": "Busiest disk, nodes and pms0",
           "type": "svggraph",
           "view_mode": "0",
-          "width": 36,
-          "x": 36,
-          "y": 19
+          "width": "36",
+          "x": "36",
+          "y": "19"
         },
         {
           "fields": [
             {
-              "name": "column",
-              "type": "1",
-              "value": "0"
-            },
-            {
               "name": "columns.0.data",
-              "type": "1",
+              "type": "0",
               "value": "2"
             },
             {
@@ -2341,26 +2336,6 @@
               "value": "Busy"
             },
             {
-              "name": "columnsthresholds.2.color.0",
-              "type": "1",
-              "value": "FCCB1D"
-            },
-            {
-              "name": "columnsthresholds.2.color.1",
-              "type": "1",
-              "value": "E65660"
-            },
-            {
-              "name": "columnsthresholds.2.threshold.0",
-              "type": "1",
-              "value": "50"
-            },
-            {
-              "name": "columnsthresholds.2.threshold.1",
-              "type": "1",
-              "value": "90"
-            },
-            {
               "name": "columns.3.data",
               "type": "0",
               "value": "1"
@@ -2414,26 +2389,6 @@
               "name": "columns.4.name",
               "type": "1",
               "value": "Busy"
-            },
-            {
-              "name": "columnsthresholds.4.color.0",
-              "type": "1",
-              "value": "FCCB1D"
-            },
-            {
-              "name": "columnsthresholds.4.color.1",
-              "type": "1",
-              "value": "E65660"
-            },
-            {
-              "name": "columnsthresholds.4.threshold.0",
-              "type": "1",
-              "value": "50"
-            },
-            {
-              "name": "columnsthresholds.4.threshold.1",
-              "type": "1",
-              "value": "90"
             },
             {
               "name": "columns.5.data",
@@ -2491,26 +2446,6 @@
               "value": "Busy"
             },
             {
-              "name": "columnsthresholds.6.color.0",
-              "type": "1",
-              "value": "FCCB1D"
-            },
-            {
-              "name": "columnsthresholds.6.color.1",
-              "type": "1",
-              "value": "E65660"
-            },
-            {
-              "name": "columnsthresholds.6.threshold.0",
-              "type": "1",
-              "value": "50"
-            },
-            {
-              "name": "columnsthresholds.6.threshold.1",
-              "type": "1",
-              "value": "90"
-            },
-            {
               "name": "columns.7.data",
               "type": "0",
               "value": "1"
@@ -2566,6 +2501,66 @@
               "value": "Busy"
             },
             {
+              "name": "columnsthresholds.2.color.0",
+              "type": "1",
+              "value": "FCCB1D"
+            },
+            {
+              "name": "columnsthresholds.2.color.1",
+              "type": "1",
+              "value": "E65660"
+            },
+            {
+              "name": "columnsthresholds.2.threshold.0",
+              "type": "1",
+              "value": "50"
+            },
+            {
+              "name": "columnsthresholds.2.threshold.1",
+              "type": "1",
+              "value": "90"
+            },
+            {
+              "name": "columnsthresholds.4.color.0",
+              "type": "1",
+              "value": "FCCB1D"
+            },
+            {
+              "name": "columnsthresholds.4.color.1",
+              "type": "1",
+              "value": "E65660"
+            },
+            {
+              "name": "columnsthresholds.4.threshold.0",
+              "type": "1",
+              "value": "50"
+            },
+            {
+              "name": "columnsthresholds.4.threshold.1",
+              "type": "1",
+              "value": "90"
+            },
+            {
+              "name": "columnsthresholds.6.color.0",
+              "type": "1",
+              "value": "FCCB1D"
+            },
+            {
+              "name": "columnsthresholds.6.color.1",
+              "type": "1",
+              "value": "E65660"
+            },
+            {
+              "name": "columnsthresholds.6.threshold.0",
+              "type": "1",
+              "value": "50"
+            },
+            {
+              "name": "columnsthresholds.6.threshold.1",
+              "type": "1",
+              "value": "90"
+            },
+            {
               "name": "columnsthresholds.8.color.0",
               "type": "1",
               "value": "FCCB1D"
@@ -2584,11 +2579,6 @@
               "name": "columnsthresholds.8.threshold.1",
               "type": "1",
               "value": "90"
-            },
-            {
-              "name": "rf_rate",
-              "type": "0",
-              "value": "60"
             },
             {
               "name": "hostids.0",
@@ -2619,15 +2609,20 @@
               "name": "hostids.5",
               "type": "3",
               "value": "10699"
+            },
+            {
+              "name": "rf_rate",
+              "type": "0",
+              "value": "60"
             }
           ],
           "height": "6",
           "name": "Drives, busy percent",
           "type": "tophosts",
           "view_mode": "0",
-          "width": 72,
-          "x": 0,
-          "y": 25
+          "width": "72",
+          "x": "0",
+          "y": "25"
         },
         {
           "fields": [
@@ -2828,7 +2823,7 @@
           "view_mode": "0",
           "width": "24",
           "x": "0",
-          "y": "31"
+          "y": "38"
         },
         {
           "fields": [
@@ -3029,7 +3024,7 @@
           "view_mode": "0",
           "width": "24",
           "x": "24",
-          "y": "31"
+          "y": "38"
         },
         {
           "fields": [
@@ -3160,7 +3155,7 @@
           "view_mode": "0",
           "width": "24",
           "x": "48",
-          "y": "31"
+          "y": "38"
         },
         {
           "fields": [
@@ -3186,7 +3181,7 @@
           "view_mode": "0",
           "width": "72",
           "x": "0",
-          "y": "37"
+          "y": "44"
         },
         {
           "fields": [],
@@ -3196,7 +3191,343 @@
           "view_mode": "0",
           "width": "72",
           "x": "0",
-          "y": "46"
+          "y": "53"
+        },
+        {
+          "type": "itemhistory",
+          "name": "Drives",
+          "x": "0",
+          "y": "31",
+          "width": "72",
+          "height": "7",
+          "view_mode": "0",
+          "fields": [
+            {
+              "name": "layout",
+              "type": "0",
+              "value": "1"
+            },
+            {
+              "name": "show_lines",
+              "type": "0",
+              "value": "1"
+            },
+            {
+              "name": "show_timestamp",
+              "type": "0",
+              "value": "0"
+            },
+            {
+              "name": "show_column_header",
+              "type": "0",
+              "value": "0"
+            },
+            {
+              "name": "reference",
+              "type": "1",
+              "value": "DRVLS"
+            },
+            {
+              "name": "columns.0.name",
+              "type": "1",
+              "value": "pve0   090312PB0C01QPG5AKBB 320 GB"
+            },
+            {
+              "name": "columns.0.itemid",
+              "type": "4",
+              "value": "62990"
+            },
+            {
+              "name": "columns.0.display",
+              "type": "0",
+              "value": "5"
+            },
+            {
+              "name": "columns.0.max_length",
+              "type": "0",
+              "value": "120"
+            },
+            {
+              "name": "columns.1.name",
+              "type": "1",
+              "value": "pve1   210239441211 120 GB"
+            },
+            {
+              "name": "columns.1.itemid",
+              "type": "4",
+              "value": "62792"
+            },
+            {
+              "name": "columns.1.display",
+              "type": "0",
+              "value": "5"
+            },
+            {
+              "name": "columns.1.max_length",
+              "type": "0",
+              "value": "120"
+            },
+            {
+              "name": "columns.2.name",
+              "type": "1",
+              "value": "pve2   ASAD44120101002 1 TB"
+            },
+            {
+              "name": "columns.2.itemid",
+              "type": "4",
+              "value": "62856"
+            },
+            {
+              "name": "columns.2.display",
+              "type": "0",
+              "value": "5"
+            },
+            {
+              "name": "columns.2.max_length",
+              "type": "0",
+              "value": "120"
+            },
+            {
+              "name": "columns.3.name",
+              "type": "1",
+              "value": "pve2   50026B7283171C3A 240 GB"
+            },
+            {
+              "name": "columns.3.itemid",
+              "type": "4",
+              "value": "62857"
+            },
+            {
+              "name": "columns.3.display",
+              "type": "0",
+              "value": "5"
+            },
+            {
+              "name": "columns.3.max_length",
+              "type": "0",
+              "value": "120"
+            },
+            {
+              "name": "columns.4.name",
+              "type": "1",
+              "value": "pve2   V9HE0KRL 6 TB"
+            },
+            {
+              "name": "columns.4.itemid",
+              "type": "4",
+              "value": "62858"
+            },
+            {
+              "name": "columns.4.display",
+              "type": "0",
+              "value": "5"
+            },
+            {
+              "name": "columns.4.max_length",
+              "type": "0",
+              "value": "120"
+            },
+            {
+              "name": "columns.5.name",
+              "type": "1",
+              "value": "pve3   ASAD44080500416 1 TB"
+            },
+            {
+              "name": "columns.5.itemid",
+              "type": "4",
+              "value": "62900"
+            },
+            {
+              "name": "columns.5.display",
+              "type": "0",
+              "value": "5"
+            },
+            {
+              "name": "columns.5.max_length",
+              "type": "0",
+              "value": "120"
+            },
+            {
+              "name": "columns.6.name",
+              "type": "1",
+              "value": "pve3   50026B728316308E 240 GB"
+            },
+            {
+              "name": "columns.6.itemid",
+              "type": "4",
+              "value": "62901"
+            },
+            {
+              "name": "columns.6.display",
+              "type": "0",
+              "value": "5"
+            },
+            {
+              "name": "columns.6.max_length",
+              "type": "0",
+              "value": "120"
+            },
+            {
+              "name": "columns.7.name",
+              "type": "1",
+              "value": "pve3   V9HDUJWL 6 TB"
+            },
+            {
+              "name": "columns.7.itemid",
+              "type": "4",
+              "value": "62902"
+            },
+            {
+              "name": "columns.7.display",
+              "type": "0",
+              "value": "5"
+            },
+            {
+              "name": "columns.7.max_length",
+              "type": "0",
+              "value": "120"
+            },
+            {
+              "name": "columns.8.name",
+              "type": "1",
+              "value": "pve4   223035802840 1 TB"
+            },
+            {
+              "name": "columns.8.itemid",
+              "type": "4",
+              "value": "62977"
+            },
+            {
+              "name": "columns.8.display",
+              "type": "0",
+              "value": "5"
+            },
+            {
+              "name": "columns.8.max_length",
+              "type": "0",
+              "value": "120"
+            },
+            {
+              "name": "columns.9.name",
+              "type": "1",
+              "value": "pve4   50026B7784CBB7F4 240 GB"
+            },
+            {
+              "name": "columns.9.itemid",
+              "type": "4",
+              "value": "62978"
+            },
+            {
+              "name": "columns.9.display",
+              "type": "0",
+              "value": "5"
+            },
+            {
+              "name": "columns.9.max_length",
+              "type": "0",
+              "value": "120"
+            },
+            {
+              "name": "columns.10.name",
+              "type": "1",
+              "value": "pve4   V9HDWGZL 6 TB"
+            },
+            {
+              "name": "columns.10.itemid",
+              "type": "4",
+              "value": "62979"
+            },
+            {
+              "name": "columns.10.display",
+              "type": "0",
+              "value": "5"
+            },
+            {
+              "name": "columns.10.max_length",
+              "type": "0",
+              "value": "120"
+            },
+            {
+              "name": "columns.11.name",
+              "type": "1",
+              "value": "pms0   8LJBPKLN 20 TB"
+            },
+            {
+              "name": "columns.11.itemid",
+              "type": "4",
+              "value": "62944"
+            },
+            {
+              "name": "columns.11.display",
+              "type": "0",
+              "value": "5"
+            },
+            {
+              "name": "columns.11.max_length",
+              "type": "0",
+              "value": "120"
+            },
+            {
+              "name": "columns.12.name",
+              "type": "1",
+              "value": "pms0   8LJ9W80R 20 TB"
+            },
+            {
+              "name": "columns.12.itemid",
+              "type": "4",
+              "value": "62945"
+            },
+            {
+              "name": "columns.12.display",
+              "type": "0",
+              "value": "5"
+            },
+            {
+              "name": "columns.12.max_length",
+              "type": "0",
+              "value": "120"
+            },
+            {
+              "name": "columns.13.name",
+              "type": "1",
+              "value": "pms0   V8GW74NR 6 TB"
+            },
+            {
+              "name": "columns.13.itemid",
+              "type": "4",
+              "value": "62946"
+            },
+            {
+              "name": "columns.13.display",
+              "type": "0",
+              "value": "5"
+            },
+            {
+              "name": "columns.13.max_length",
+              "type": "0",
+              "value": "120"
+            },
+            {
+              "name": "columns.14.name",
+              "type": "1",
+              "value": "pms0   sda"
+            },
+            {
+              "name": "columns.14.itemid",
+              "type": "4",
+              "value": "62943"
+            },
+            {
+              "name": "columns.14.display",
+              "type": "0",
+              "value": "5"
+            },
+            {
+              "name": "columns.14.max_length",
+              "type": "0",
+              "value": "120"
+            }
+          ]
         }
       ]
     }
