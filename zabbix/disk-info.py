@@ -164,11 +164,16 @@ def smart(dev, serial):
     except (OSError, ValueError):
         pass
 
+    # The agent runs as zabbix, which reaches smartctl only through the sudoers rule
+    # the SMART setup installs (zabbix ALL=(root) NOPASSWD: /usr/sbin/smartctl). Run
+    # by hand as root it needs no sudo, and a machine without that rule simply gets
+    # health "unknown" rather than an error.
+    cmd = (["smartctl"] if os.geteuid() == 0 else ["sudo", "-n", "/usr/sbin/smartctl"])
     got = None
     for extra in ([], ["-d", "sat"]):
         try:
-            p = subprocess.run(["smartctl", "-n", "standby", "-H", "-A", "-i",
-                                "--json=c"] + extra + [f"/dev/{dev}"],
+            p = subprocess.run(cmd + ["-n", "standby", "-H", "-A", "-i",
+                                      "--json=c"] + extra + [f"/dev/{dev}"],
                                capture_output=True, text=True, timeout=30)
             j = json.loads(p.stdout or "{}")
         except (OSError, ValueError, subprocess.SubprocessError):
