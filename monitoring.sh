@@ -617,6 +617,21 @@ setup_pressure() {
   record "Zabbix pressure" "installed (custom.psi)"
 }
 
+# setup_drives — the "Homelab drives" template's host side: disk-info.py reports
+# every whole disk on the machine as one JSON document, keyed by serial, so a drive
+# can be discovered and looked at on its own. Not for containers, which have no disks
+# of their own. It reads SMART at most once an hour and always with -n standby, so a
+# parked drive is never woken to be inventoried.
+setup_drives() {
+  if ! install_zbx_helper disk-info.py 0755; then
+    warn "Drive inventory helper not available — skipped."
+    record "Zabbix drives" "skipped (helper missing)"
+    return 0
+  fi
+  write_agent_dropin drives.conf 'UserParameter=custom.diskinfo,/usr/local/bin/disk-info.py'
+  record "Zabbix drives" "installed (custom.diskinfo)"
+}
+
 # setup_lxc_stat — the "Homelab LXC" template's host side, containers only:
 # lxc-stat-json.sh reports the container's own uptime (age of its init) and
 # CPU use from its cgroup, because /proc/uptime and /proc/loadavg inside a
@@ -1204,6 +1219,15 @@ else
     else
       info "Installing the memory and CPU pressure collector..."
       setup_pressure
+    fi
+    # Drive inventory: a machine with its own disks, so not a container. A VM counts:
+    # pms0 sees the array through a passed-through controller and is the only place
+    # those drives are visible at all.
+    if [[ "$ZBX_CONTAINER" == "1" ]]; then
+      note "Container detected: drive inventory skipped (no disks of its own)."
+    else
+      info "Installing the drive inventory collector..."
+      setup_drives
     fi
     # Boot check collector: only where the post-outage boot service is installed.
     if [[ -z "$ZBX_BOOTCHECK" ]]; then

@@ -1,0 +1,280 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: bf6177b54b3f4fe39b327f18494c3001
+      name: Templates/Custom
+  templates:
+    - uuid: 624f2e842f1a4ebc993198d8e086f14f
+      template: 'Homelab drives'
+      name: 'Homelab drives'
+      description: 'One item per physical drive, discovered by serial, so a drive can be looked at on its own. Until 2026-09-22 a disk could only be seen through a table with one row per host, which meant a node with three drives squeezed three drives into one cell and the Top hosts widget cut that cell at 20 characters. Discovery also buys what a ranked slot never could: a drive keeps its identity when another drive gets busier, so its history means one drive and a trigger can name it. This template does NOT alert. The SMART template already discovers these drives and already fires on health, temperature, reallocated sectors and failed self-tests; hours, health and temperature are carried here so a drive reads as one line on a dashboard, and they carry no triggers, because two opinions about one drive is worse than one. Keyed on serial rather than device letter: sdb is not a drive, it is whatever the kernel enumerated second this boot, and the 6 TB disk is sdc on pve2 and sdb on pve3. That is also why these items and the SMART ones do not share a name. Host side: /usr/local/bin/disk-info.py through the UserParameter custom.diskinfo. Sleeping drives are never woken: smartctl runs with -n standby and its answers are cached for an hour, so a parked drive keeps what was last read and reports health standby. Link to bare metal and VMs, not containers, which have no disks of their own. Source of truth: zabbix/templates/homelab-drives.yaml.'
+      groups:
+        - name: Templates/Custom
+      items:
+        - uuid: 908a2e42e572470f974070cf55362728
+          name: 'Drive inventory (raw)'
+          type: ZABBIX_ACTIVE
+          key: custom.diskinfo
+          delay: 1m
+          history: 1d
+          value_type: TEXT
+          trends: '0'
+          description: 'Every whole disk on this machine as one JSON document, from /usr/local/bin/disk-info.py. Holds the discovery list and the per drive values that every item below reads out of it, so one poll answers for every drive rather than one poll per drive per fact.'
+          tags:
+            - tag: component
+              value: storage
+      discovery_rules:
+        - uuid: f509895566134e4aa8716b00c0ac606b
+          name: 'Drive discovery'
+          type: DEPENDENT
+          key: custom.diskinfo.discovery
+          delay: '0'
+          lifetime: 30d
+          enabled_lifetime_type: DISABLE_IMMEDIATELY
+          description: 'One row per whole disk, keyed on serial. Partitions, ZFS volumes and device mapper nodes are left out, because they would each count their parent again. A drive that disappears is disabled at once rather than silently kept: a drive pulled out of the USB enclosure should stop reading, not hold its last value. Thirty days before it is deleted outright, so a drive moved between hosts during the array work keeps its history long enough to be compared.'
+          item_prototypes:
+            - uuid: 024c79651fb4493d93d65d224d98a313
+              name: '[{#DRIVE}] busy percent'
+              type: DEPENDENT
+              key: 'custom.disk.busy[{#SERIAL}]'
+              delay: '0'
+              value_type: FLOAT
+              units: '%'
+              description: 'Percent of a one second sample in which this drive had at least one request in flight, from io_ticks in /proc/diskstats. Read it as never went idle rather than at capacity: a USB disk taking one command at a time saturates long before an SSD serving many in parallel does.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['drives']['{#SERIAL}']['busy']"
+              master_item:
+                key: custom.diskinfo
+              tags:
+                - tag: component
+                  value: storage
+                - tag: drive
+                  value: '{#DRIVE}'
+            - uuid: 7cc9303af7e045d89f6af00ff9a3c82d
+              name: '[{#DRIVE}] space used'
+              type: DEPENDENT
+              key: 'custom.disk.fs_pct[{#SERIAL}]'
+              delay: '0'
+              value_type: FLOAT
+              units: '%'
+              description: 'Percent used across every mounted filesystem on this drive. Minus one where nothing mounted maps to it, which is the honest answer rather than zero: a ZFS pool member has no mountpoint of its own, so the pool is mounted and the vdev is not.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['drives']['{#SERIAL}']['fs_pct']"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.diskinfo
+              tags:
+                - tag: component
+                  value: storage
+                - tag: drive
+                  value: '{#DRIVE}'
+            - uuid: 1efc51b9043344b8a9f07be8f12877a2
+              name: '[{#DRIVE}] space used, bytes'
+              type: DEPENDENT
+              key: 'custom.disk.fs_used[{#SERIAL}]'
+              delay: '0'
+              value_type: UNSIGNED
+              units: 'B'
+              description: 'Bytes used across every mounted filesystem on this drive, or minus one where none maps to it.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['drives']['{#SERIAL}']['fs_used']"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.diskinfo
+              tags:
+                - tag: component
+                  value: storage
+                - tag: drive
+                  value: '{#DRIVE}'
+            - uuid: 1654339163e64f82844ffb81312df2c2
+              name: '[{#DRIVE}] size'
+              type: DEPENDENT
+              key: 'custom.disk.size[{#SERIAL}]'
+              delay: '0'
+              value_type: UNSIGNED
+              units: 'B'
+              description: 'Capacity from /sys/block, in bytes. The vendor figure, so it reads slightly above what a filesystem on it reports.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['drives']['{#SERIAL}']['size']"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.diskinfo
+              tags:
+                - tag: component
+                  value: storage
+                - tag: drive
+                  value: '{#DRIVE}'
+            - uuid: cd6e4d30ec9245e78441b09765776dcc
+              name: '[{#DRIVE}] power on hours'
+              type: DEPENDENT
+              key: 'custom.disk.hours[{#SERIAL}]'
+              delay: '0'
+              value_type: UNSIGNED
+              units: 'h'
+              description: 'Hours the drive has been powered, from SMART, read at most once an hour and never from a drive that is spun down. Minus one where SMART could not be read. Carried for the inventory view only; the SMART template is what alerts.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['drives']['{#SERIAL}']['hours']"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.diskinfo
+              tags:
+                - tag: component
+                  value: storage
+                - tag: drive
+                  value: '{#DRIVE}'
+            - uuid: 02a3fa8df3624e0883ecf890f5790641
+              name: '[{#DRIVE}] temperature'
+              type: DEPENDENT
+              key: 'custom.disk.temp[{#SERIAL}]'
+              delay: '0'
+              value_type: FLOAT
+              units: 'degC'
+              description: 'Drive temperature from the same cached SMART read, or minus one. Carried for the inventory view only; the SMART template already alerts on temperature.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['drives']['{#SERIAL}']['temp']"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.diskinfo
+              tags:
+                - tag: component
+                  value: storage
+                - tag: drive
+                  value: '{#DRIVE}'
+            - uuid: f6e5bbe8a10f4e1c999192563889ad58
+              name: '[{#DRIVE}] health'
+              type: DEPENDENT
+              key: 'custom.disk.health[{#SERIAL}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              description: 'PASSED or FAILED from the SMART overall health check, unknown where it could not be read, or standby where the drive was spun down and was deliberately not woken to ask. Carried for the inventory view only; the SMART template alerts.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['drives']['{#SERIAL}']['health']"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.diskinfo
+              tags:
+                - tag: component
+                  value: storage
+                - tag: drive
+                  value: '{#DRIVE}'
+            - uuid: dfcc7a66b319456db17fdf989872802c
+              name: '[{#DRIVE}] media'
+              type: DEPENDENT
+              key: 'custom.disk.media[{#SERIAL}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              description: 'HDD or SSD, from the kernel rotational flag.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['drives']['{#SERIAL}']['media']"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.diskinfo
+              tags:
+                - tag: component
+                  value: storage
+                - tag: drive
+                  value: '{#DRIVE}'
+            - uuid: 3026526704734776938114f8081f416c
+              name: '[{#DRIVE}] model'
+              type: DEPENDENT
+              key: 'custom.disk.model[{#SERIAL}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              description: 'Device model as the kernel reports it.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['drives']['{#SERIAL}']['model']"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.diskinfo
+              tags:
+                - tag: component
+                  value: storage
+                - tag: drive
+                  value: '{#DRIVE}'
+            - uuid: fd000564628b406b8b0e7b1c143223ae
+              name: '[{#DRIVE}] device'
+              type: DEPENDENT
+              key: 'custom.disk.dev[{#SERIAL}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              description: 'The device letter this drive has on this boot. Recorded because commands need it, and never used to identify the drive, because it moves.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['drives']['{#SERIAL}']['dev']"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.diskinfo
+              tags:
+                - tag: component
+                  value: storage
+                - tag: drive
+                  value: '{#DRIVE}'
+            - uuid: b0aef46bce1c4494b72ec21bc93b1bed
+              name: '[{#DRIVE}] summary'
+              type: DEPENDENT
+              key: 'custom.disk.summary[{#SERIAL}]'
+              delay: '0'
+              value_type: CHAR
+              trends: '0'
+              description: 'The drive on one line: size, media, space used, hours and health. For a view with room for a drive per row but not a column per fact. Busy percent is deliberately absent, because it moves every minute while everything else here moves once an hour at most.'
+              preprocessing:
+                - type: JSONPATH
+                  parameters:
+                    - "$['drives']['{#SERIAL}']['summary']"
+                - type: DISCARD_UNCHANGED_HEARTBEAT
+                  parameters:
+                    - 1h
+              master_item:
+                key: custom.diskinfo
+              tags:
+                - tag: component
+                  value: storage
+                - tag: drive
+                  value: '{#DRIVE}'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.data
+          master_item:
+            key: custom.diskinfo
