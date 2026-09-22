@@ -2192,33 +2192,318 @@
           "fields": [
             {
               "name": "column",
-              "type": 1,
+              "type": "1",
               "value": "0"
             },
             {
               "name": "columns.0.data",
-              "type": 1,
+              "type": "1",
               "value": "2"
             },
             {
               "name": "columns.0.name",
-              "type": 1,
+              "type": "1",
               "value": "Name"
             },
             {
               "name": "columns.1.data",
-              "type": 1,
+              "type": "0",
               "value": "1"
             },
             {
               "name": "columns.1.item",
-              "type": 1,
-              "value": "All disks, busy percent"
+              "type": "1",
+              "value": "Disk 1 (by busy), name"
             },
             {
               "name": "columns.1.name",
-              "type": 1,
-              "value": "Drives, busy percent"
+              "type": "1",
+              "value": "Disk 1"
+            },
+            {
+              "name": "columns.2.base_color",
+              "type": "1",
+              "value": "4CAF50"
+            },
+            {
+              "name": "columns.2.data",
+              "type": "0",
+              "value": "1"
+            },
+            {
+              "name": "columns.2.decimal_places",
+              "type": "0",
+              "value": "0"
+            },
+            {
+              "name": "columns.2.display",
+              "type": "0",
+              "value": "3"
+            },
+            {
+              "name": "columns.2.item",
+              "type": "1",
+              "value": "Disk 1 (by busy), busy percent"
+            },
+            {
+              "name": "columns.2.max",
+              "type": "1",
+              "value": "100"
+            },
+            {
+              "name": "columns.2.min",
+              "type": "1",
+              "value": "0"
+            },
+            {
+              "name": "columns.2.name",
+              "type": "1",
+              "value": "Busy"
+            },
+            {
+              "name": "columnsthresholds.2.color.0",
+              "type": "1",
+              "value": "FCCB1D"
+            },
+            {
+              "name": "columnsthresholds.2.color.1",
+              "type": "1",
+              "value": "E65660"
+            },
+            {
+              "name": "columnsthresholds.2.threshold.0",
+              "type": "1",
+              "value": "50"
+            },
+            {
+              "name": "columnsthresholds.2.threshold.1",
+              "type": "1",
+              "value": "90"
+            },
+            {
+              "name": "columns.3.data",
+              "type": "0",
+              "value": "1"
+            },
+            {
+              "name": "columns.3.item",
+              "type": "1",
+              "value": "Disk 2 (by busy), name"
+            },
+            {
+              "name": "columns.3.name",
+              "type": "1",
+              "value": "Disk 2"
+            },
+            {
+              "name": "columns.4.base_color",
+              "type": "1",
+              "value": "4CAF50"
+            },
+            {
+              "name": "columns.4.data",
+              "type": "0",
+              "value": "1"
+            },
+            {
+              "name": "columns.4.decimal_places",
+              "type": "0",
+              "value": "0"
+            },
+            {
+              "name": "columns.4.display",
+              "type": "0",
+              "value": "3"
+            },
+            {
+              "name": "columns.4.item",
+              "type": "1",
+              "value": "Disk 2 (by busy), busy percent"
+            },
+            {
+              "name": "columns.4.max",
+              "type": "1",
+              "value": "100"
+            },
+            {
+              "name": "columns.4.min",
+              "type": "1",
+              "value": "0"
+            },
+            {
+              "name": "columns.4.name",
+              "type": "1",
+              "value": "Busy"
+            },
+            {
+              "name": "columnsthresholds.4.color.0",
+              "type": "1",
+              "value": "FCCB1D"
+            },
+            {
+              "name": "columnsthresholds.4.color.1",
+              "type": "1",
+              "value": "E65660"
+            },
+            {
+              "name": "columnsthresholds.4.threshold.0",
+              "type": "1",
+              "value": "50"
+            },
+            {
+              "name": "columnsthresholds.4.threshold.1",
+              "type": "1",
+              "value": "90"
+            },
+            {
+              "name": "columns.5.data",
+              "type": "0",
+              "value": "1"
+            },
+            {
+              "name": "columns.5.item",
+              "type": "1",
+              "value": "Disk 3 (by busy), name"
+            },
+            {
+              "name": "columns.5.name",
+              "type": "1",
+              "value": "Disk 3"
+            },
+            {
+              "name": "columns.6.base_color",
+              "type": "1",
+              "value": "4CAF50"
+            },
+            {
+              "name": "columns.6.data",
+              "type": "0",
+              "value": "1"
+            },
+            {
+              "name": "columns.6.decimal_places",
+              "type": "0",
+              "value": "0"
+            },
+            {
+              "name": "columns.6.display",
+              "type": "0",
+              "value": "3"
+            },
+            {
+              "name": "columns.6.item",
+              "type": "1",
+              "value": "Disk 3 (by busy), busy percent"
+            },
+            {
+              "name": "columns.6.max",
+              "type": "1",
+              "value": "100"
+            },
+            {
+              "name": "columns.6.min",
+              "type": "1",
+              "value": "0"
+            },
+            {
+              "name": "columns.6.name",
+              "type": "1",
+              "value": "Busy"
+            },
+            {
+              "name": "columnsthresholds.6.color.0",
+              "type": "1",
+              "value": "FCCB1D"
+            },
+            {
+              "name": "columnsthresholds.6.color.1",
+              "type": "1",
+              "value": "E65660"
+            },
+            {
+              "name": "columnsthresholds.6.threshold.0",
+              "type": "1",
+              "value": "50"
+            },
+            {
+              "name": "columnsthresholds.6.threshold.1",
+              "type": "1",
+              "value": "90"
+            },
+            {
+              "name": "columns.7.data",
+              "type": "0",
+              "value": "1"
+            },
+            {
+              "name": "columns.7.item",
+              "type": "1",
+              "value": "Disk 4 (by busy), name"
+            },
+            {
+              "name": "columns.7.name",
+              "type": "1",
+              "value": "Disk 4"
+            },
+            {
+              "name": "columns.8.base_color",
+              "type": "1",
+              "value": "4CAF50"
+            },
+            {
+              "name": "columns.8.data",
+              "type": "0",
+              "value": "1"
+            },
+            {
+              "name": "columns.8.decimal_places",
+              "type": "0",
+              "value": "0"
+            },
+            {
+              "name": "columns.8.display",
+              "type": "0",
+              "value": "3"
+            },
+            {
+              "name": "columns.8.item",
+              "type": "1",
+              "value": "Disk 4 (by busy), busy percent"
+            },
+            {
+              "name": "columns.8.max",
+              "type": "1",
+              "value": "100"
+            },
+            {
+              "name": "columns.8.min",
+              "type": "1",
+              "value": "0"
+            },
+            {
+              "name": "columns.8.name",
+              "type": "1",
+              "value": "Busy"
+            },
+            {
+              "name": "columnsthresholds.8.color.0",
+              "type": "1",
+              "value": "FCCB1D"
+            },
+            {
+              "name": "columnsthresholds.8.color.1",
+              "type": "1",
+              "value": "E65660"
+            },
+            {
+              "name": "columnsthresholds.8.threshold.0",
+              "type": "1",
+              "value": "50"
+            },
+            {
+              "name": "columnsthresholds.8.threshold.1",
+              "type": "1",
+              "value": "90"
             },
             {
               "name": "groupids.0",
@@ -2227,7 +2512,7 @@
             },
             {
               "name": "hosts.0",
-              "type": 1,
+              "type": "1",
               "value": "pve*"
             },
             {

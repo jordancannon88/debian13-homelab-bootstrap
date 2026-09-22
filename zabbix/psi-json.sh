@@ -97,6 +97,18 @@ drive_name() {
 
 busiest="none"; busiest_drive="none"; busiest_pct=-1
 busy_list=""; all_list=""
+
+# The dashboard also wants the list as a TABLE, one drive per column, because the
+# Zabbix Top hosts widget cuts any text value at 20 characters however wide the
+# widget is. "50026B7283171C3A 240 GB, V9HDUJWL 6 TB 0%, ..." arrives on screen as
+# "50026B7283171C3A 240", which names one drive and hides the rest. So the same
+# sorted list is also published as up to RANKS separate name/percent pairs, worst
+# first, each short enough to survive. Unused slots come back as an empty name at
+# 0 percent rather than being absent, so the column renders blank instead of
+# turning unsupported on nodes with fewer disks.
+RANKS=4
+declare -a rank_name rank_pct
+for ((i = 0; i < RANKS; i++)); do rank_name[$i]=""; rank_pct[$i]=0; done
 # Centiseconds since boot, as an integer. /proc/uptime always carries two decimals,
 # so stripping the dot yields centiseconds directly with no floating point.
 uptime_cs() { local u _r; read -r u _r < /proc/uptime; printf '%s' "${u%.*}${u#*.}"; }
@@ -132,6 +144,7 @@ if [[ -r /proc/diskstats ]]; then
   done < /proc/diskstats
 
   # highest first, so the busy list reads worst-to-least and the top one is obvious
+  rank=0
   for dev in $(for k in "${!pct[@]}"; do echo "${pct[$k]} $k"; done | sort -rn | awk '{print $2}'); do
     p=${pct[$dev]}
     name="$(drive_name "$dev")"
@@ -140,6 +153,10 @@ if [[ -r /proc/diskstats ]]; then
     fi
     all_list="${all_list:+$all_list, }${name} ${p}%"
     (( p >= BUSY_MIN )) && busy_list="${busy_list:+$busy_list, }${name} (${dev}) ${p}%"
+    if (( rank < RANKS )); then
+      rank_name[$rank]="$name"; rank_pct[$rank]=$p
+      rank=$(( rank + 1 ))
+    fi
   done
 fi
 [[ -z "$busy_list" ]] && busy_list="none at or above ${BUSY_MIN}%"
@@ -147,6 +164,10 @@ fi
 
 printf '{"container":%s,"busy":"%s","disks":"%s","busiest":"%s","busiest_drive":"%s","busiest_pct":%s,' \
   "$container" "$busy_list" "$all_list" "$busiest" "$busiest_drive" "$busiest_pct"
+for ((i = 0; i < RANKS; i++)); do
+  printf '"d%s_name":"%s","d%s_pct":%s,' \
+    "$((i + 1))" "${rank_name[$i]}" "$((i + 1))" "${rank_pct[$i]}"
+done
 emit cpu;    printf ','
 emit memory; printf ','
 emit io

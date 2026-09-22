@@ -208,6 +208,142 @@ zabbix_export:
           tags:
             - tag: component
               value: storage
+        - uuid: 55a0f098d2514d39b042616db9065390
+          name: 'Disk 1 (by busy), name'
+          type: DEPENDENT
+          key: custom.psi.d1.name
+          delay: '0'
+          value_type: CHAR
+          trends: '0'
+          description: 'The same per-disk figures the Busy drives and All disks lists carry, but one drive per item so a dashboard can lay them out as a table. The lists are text, and the Zabbix Top hosts widget cuts any text value at 20 characters however wide the widget is made, so on 2026-09-22 the full-width All disks column read "V9HDUJWL 6 TB 0%, 50" and hid every drive after the first. Ranked worst first, matching the order of those lists, so Disk 1 is always the busiest. A node with fewer than four disks returns an empty name at 0 percent for the unused slots, which renders as a blank cell rather than turning the item unsupported. Raise RANKS in the collector if a node ever carries more than four. This is the drive name, by serial and size.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.d1_name
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: storage
+        - uuid: dfbd23921bb943cd9b1d729351f213dd
+          name: 'Disk 1 (by busy), busy percent'
+          type: DEPENDENT
+          key: custom.psi.d1.pct
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: 'The same per-disk figures the Busy drives and All disks lists carry, but one drive per item so a dashboard can lay them out as a table. The lists are text, and the Zabbix Top hosts widget cuts any text value at 20 characters however wide the widget is made, so on 2026-09-22 the full-width All disks column read "V9HDUJWL 6 TB 0%, 50" and hid every drive after the first. Ranked worst first, matching the order of those lists, so Disk 1 is always the busiest. A node with fewer than four disks returns an empty name at 0 percent for the unused slots, which renders as a blank cell rather than turning the item unsupported. Raise RANKS in the collector if a node ever carries more than four. This is the percent of the one second sample that drive had at least one I/O in flight.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.d1_pct
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: storage
+        - uuid: 82e9a82c75024a3ab983f218f1097b33
+          name: 'Disk 2 (by busy), name'
+          type: DEPENDENT
+          key: custom.psi.d2.name
+          delay: '0'
+          value_type: CHAR
+          trends: '0'
+          description: 'The same per-disk figures the Busy drives and All disks lists carry, but one drive per item so a dashboard can lay them out as a table. The lists are text, and the Zabbix Top hosts widget cuts any text value at 20 characters however wide the widget is made, so on 2026-09-22 the full-width All disks column read "V9HDUJWL 6 TB 0%, 50" and hid every drive after the first. Ranked worst first, matching the order of those lists, so Disk 1 is always the busiest. A node with fewer than four disks returns an empty name at 0 percent for the unused slots, which renders as a blank cell rather than turning the item unsupported. Raise RANKS in the collector if a node ever carries more than four. This is the drive name, by serial and size.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.d2_name
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: storage
+        - uuid: 7b223b40b6174affbe00489ecc149498
+          name: 'Disk 2 (by busy), busy percent'
+          type: DEPENDENT
+          key: custom.psi.d2.pct
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: 'The same per-disk figures the Busy drives and All disks lists carry, but one drive per item so a dashboard can lay them out as a table. The lists are text, and the Zabbix Top hosts widget cuts any text value at 20 characters however wide the widget is made, so on 2026-09-22 the full-width All disks column read "V9HDUJWL 6 TB 0%, 50" and hid every drive after the first. Ranked worst first, matching the order of those lists, so Disk 1 is always the busiest. A node with fewer than four disks returns an empty name at 0 percent for the unused slots, which renders as a blank cell rather than turning the item unsupported. Raise RANKS in the collector if a node ever carries more than four. This is the percent of the one second sample that drive had at least one I/O in flight.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.d2_pct
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: storage
+        - uuid: bd5fb691e5de459daa51470e99b3a48c
+          name: 'Disk 3 (by busy), name'
+          type: DEPENDENT
+          key: custom.psi.d3.name
+          delay: '0'
+          value_type: CHAR
+          trends: '0'
+          description: 'The same per-disk figures the Busy drives and All disks lists carry, but one drive per item so a dashboard can lay them out as a table. The lists are text, and the Zabbix Top hosts widget cuts any text value at 20 characters however wide the widget is made, so on 2026-09-22 the full-width All disks column read "V9HDUJWL 6 TB 0%, 50" and hid every drive after the first. Ranked worst first, matching the order of those lists, so Disk 1 is always the busiest. A node with fewer than four disks returns an empty name at 0 percent for the unused slots, which renders as a blank cell rather than turning the item unsupported. Raise RANKS in the collector if a node ever carries more than four. This is the drive name, by serial and size.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.d3_name
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: storage
+        - uuid: e4c0b37865f54a60ab3894e356f51b12
+          name: 'Disk 3 (by busy), busy percent'
+          type: DEPENDENT
+          key: custom.psi.d3.pct
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: 'The same per-disk figures the Busy drives and All disks lists carry, but one drive per item so a dashboard can lay them out as a table. The lists are text, and the Zabbix Top hosts widget cuts any text value at 20 characters however wide the widget is made, so on 2026-09-22 the full-width All disks column read "V9HDUJWL 6 TB 0%, 50" and hid every drive after the first. Ranked worst first, matching the order of those lists, so Disk 1 is always the busiest. A node with fewer than four disks returns an empty name at 0 percent for the unused slots, which renders as a blank cell rather than turning the item unsupported. Raise RANKS in the collector if a node ever carries more than four. This is the percent of the one second sample that drive had at least one I/O in flight.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.d3_pct
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: storage
+        - uuid: 0085830ef7644c59b7b21d8cca98770f
+          name: 'Disk 4 (by busy), name'
+          type: DEPENDENT
+          key: custom.psi.d4.name
+          delay: '0'
+          value_type: CHAR
+          trends: '0'
+          description: 'The same per-disk figures the Busy drives and All disks lists carry, but one drive per item so a dashboard can lay them out as a table. The lists are text, and the Zabbix Top hosts widget cuts any text value at 20 characters however wide the widget is made, so on 2026-09-22 the full-width All disks column read "V9HDUJWL 6 TB 0%, 50" and hid every drive after the first. Ranked worst first, matching the order of those lists, so Disk 1 is always the busiest. A node with fewer than four disks returns an empty name at 0 percent for the unused slots, which renders as a blank cell rather than turning the item unsupported. Raise RANKS in the collector if a node ever carries more than four. This is the drive name, by serial and size.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.d4_name
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: storage
+        - uuid: ce602835cbd24c9893e79be99165e85d
+          name: 'Disk 4 (by busy), busy percent'
+          type: DEPENDENT
+          key: custom.psi.d4.pct
+          delay: '0'
+          value_type: FLOAT
+          units: '%'
+          description: 'The same per-disk figures the Busy drives and All disks lists carry, but one drive per item so a dashboard can lay them out as a table. The lists are text, and the Zabbix Top hosts widget cuts any text value at 20 characters however wide the widget is made, so on 2026-09-22 the full-width All disks column read "V9HDUJWL 6 TB 0%, 50" and hid every drive after the first. Ranked worst first, matching the order of those lists, so Disk 1 is always the busiest. A node with fewer than four disks returns an empty name at 0 percent for the unused slots, which renders as a blank cell rather than turning the item unsupported. Raise RANKS in the collector if a node ever carries more than four. This is the percent of the one second sample that drive had at least one I/O in flight.'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - $.d4_pct
+          master_item:
+            key: custom.psi
+          tags:
+            - tag: component
+              value: storage
         - uuid: 0ab5d70c644b41e68e45e8a529919d70
           name: 'IO pressure (some 10s)'
           type: DEPENDENT
