@@ -1,0 +1,26 @@
+{
+  "uid": "bfz5ficfcepdsb",
+  "name": "Zabbix API",
+  "type": "yesoreyeram-infinity-datasource",
+  "access": "proxy",
+  "url": "",
+  "user": "",
+  "database": "",
+  "basicAuth": false,
+  "basicAuthUser": "",
+  "withCredentials": false,
+  "isDefault": false,
+  "jsonData": {
+    "allowedHosts": [
+      "http://zabbix.internal.cannon.dev"
+    ],
+    "auth_method": "bearerToken",
+    "global_queries": [],
+    "oauthPassThru": false,
+    "pdcInjected": false
+  },
+  "apiVersion": "",
+  "secureJsonData": {
+    "bearerToken": "${SECRET:zabbix-api-bearerToken}"
+  }
+}

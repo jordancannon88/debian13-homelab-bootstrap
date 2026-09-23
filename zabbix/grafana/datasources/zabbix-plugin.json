@@ -1,0 +1,27 @@
+{
+  "uid": "cforkgphap7ggc",
+  "name": "alexanderzobnin-zabbix-datasource",
+  "type": "alexanderzobnin-zabbix-datasource",
+  "access": "proxy",
+  "url": "http://zabbix.internal.cannon.dev/api_jsonrpc.php",
+  "user": "",
+  "database": "",
+  "basicAuth": false,
+  "basicAuthUser": "",
+  "withCredentials": false,
+  "isDefault": true,
+  "jsonData": {
+    "authType": "userLogin",
+    "cacheTTL": "",
+    "disableDataAlignment": false,
+    "pdcInjected": false,
+    "trends": true,
+    "trendsFrom": "",
+    "trendsRange": "",
+    "username": "Admin"
+  },
+  "apiVersion": "",
+  "secureJsonData": {
+    "password": "${SECRET:alexanderzobnin-zabbix-datasource-password}"
+  }
+}
