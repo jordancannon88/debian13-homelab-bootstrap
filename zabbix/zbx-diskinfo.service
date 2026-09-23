@@ -1,0 +1,12 @@
+[Unit]
+Description=Drive inventory for Zabbix (writes /run/zbx-diskinfo.json)
+Documentation=file:///usr/local/bin/disk-info.py
+
+[Service]
+Type=oneshot
+# Root, because smartctl needs it and the agent's 3 second UserParameter timeout
+# is too short for a five second activity sample plus the hourly SMART read.
+ExecStart=/usr/local/bin/disk-info.py --write /run/zbx-diskinfo.json
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=50

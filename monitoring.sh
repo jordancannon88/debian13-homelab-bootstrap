@@ -618,18 +618,33 @@ setup_pressure() {
 }
 
 # setup_drives — the "Homelab drives" template's host side: disk-info.py reports
-# every whole disk on the machine as one JSON document, keyed by serial, so a drive
-# can be discovered and looked at on its own. Not for containers, which have no disks
-# of their own. It reads SMART at most once an hour and always with -n standby, so a
-# parked drive is never woken to be inventoried.
+# every whole disk as one JSON document keyed by serial, so each drive is a row in
+# a table. Not for containers, which have no disks of their own. It runs as root
+# from zbx-diskinfo.timer every minute and writes /run/zbx-diskinfo.json; the
+# UserParameter only reads that file, because a five second activity sample plus
+# the hourly SMART read do not fit the agent's 3 second timeout. Every smartctl
+# call carries -n standby, so a parked drive is never woken to be inventoried.
 setup_drives() {
   if ! install_zbx_helper disk-info.py 0755; then
     warn "Drive inventory helper not available — skipped."
     record "Zabbix drives" "skipped (helper missing)"
     return 0
   fi
-  write_agent_dropin drives.conf 'UserParameter=custom.diskinfo,/usr/local/bin/disk-info.py'
-  record "Zabbix drives" "installed (custom.diskinfo)"
+  local f
+  for f in zbx-diskinfo.service zbx-diskinfo.timer; do
+    if resolve_template "${ZBX_HELPER_DIR}/${f}" "zabbix/${f}"; then
+      install -m 0644 "$RESOLVED_TEMPLATE" "/etc/systemd/system/${f}"
+      [[ "$RESOLVED_TEMPLATE_IS_TMP" == "1" ]] && rm -f "$RESOLVED_TEMPLATE"
+    else
+      warn "Drive inventory unit $f not available — skipped."
+      record "Zabbix drives" "skipped (unit missing)"
+      return 0
+    fi
+  done
+  systemctl daemon-reload
+  systemctl enable --now zbx-diskinfo.timer >/dev/null 2>&1 || warn "Could not enable zbx-diskinfo.timer."
+  write_agent_dropin drives.conf 'UserParameter=custom.diskinfo,cat /run/zbx-diskinfo.json'
+  record "Zabbix drives" "installed (custom.diskinfo from zbx-diskinfo.timer)"
 }
 
 # setup_lxc_stat — the "Homelab LXC" template's host side, containers only:
