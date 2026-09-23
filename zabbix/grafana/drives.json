@@ -349,7 +349,29 @@
             ]
           }
         ]
-      }
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "indexByName": {
+              "Host": 0,
+              "Serial": 1,
+              "Size": 2,
+              "Media": 3,
+              "Used": 4,
+              "Busy": 5,
+              "Wait": 6,
+              "Queue": 7,
+              "Read": 8,
+              "Write": 9,
+              "Host IO psi": 10
+            },
+            "excludeByName": {},
+            "renameByName": {}
+          }
+        }
+      ]
     },
     {
       "id": 2,
@@ -873,7 +895,33 @@
             ]
           }
         ]
-      }
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "indexByName": {
+              "Host": 0,
+              "Serial": 1,
+              "Link": 2,
+              "Role": 3,
+              "Health": 4,
+              "Hours": 5,
+              "Temp": 6,
+              "Realloc": 7,
+              "Pending": 8,
+              "CRC": 9,
+              "ZFS errors": 10,
+              "Wear": 11,
+              "Power": 12,
+              "Self-test": 13,
+              "Firmware": 14
+            },
+            "excludeByName": {},
+            "renameByName": {}
+          }
+        }
+      ]
     }
   ]
 }
