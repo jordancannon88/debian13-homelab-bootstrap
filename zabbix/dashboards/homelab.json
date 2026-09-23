@@ -1909,7 +1909,7 @@
           "view_mode": "0",
           "width": "36",
           "x": "0",
-          "y": "17"
+          "y": "29"
         },
         {
           "fields": [
@@ -2085,7 +2085,7 @@
           "view_mode": "0",
           "width": "36",
           "x": "36",
-          "y": "17"
+          "y": "29"
         },
         {
           "fields": [
@@ -2351,7 +2351,7 @@
           "view_mode": "0",
           "width": "72",
           "x": "0",
-          "y": "23"
+          "y": "35"
         },
         {
           "fields": [
@@ -2552,7 +2552,7 @@
           "view_mode": "0",
           "width": "24",
           "x": "0",
-          "y": "29"
+          "y": "41"
         },
         {
           "fields": [
@@ -2753,7 +2753,7 @@
           "view_mode": "0",
           "width": "24",
           "x": "24",
-          "y": "29"
+          "y": "41"
         },
         {
           "fields": [
@@ -2884,7 +2884,7 @@
           "view_mode": "0",
           "width": "24",
           "x": "48",
-          "y": "29"
+          "y": "41"
         },
         {
           "fields": [
@@ -2910,7 +2910,7 @@
           "view_mode": "0",
           "width": "72",
           "x": "0",
-          "y": "35"
+          "y": "47"
         },
         {
           "fields": [],
@@ -2920,7 +2920,23 @@
           "view_mode": "0",
           "width": "72",
           "x": "0",
-          "y": "44"
+          "y": "56"
+        },
+        {
+          "fields": [
+            {
+              "name": "url",
+              "type": "1",
+              "value": "https://grafana.local.cannon.dev/d/homelab-drives/drives?orgId=1&kiosk&refresh=1m"
+            }
+          ],
+          "height": "12",
+          "name": "Drives",
+          "type": "url",
+          "view_mode": "1",
+          "width": "72",
+          "x": "0",
+          "y": "17"
         }
       ]
     }
