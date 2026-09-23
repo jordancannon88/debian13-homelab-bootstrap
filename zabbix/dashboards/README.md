@@ -223,6 +223,11 @@ were not switched off for being noisy; they were switched off and never turned b
 on. Repaired 2026-09-21 with `zabbix/zbx-cputemp.py`, which also replaces `last()`
 with `min()` over a window so one bad sensor read cannot page.
 
+**The gauges now colour where the triggers fire.** Until 2026-09-23 they went amber
+at 85 and red at 95 while the triggers fire at 90 and 100, so a gauge turned red five
+degrees before anything alerted. `zabbix/zbx-fix-cputemp-gauges.py` set amber 90 and
+red 100, and moved the maximum from 100 to 110 so the red band has width.
+
 The items are keyed per host, `pve0.cpuTemperature` through `pve4.cpuTemperature`, so
 no template can own them as they stand and nothing keeps the five hosts consistent.
 That is the structural fix and it is a separate piece of work.
