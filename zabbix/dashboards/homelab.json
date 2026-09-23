@@ -1382,895 +1382,6 @@
         {
           "fields": [
             {
-              "name": "ds.0.color",
-              "type": "1",
-              "value": "2774A4"
-            },
-            {
-              "name": "ds.0.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.0.hosts.0",
-              "type": "1",
-              "value": "pve0"
-            },
-            {
-              "name": "ds.0.items.0",
-              "type": "1",
-              "value": "CPU pressure (some 300s)"
-            },
-            {
-              "name": "ds.0.transparency",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.0.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.1.color",
-              "type": "1",
-              "value": "1A7C11"
-            },
-            {
-              "name": "ds.1.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.1.hosts.0",
-              "type": "1",
-              "value": "pve1"
-            },
-            {
-              "name": "ds.1.items.0",
-              "type": "1",
-              "value": "CPU pressure (some 300s)"
-            },
-            {
-              "name": "ds.1.transparency",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.1.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.2.color",
-              "type": "1",
-              "value": "6C59DC"
-            },
-            {
-              "name": "ds.2.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.2.hosts.0",
-              "type": "1",
-              "value": "pve2"
-            },
-            {
-              "name": "ds.2.items.0",
-              "type": "1",
-              "value": "CPU pressure (some 300s)"
-            },
-            {
-              "name": "ds.2.transparency",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.2.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.3.color",
-              "type": "1",
-              "value": "00A6BF"
-            },
-            {
-              "name": "ds.3.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.3.hosts.0",
-              "type": "1",
-              "value": "pve3"
-            },
-            {
-              "name": "ds.3.items.0",
-              "type": "1",
-              "value": "CPU pressure (some 300s)"
-            },
-            {
-              "name": "ds.3.transparency",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.3.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.4.color",
-              "type": "1",
-              "value": "A64BC4"
-            },
-            {
-              "name": "ds.4.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.4.hosts.0",
-              "type": "1",
-              "value": "pve4"
-            },
-            {
-              "name": "ds.4.items.0",
-              "type": "1",
-              "value": "CPU pressure (some 300s)"
-            },
-            {
-              "name": "ds.4.transparency",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.4.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "lefty_min",
-              "type": "1",
-              "value": "0"
-            },
-            {
-              "name": "legend_lines",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "righty",
-              "type": "0",
-              "value": "0"
-            }
-          ],
-          "height": "6",
-          "name": "CPU pressure, PVE nodes",
-          "type": "svggraph",
-          "view_mode": "0",
-          "width": "36",
-          "x": "0",
-          "y": "13"
-        },
-        {
-          "fields": [
-            {
-              "name": "ds.0.color",
-              "type": "1",
-              "value": "2774A4"
-            },
-            {
-              "name": "ds.0.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.0.hosts.0",
-              "type": "1",
-              "value": "pve0"
-            },
-            {
-              "name": "ds.0.items.0",
-              "type": "1",
-              "value": "Memory pressure (full 60s)"
-            },
-            {
-              "name": "ds.0.transparency",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.0.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.1.color",
-              "type": "1",
-              "value": "1A7C11"
-            },
-            {
-              "name": "ds.1.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.1.hosts.0",
-              "type": "1",
-              "value": "pve1"
-            },
-            {
-              "name": "ds.1.items.0",
-              "type": "1",
-              "value": "Memory pressure (full 60s)"
-            },
-            {
-              "name": "ds.1.transparency",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.1.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.2.color",
-              "type": "1",
-              "value": "6C59DC"
-            },
-            {
-              "name": "ds.2.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.2.hosts.0",
-              "type": "1",
-              "value": "pve2"
-            },
-            {
-              "name": "ds.2.items.0",
-              "type": "1",
-              "value": "Memory pressure (full 60s)"
-            },
-            {
-              "name": "ds.2.transparency",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.2.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.3.color",
-              "type": "1",
-              "value": "00A6BF"
-            },
-            {
-              "name": "ds.3.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.3.hosts.0",
-              "type": "1",
-              "value": "pve3"
-            },
-            {
-              "name": "ds.3.items.0",
-              "type": "1",
-              "value": "Memory pressure (full 60s)"
-            },
-            {
-              "name": "ds.3.transparency",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.3.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.4.color",
-              "type": "1",
-              "value": "A64BC4"
-            },
-            {
-              "name": "ds.4.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.4.hosts.0",
-              "type": "1",
-              "value": "pve4"
-            },
-            {
-              "name": "ds.4.items.0",
-              "type": "1",
-              "value": "Memory pressure (full 60s)"
-            },
-            {
-              "name": "ds.4.transparency",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.4.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "lefty_min",
-              "type": "1",
-              "value": "0"
-            },
-            {
-              "name": "legend_lines",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "righty",
-              "type": "0",
-              "value": "0"
-            }
-          ],
-          "height": "6",
-          "name": "Memory pressure, PVE nodes",
-          "type": "svggraph",
-          "view_mode": "0",
-          "width": "36",
-          "x": "36",
-          "y": "13"
-        },
-        {
-          "fields": [
-            {
-              "name": "ds.0.color",
-              "type": "1",
-              "value": "2774A4"
-            },
-            {
-              "name": "ds.0.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.0.hosts.0",
-              "type": "1",
-              "value": "pve0"
-            },
-            {
-              "name": "ds.0.items.0",
-              "type": "1",
-              "value": "IO pressure (full 10s)"
-            },
-            {
-              "name": "ds.0.pointsize",
-              "type": "0",
-              "value": "6"
-            },
-            {
-              "name": "ds.0.transparency",
-              "type": "0",
-              "value": "0"
-            },
-            {
-              "name": "ds.0.type",
-              "type": "0",
-              "value": "1"
-            },
-            {
-              "name": "ds.0.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.1.color",
-              "type": "1",
-              "value": "1A7C11"
-            },
-            {
-              "name": "ds.1.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.1.hosts.0",
-              "type": "1",
-              "value": "pve1"
-            },
-            {
-              "name": "ds.1.items.0",
-              "type": "1",
-              "value": "IO pressure (full 10s)"
-            },
-            {
-              "name": "ds.1.pointsize",
-              "type": "0",
-              "value": "6"
-            },
-            {
-              "name": "ds.1.transparency",
-              "type": "0",
-              "value": "0"
-            },
-            {
-              "name": "ds.1.type",
-              "type": "0",
-              "value": "1"
-            },
-            {
-              "name": "ds.1.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.2.color",
-              "type": "1",
-              "value": "6C59DC"
-            },
-            {
-              "name": "ds.2.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.2.hosts.0",
-              "type": "1",
-              "value": "pve2"
-            },
-            {
-              "name": "ds.2.items.0",
-              "type": "1",
-              "value": "IO pressure (full 10s)"
-            },
-            {
-              "name": "ds.2.pointsize",
-              "type": "0",
-              "value": "6"
-            },
-            {
-              "name": "ds.2.transparency",
-              "type": "0",
-              "value": "0"
-            },
-            {
-              "name": "ds.2.type",
-              "type": "0",
-              "value": "1"
-            },
-            {
-              "name": "ds.2.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.3.color",
-              "type": "1",
-              "value": "00A6BF"
-            },
-            {
-              "name": "ds.3.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.3.hosts.0",
-              "type": "1",
-              "value": "pve3"
-            },
-            {
-              "name": "ds.3.items.0",
-              "type": "1",
-              "value": "IO pressure (full 10s)"
-            },
-            {
-              "name": "ds.3.pointsize",
-              "type": "0",
-              "value": "6"
-            },
-            {
-              "name": "ds.3.transparency",
-              "type": "0",
-              "value": "0"
-            },
-            {
-              "name": "ds.3.type",
-              "type": "0",
-              "value": "1"
-            },
-            {
-              "name": "ds.3.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.4.color",
-              "type": "1",
-              "value": "A64BC4"
-            },
-            {
-              "name": "ds.4.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.4.hosts.0",
-              "type": "1",
-              "value": "pve4"
-            },
-            {
-              "name": "ds.4.items.0",
-              "type": "1",
-              "value": "IO pressure (full 10s)"
-            },
-            {
-              "name": "ds.4.pointsize",
-              "type": "0",
-              "value": "6"
-            },
-            {
-              "name": "ds.4.transparency",
-              "type": "0",
-              "value": "0"
-            },
-            {
-              "name": "ds.4.type",
-              "type": "0",
-              "value": "1"
-            },
-            {
-              "name": "ds.4.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.5.color",
-              "type": "1",
-              "value": "546E7A"
-            },
-            {
-              "name": "ds.5.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.5.hosts.0",
-              "type": "1",
-              "value": "pms0"
-            },
-            {
-              "name": "ds.5.items.0",
-              "type": "1",
-              "value": "IO pressure (full 10s)"
-            },
-            {
-              "name": "ds.5.pointsize",
-              "type": "0",
-              "value": "6"
-            },
-            {
-              "name": "ds.5.transparency",
-              "type": "0",
-              "value": "0"
-            },
-            {
-              "name": "ds.5.type",
-              "type": "0",
-              "value": "1"
-            },
-            {
-              "name": "ds.5.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "lefty_min",
-              "type": "1",
-              "value": "0"
-            },
-            {
-              "name": "legend_lines",
-              "type": "0",
-              "value": "3"
-            },
-            {
-              "name": "righty",
-              "type": "0",
-              "value": "0"
-            }
-          ],
-          "height": "6",
-          "name": "Disk IO pressure, nodes and pms0",
-          "type": "svggraph",
-          "view_mode": "0",
-          "width": "36",
-          "x": "0",
-          "y": "19"
-        },
-        {
-          "fields": [
-            {
-              "name": "ds.0.color",
-              "type": "1",
-              "value": "2774A4"
-            },
-            {
-              "name": "ds.0.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.0.hosts.0",
-              "type": "1",
-              "value": "pve0"
-            },
-            {
-              "name": "ds.0.items.0",
-              "type": "1",
-              "value": "Busiest disk utilisation"
-            },
-            {
-              "name": "ds.0.pointsize",
-              "type": "0",
-              "value": "6"
-            },
-            {
-              "name": "ds.0.transparency",
-              "type": "0",
-              "value": "0"
-            },
-            {
-              "name": "ds.0.type",
-              "type": "0",
-              "value": "1"
-            },
-            {
-              "name": "ds.0.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.1.color",
-              "type": "1",
-              "value": "1A7C11"
-            },
-            {
-              "name": "ds.1.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.1.hosts.0",
-              "type": "1",
-              "value": "pve1"
-            },
-            {
-              "name": "ds.1.items.0",
-              "type": "1",
-              "value": "Busiest disk utilisation"
-            },
-            {
-              "name": "ds.1.pointsize",
-              "type": "0",
-              "value": "6"
-            },
-            {
-              "name": "ds.1.transparency",
-              "type": "0",
-              "value": "0"
-            },
-            {
-              "name": "ds.1.type",
-              "type": "0",
-              "value": "1"
-            },
-            {
-              "name": "ds.1.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.2.color",
-              "type": "1",
-              "value": "6C59DC"
-            },
-            {
-              "name": "ds.2.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.2.hosts.0",
-              "type": "1",
-              "value": "pve2"
-            },
-            {
-              "name": "ds.2.items.0",
-              "type": "1",
-              "value": "Busiest disk utilisation"
-            },
-            {
-              "name": "ds.2.pointsize",
-              "type": "0",
-              "value": "6"
-            },
-            {
-              "name": "ds.2.transparency",
-              "type": "0",
-              "value": "0"
-            },
-            {
-              "name": "ds.2.type",
-              "type": "0",
-              "value": "1"
-            },
-            {
-              "name": "ds.2.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.3.color",
-              "type": "1",
-              "value": "00A6BF"
-            },
-            {
-              "name": "ds.3.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.3.hosts.0",
-              "type": "1",
-              "value": "pve3"
-            },
-            {
-              "name": "ds.3.items.0",
-              "type": "1",
-              "value": "Busiest disk utilisation"
-            },
-            {
-              "name": "ds.3.pointsize",
-              "type": "0",
-              "value": "6"
-            },
-            {
-              "name": "ds.3.transparency",
-              "type": "0",
-              "value": "0"
-            },
-            {
-              "name": "ds.3.type",
-              "type": "0",
-              "value": "1"
-            },
-            {
-              "name": "ds.3.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.4.color",
-              "type": "1",
-              "value": "A64BC4"
-            },
-            {
-              "name": "ds.4.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.4.hosts.0",
-              "type": "1",
-              "value": "pve4"
-            },
-            {
-              "name": "ds.4.items.0",
-              "type": "1",
-              "value": "Busiest disk utilisation"
-            },
-            {
-              "name": "ds.4.pointsize",
-              "type": "0",
-              "value": "6"
-            },
-            {
-              "name": "ds.4.transparency",
-              "type": "0",
-              "value": "0"
-            },
-            {
-              "name": "ds.4.type",
-              "type": "0",
-              "value": "1"
-            },
-            {
-              "name": "ds.4.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.5.color",
-              "type": "1",
-              "value": "546E7A"
-            },
-            {
-              "name": "ds.5.fill",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "ds.5.hosts.0",
-              "type": "1",
-              "value": "pms0"
-            },
-            {
-              "name": "ds.5.items.0",
-              "type": "1",
-              "value": "Busiest disk utilisation"
-            },
-            {
-              "name": "ds.5.pointsize",
-              "type": "0",
-              "value": "6"
-            },
-            {
-              "name": "ds.5.transparency",
-              "type": "0",
-              "value": "0"
-            },
-            {
-              "name": "ds.5.type",
-              "type": "0",
-              "value": "1"
-            },
-            {
-              "name": "ds.5.width",
-              "type": "0",
-              "value": "2"
-            },
-            {
-              "name": "lefty_max",
-              "type": "1",
-              "value": "100"
-            },
-            {
-              "name": "lefty_min",
-              "type": "1",
-              "value": "0"
-            },
-            {
-              "name": "legend_lines",
-              "type": "0",
-              "value": "3"
-            },
-            {
-              "name": "righty",
-              "type": "0",
-              "value": "0"
-            }
-          ],
-          "height": "6",
-          "name": "Busiest disk, nodes and pms0",
-          "type": "svggraph",
-          "view_mode": "0",
-          "width": "36",
-          "x": "36",
-          "y": "19"
-        },
-        {
-          "fields": [
-            {
               "name": "columns.0.data",
               "type": "0",
               "value": "2"
@@ -2616,13 +1727,631 @@
               "value": "60"
             }
           ],
-          "height": "6",
+          "height": "4",
           "name": "Drives, busy percent",
           "type": "tophosts",
           "view_mode": "0",
           "width": "72",
           "x": "0",
-          "y": "25"
+          "y": "13"
+        },
+        {
+          "fields": [
+            {
+              "name": "ds.0.color",
+              "type": "1",
+              "value": "2774A4"
+            },
+            {
+              "name": "ds.0.fill",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.0.hosts.0",
+              "type": "1",
+              "value": "pve0"
+            },
+            {
+              "name": "ds.0.items.0",
+              "type": "1",
+              "value": "CPU pressure (some 300s)"
+            },
+            {
+              "name": "ds.0.transparency",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.0.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.1.color",
+              "type": "1",
+              "value": "1A7C11"
+            },
+            {
+              "name": "ds.1.fill",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.1.hosts.0",
+              "type": "1",
+              "value": "pve1"
+            },
+            {
+              "name": "ds.1.items.0",
+              "type": "1",
+              "value": "CPU pressure (some 300s)"
+            },
+            {
+              "name": "ds.1.transparency",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.1.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.2.color",
+              "type": "1",
+              "value": "6C59DC"
+            },
+            {
+              "name": "ds.2.fill",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.2.hosts.0",
+              "type": "1",
+              "value": "pve2"
+            },
+            {
+              "name": "ds.2.items.0",
+              "type": "1",
+              "value": "CPU pressure (some 300s)"
+            },
+            {
+              "name": "ds.2.transparency",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.2.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.3.color",
+              "type": "1",
+              "value": "00A6BF"
+            },
+            {
+              "name": "ds.3.fill",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.3.hosts.0",
+              "type": "1",
+              "value": "pve3"
+            },
+            {
+              "name": "ds.3.items.0",
+              "type": "1",
+              "value": "CPU pressure (some 300s)"
+            },
+            {
+              "name": "ds.3.transparency",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.3.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.4.color",
+              "type": "1",
+              "value": "A64BC4"
+            },
+            {
+              "name": "ds.4.fill",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.4.hosts.0",
+              "type": "1",
+              "value": "pve4"
+            },
+            {
+              "name": "ds.4.items.0",
+              "type": "1",
+              "value": "CPU pressure (some 300s)"
+            },
+            {
+              "name": "ds.4.transparency",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.4.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "lefty_min",
+              "type": "1",
+              "value": "0"
+            },
+            {
+              "name": "legend_lines",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "righty",
+              "type": "0",
+              "value": "0"
+            }
+          ],
+          "height": "6",
+          "name": "CPU pressure, PVE nodes",
+          "type": "svggraph",
+          "view_mode": "0",
+          "width": "36",
+          "x": "0",
+          "y": "17"
+        },
+        {
+          "fields": [
+            {
+              "name": "ds.0.color",
+              "type": "1",
+              "value": "2774A4"
+            },
+            {
+              "name": "ds.0.fill",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.0.hosts.0",
+              "type": "1",
+              "value": "pve0"
+            },
+            {
+              "name": "ds.0.items.0",
+              "type": "1",
+              "value": "Memory pressure (full 60s)"
+            },
+            {
+              "name": "ds.0.transparency",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.0.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.1.color",
+              "type": "1",
+              "value": "1A7C11"
+            },
+            {
+              "name": "ds.1.fill",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.1.hosts.0",
+              "type": "1",
+              "value": "pve1"
+            },
+            {
+              "name": "ds.1.items.0",
+              "type": "1",
+              "value": "Memory pressure (full 60s)"
+            },
+            {
+              "name": "ds.1.transparency",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.1.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.2.color",
+              "type": "1",
+              "value": "6C59DC"
+            },
+            {
+              "name": "ds.2.fill",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.2.hosts.0",
+              "type": "1",
+              "value": "pve2"
+            },
+            {
+              "name": "ds.2.items.0",
+              "type": "1",
+              "value": "Memory pressure (full 60s)"
+            },
+            {
+              "name": "ds.2.transparency",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.2.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.3.color",
+              "type": "1",
+              "value": "00A6BF"
+            },
+            {
+              "name": "ds.3.fill",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.3.hosts.0",
+              "type": "1",
+              "value": "pve3"
+            },
+            {
+              "name": "ds.3.items.0",
+              "type": "1",
+              "value": "Memory pressure (full 60s)"
+            },
+            {
+              "name": "ds.3.transparency",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.3.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.4.color",
+              "type": "1",
+              "value": "A64BC4"
+            },
+            {
+              "name": "ds.4.fill",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.4.hosts.0",
+              "type": "1",
+              "value": "pve4"
+            },
+            {
+              "name": "ds.4.items.0",
+              "type": "1",
+              "value": "Memory pressure (full 60s)"
+            },
+            {
+              "name": "ds.4.transparency",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.4.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "lefty_min",
+              "type": "1",
+              "value": "0"
+            },
+            {
+              "name": "legend_lines",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "righty",
+              "type": "0",
+              "value": "0"
+            }
+          ],
+          "height": "6",
+          "name": "Memory pressure, PVE nodes",
+          "type": "svggraph",
+          "view_mode": "0",
+          "width": "36",
+          "x": "36",
+          "y": "17"
+        },
+        {
+          "fields": [
+            {
+              "name": "ds.0.color",
+              "type": "1",
+              "value": "2774A4"
+            },
+            {
+              "name": "ds.0.fill",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.0.hosts.0",
+              "type": "1",
+              "value": "pve0"
+            },
+            {
+              "name": "ds.0.items.0",
+              "type": "1",
+              "value": "IO pressure (full 10s)"
+            },
+            {
+              "name": "ds.0.pointsize",
+              "type": "0",
+              "value": "6"
+            },
+            {
+              "name": "ds.0.transparency",
+              "type": "0",
+              "value": "0"
+            },
+            {
+              "name": "ds.0.type",
+              "type": "0",
+              "value": "1"
+            },
+            {
+              "name": "ds.0.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.1.color",
+              "type": "1",
+              "value": "1A7C11"
+            },
+            {
+              "name": "ds.1.fill",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.1.hosts.0",
+              "type": "1",
+              "value": "pve1"
+            },
+            {
+              "name": "ds.1.items.0",
+              "type": "1",
+              "value": "IO pressure (full 10s)"
+            },
+            {
+              "name": "ds.1.pointsize",
+              "type": "0",
+              "value": "6"
+            },
+            {
+              "name": "ds.1.transparency",
+              "type": "0",
+              "value": "0"
+            },
+            {
+              "name": "ds.1.type",
+              "type": "0",
+              "value": "1"
+            },
+            {
+              "name": "ds.1.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.2.color",
+              "type": "1",
+              "value": "6C59DC"
+            },
+            {
+              "name": "ds.2.fill",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.2.hosts.0",
+              "type": "1",
+              "value": "pve2"
+            },
+            {
+              "name": "ds.2.items.0",
+              "type": "1",
+              "value": "IO pressure (full 10s)"
+            },
+            {
+              "name": "ds.2.pointsize",
+              "type": "0",
+              "value": "6"
+            },
+            {
+              "name": "ds.2.transparency",
+              "type": "0",
+              "value": "0"
+            },
+            {
+              "name": "ds.2.type",
+              "type": "0",
+              "value": "1"
+            },
+            {
+              "name": "ds.2.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.3.color",
+              "type": "1",
+              "value": "00A6BF"
+            },
+            {
+              "name": "ds.3.fill",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.3.hosts.0",
+              "type": "1",
+              "value": "pve3"
+            },
+            {
+              "name": "ds.3.items.0",
+              "type": "1",
+              "value": "IO pressure (full 10s)"
+            },
+            {
+              "name": "ds.3.pointsize",
+              "type": "0",
+              "value": "6"
+            },
+            {
+              "name": "ds.3.transparency",
+              "type": "0",
+              "value": "0"
+            },
+            {
+              "name": "ds.3.type",
+              "type": "0",
+              "value": "1"
+            },
+            {
+              "name": "ds.3.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.4.color",
+              "type": "1",
+              "value": "A64BC4"
+            },
+            {
+              "name": "ds.4.fill",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.4.hosts.0",
+              "type": "1",
+              "value": "pve4"
+            },
+            {
+              "name": "ds.4.items.0",
+              "type": "1",
+              "value": "IO pressure (full 10s)"
+            },
+            {
+              "name": "ds.4.pointsize",
+              "type": "0",
+              "value": "6"
+            },
+            {
+              "name": "ds.4.transparency",
+              "type": "0",
+              "value": "0"
+            },
+            {
+              "name": "ds.4.type",
+              "type": "0",
+              "value": "1"
+            },
+            {
+              "name": "ds.4.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.5.color",
+              "type": "1",
+              "value": "546E7A"
+            },
+            {
+              "name": "ds.5.fill",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "ds.5.hosts.0",
+              "type": "1",
+              "value": "pms0"
+            },
+            {
+              "name": "ds.5.items.0",
+              "type": "1",
+              "value": "IO pressure (full 10s)"
+            },
+            {
+              "name": "ds.5.pointsize",
+              "type": "0",
+              "value": "6"
+            },
+            {
+              "name": "ds.5.transparency",
+              "type": "0",
+              "value": "0"
+            },
+            {
+              "name": "ds.5.type",
+              "type": "0",
+              "value": "1"
+            },
+            {
+              "name": "ds.5.width",
+              "type": "0",
+              "value": "2"
+            },
+            {
+              "name": "lefty_min",
+              "type": "1",
+              "value": "0"
+            },
+            {
+              "name": "legend_lines",
+              "type": "0",
+              "value": "3"
+            },
+            {
+              "name": "righty",
+              "type": "0",
+              "value": "0"
+            }
+          ],
+          "height": "6",
+          "name": "Disk IO pressure, nodes and pms0",
+          "type": "svggraph",
+          "view_mode": "0",
+          "width": "72",
+          "x": "0",
+          "y": "23"
         },
         {
           "fields": [
@@ -2823,7 +2552,7 @@
           "view_mode": "0",
           "width": "24",
           "x": "0",
-          "y": "31"
+          "y": "29"
         },
         {
           "fields": [
@@ -3024,7 +2753,7 @@
           "view_mode": "0",
           "width": "24",
           "x": "24",
-          "y": "31"
+          "y": "29"
         },
         {
           "fields": [
@@ -3155,7 +2884,7 @@
           "view_mode": "0",
           "width": "24",
           "x": "48",
-          "y": "31"
+          "y": "29"
         },
         {
           "fields": [
@@ -3181,7 +2910,7 @@
           "view_mode": "0",
           "width": "72",
           "x": "0",
-          "y": "37"
+          "y": "35"
         },
         {
           "fields": [],
@@ -3191,7 +2920,7 @@
           "view_mode": "0",
           "width": "72",
           "x": "0",
-          "y": "46"
+          "y": "44"
         }
       ]
     }
