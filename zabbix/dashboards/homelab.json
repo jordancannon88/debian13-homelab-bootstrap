@@ -27,7 +27,7 @@
             {
               "name": "max",
               "type": "1",
-              "value": "100"
+              "value": "110"
             },
             {
               "name": "min",
@@ -72,7 +72,7 @@
             {
               "name": "thresholds.2.threshold",
               "type": "1",
-              "value": "85"
+              "value": "90"
             },
             {
               "name": "thresholds.3.color",
@@ -82,7 +82,7 @@
             {
               "name": "thresholds.3.threshold",
               "type": "1",
-              "value": "95"
+              "value": "100"
             }
           ],
           "height": "3",
@@ -113,7 +113,7 @@
             {
               "name": "max",
               "type": "1",
-              "value": "100"
+              "value": "110"
             },
             {
               "name": "min",
@@ -158,7 +158,7 @@
             {
               "name": "thresholds.2.threshold",
               "type": "1",
-              "value": "85"
+              "value": "90"
             },
             {
               "name": "thresholds.3.color",
@@ -168,7 +168,7 @@
             {
               "name": "thresholds.3.threshold",
               "type": "1",
-              "value": "95"
+              "value": "100"
             }
           ],
           "height": "3",
@@ -199,7 +199,7 @@
             {
               "name": "max",
               "type": "1",
-              "value": "100"
+              "value": "110"
             },
             {
               "name": "min",
@@ -244,7 +244,7 @@
             {
               "name": "thresholds.2.threshold",
               "type": "1",
-              "value": "85"
+              "value": "90"
             },
             {
               "name": "thresholds.3.color",
@@ -254,7 +254,7 @@
             {
               "name": "thresholds.3.threshold",
               "type": "1",
-              "value": "95"
+              "value": "100"
             }
           ],
           "height": "3",
@@ -285,7 +285,7 @@
             {
               "name": "max",
               "type": "1",
-              "value": "100"
+              "value": "110"
             },
             {
               "name": "min",
@@ -330,7 +330,7 @@
             {
               "name": "thresholds.2.threshold",
               "type": "1",
-              "value": "85"
+              "value": "90"
             },
             {
               "name": "thresholds.3.color",
@@ -340,7 +340,7 @@
             {
               "name": "thresholds.3.threshold",
               "type": "1",
-              "value": "95"
+              "value": "100"
             }
           ],
           "height": "3",
@@ -371,7 +371,7 @@
             {
               "name": "max",
               "type": "1",
-              "value": "100"
+              "value": "110"
             },
             {
               "name": "min",
@@ -416,7 +416,7 @@
             {
               "name": "thresholds.2.threshold",
               "type": "1",
-              "value": "85"
+              "value": "90"
             },
             {
               "name": "thresholds.3.color",
@@ -426,7 +426,7 @@
             {
               "name": "thresholds.3.threshold",
               "type": "1",
-              "value": "95"
+              "value": "100"
             }
           ],
           "height": "3",
@@ -1738,6 +1738,22 @@
         {
           "fields": [
             {
+              "name": "url",
+              "type": "1",
+              "value": "https://grafana.local.cannon.dev/d/homelab-drives/drives?orgId=1&kiosk&refresh=1m"
+            }
+          ],
+          "height": "12",
+          "name": "Drives",
+          "type": "url",
+          "view_mode": "1",
+          "width": "72",
+          "x": "0",
+          "y": "17"
+        },
+        {
+          "fields": [
+            {
               "name": "ds.0.color",
               "type": "1",
               "value": "2774A4"
@@ -2921,22 +2937,6 @@
           "width": "72",
           "x": "0",
           "y": "56"
-        },
-        {
-          "fields": [
-            {
-              "name": "url",
-              "type": "1",
-              "value": "https://grafana.local.cannon.dev/d/homelab-drives/drives?orgId=1&kiosk&refresh=1m"
-            }
-          ],
-          "height": "12",
-          "name": "Drives",
-          "type": "url",
-          "view_mode": "1",
-          "width": "72",
-          "x": "0",
-          "y": "17"
         }
       ]
     }
