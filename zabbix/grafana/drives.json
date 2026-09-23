@@ -149,6 +149,18 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "Serial"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "Size"
             },
             "properties": [
@@ -523,6 +535,18 @@
           ]
         },
         "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Serial"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          },
           {
             "matcher": {
               "id": "byName",
