@@ -11,17 +11,17 @@
   "withCredentials": false,
   "isDefault": true,
   "jsonData": {
-    "authType": "userLogin",
+    "authType": "token",
     "cacheTTL": "",
     "disableDataAlignment": false,
     "pdcInjected": false,
     "trends": true,
     "trendsFrom": "",
-    "trendsRange": "",
-    "username": "Admin"
+    "trendsRange": ""
   },
   "apiVersion": "",
   "secureJsonData": {
-    "password": "${SECRET:alexanderzobnin-zabbix-datasource-password}"
+    "apiToken": "${SECRET:zabbix-plugin-apiToken}",
+    "password": ""
   }
 }
