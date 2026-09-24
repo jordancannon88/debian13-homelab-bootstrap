@@ -89,7 +89,11 @@ def datasources():
     return _ds_cache
 
 
-def resolve(text, secrets=False):
+def resolve(text, secrets="forbid"):
+    """Swap placeholders for real values. Data source uids always; secrets per mode:
+    "forbid" for dashboards, which must never hold one, "keep" for a data source dry
+    run, which shows the placeholder rather than the value, and "resolve" for a data
+    source write."""
     def ds(m):
         t = TYPES.get(m.group(1))
         found = [d for d in datasources() if d.get("type") == t]
@@ -97,7 +101,7 @@ def resolve(text, secrets=False):
             raise SystemExit(f"${{{m.group(1)}}}: {len(found)} data sources of type {t}, need exactly 1")
         return found[0]["uid"]
     text = re.sub(r"\$\{(DS_[A-Z]+)\}", ds, text)
-    if secrets:
+    if secrets == "resolve":
         def sec(m):
             p = os.path.join(CONF, "secrets", m.group(1))
             try:
@@ -105,7 +109,7 @@ def resolve(text, secrets=False):
             except OSError:
                 raise SystemExit(f"${{SECRET:{m.group(1)}}}: no file {p}")
         text = re.sub(r"\$\{SECRET:([A-Za-z0-9_.-]+)\}", sec, text)
-    elif "${SECRET:" in text:
+    elif secrets == "forbid" and "${SECRET:" in text:
         raise SystemExit("secrets are only allowed in data source files")
     return text
 
@@ -294,7 +298,7 @@ def cmd_ds_get(uid, path):
 
 def cmd_ds_put(path):
     raw = open(path).read()
-    want = json.loads(resolve(raw, secrets=APPLY))
+    want = json.loads(resolve(raw, secrets="resolve" if APPLY else "keep"))
     have = call(f"/api/datasources/uid/{want['uid']}", admin=True, ok404=True)
     shown = {k: v for k, v in want.items() if k != "secureJsonData"}
     before = {k: v for k, v in (have or {}).items() if k not in DS_OWNED}
