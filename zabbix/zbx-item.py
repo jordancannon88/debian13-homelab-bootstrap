@@ -96,7 +96,7 @@ if "--groups" in opts:
 if not a:
     raise SystemExit(__doc__)
 
-out = ["itemid", "key_", "name", "units", "value_type", "lastvalue", "lastclock",
+out = ["itemid", "key_", "name", "units", "value_type", "delay", "lastvalue", "lastclock",
        "state", "error", "status"]
 # `a` holds only the positional arguments, so the search mode is read from the flags.
 if "--key" in opts:
@@ -126,7 +126,7 @@ for it in sorted(items, key=lambda i: (i["hosts"][0]["host"] if i.get("hosts") e
     print(f"\n{host}  itemid {it['itemid']}")
     print(f"  key        {it['key_']}")
     print(f"  name       {it['name']}")
-    print(f"  units      {it.get('units') or '(none)'}   type {VTYPE.get(it.get('value_type'), '?')}")
+    print(f"  units      {it.get('units') or '(none)'}   type {VTYPE.get(it.get('value_type'), '?')}   interval {it.get('delay') or '?'}")
     flags = []
     if it.get("state") == "1":
         flags.append("UNSUPPORTED")
