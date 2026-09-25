@@ -793,10 +793,15 @@ if [[ "$IS_PVE" == "1" ]] && systemctl list-unit-files lxcfs.service >/dev/null 
     mkdir -p "$(dirname "$LXCFS_DROPIN")"
     LXCFS_BIN="$(systemctl show -p ExecStart --value lxcfs.service | sed -n 's/.*path=\([^ ;]*\).*/\1/p')"
     LXCFS_BIN="${LXCFS_BIN:-/usr/bin/lxcfs}"
-    write_file "$LXCFS_DROPIN" "[Service]
+    # write_file takes the content on stdin. This block first passed it as an
+    # argument, which left cat reading the terminal (a hang) or writing an empty
+    # drop-in; it never ran because the nodes got the flag from lxcfs-loadavg.sh.
+    write_file "$LXCFS_DROPIN" <<EOF
+[Service]
 ExecStart=
 ExecStart=$LXCFS_BIN $LXCFS_FLAG /var/lib/lxcfs
-" 0644
+EOF
+    chmod 0644 "$LXCFS_DROPIN"
     run systemctl daemon-reload
     # Restarting lxcfs breaks every lxcfs file inside RUNNING containers
     # (/proc/loadavg, meminfo, cpuinfo, stat, uptime: "Transport endpoint is not
@@ -814,6 +819,30 @@ ExecStart=$LXCFS_BIN $LXCFS_FLAG /var/lib/lxcfs
     fi
   else
     note "lxcfs already reports per-container load averages."
+  fi
+fi
+
+# SATA link power management off on PVE nodes. The kernel's default policy here was
+# min_power_with_partial, and on 2026-09-25 at 02:10 pve3's boot SSD (Kingston A400,
+# DRAM-less) failed to wake from the partial link state: 45 s of aborted commands, a
+# link reset, and rpool DEGRADED with 1 read and 9 write errors on a healthy disk
+# (SError PHYRdyChg CommWake, no CRC errors). A server gains nothing from link power
+# saving. The udev rule applies at every boot and to hosts added later.
+if [[ "$IS_PVE" == "1" ]]; then
+  ALPM_RULE=/etc/udev/rules.d/60-sata-alpm-off.rules
+  if [[ ! -f "$ALPM_RULE" ]]; then
+    write_file "$ALPM_RULE" <<'EOF'
+# SATA link power management off: DRAM-less SSDs can fail to wake from partial/slumber (harden.sh)
+ACTION=="add", SUBSYSTEM=="scsi_host", KERNEL=="host*", ATTR{link_power_management_policy}="max_performance"
+EOF
+    chmod 0644 "$ALPM_RULE"
+    for _h in /sys/class/scsi_host/host*/link_power_management_policy; do
+      [[ -w "$_h" ]] && echo max_performance > "$_h" 2>/dev/null
+    done
+    log "SATA link power management set to max_performance (udev rule, applied now)."
+    record "SATA ALPM" "max_performance on every SATA host (pve3 SSD stall 2026-09-25)"
+  else
+    note "SATA link power management rule already present."
   fi
 fi
 
