@@ -242,10 +242,13 @@ now means something. Amber was at 80, which a NUC reaches under an ordinary back
 
 Twenty-seven changes across nine findings.
 
-**`Current problems` was in History mode** (`show: 3`). History is driven by the
-dashboard time selector, so a problem open for longer than the selected window does
-not appear in a widget named "Current problems". Now `show: 2`, Problems, which
-ignores the time selector and cannot hide an open problem. This is the same class of
+**`Current problems` must be in Problems mode, `show: 3`.** The Zabbix source maps
+`show` 1 to Recent problems, 2 to History and 3 to Problems
+(`TRIGGERS_OPTION_RECENT_PROBLEM`, `_ALL`, `_IN_PROBLEM` in `ui/include/defines.inc.php`).
+History is driven by the dashboard time selector, so a problem open for longer than
+the selected window does not appear in it. The 2026-09-21 review read the mapping
+backwards: the widget was already on 3, Problems, and the review moved it to 2,
+History, while believing it did the opposite. Corrected 2026-09-25. This is the same class of
 trap as the absolute time window that made the graphs look empty, and it is worse,
 because an empty graph is obviously wrong while a short problem list is not.
 
@@ -289,8 +292,9 @@ Added 2026-09-21, between the VM tables and the pressure graphs. Until then the
 dashboard had no storage view at all, through a week whose incidents were pve1's SSD
 filling, pms0's array, and a scrub saturating a USB disk.
 
-Split in two on 2026-09-21, side by side: **Filesystems, nodes** (group 7 with a
-`pve*` pattern, so the pxc1 pseudo-host stays out) and **Filesystems, VMs and
+Split in two on 2026-09-21, side by side: **Filesystems, nodes** (group 7 at the time; a
+`pve*` pattern was added to keep the pxc1 pseudo-host out, but Top hosts ignores name
+patterns, so it never did) and **Filesystems, VMs and
 containers** (group 6). A node's root filesystem and a guest's are different concerns
 and belong in different lists; mixing sixteen machines of three kinds in one table
 made neither readable. Both show `FS [/]: Space: Used, in %` and
@@ -331,7 +335,10 @@ Two columns were renamed so the merged table is unambiguous, since both source
 widgets called their pressure column "Pressure": they are now "CPU pressure" and
 "Mem pressure", with "IO pressure" alongside.
 
-Group 7 with a `pve*` pattern, so the pxc1 pseudo-host stays out.
+Filtered by host id, pve0 to pve4 (10696, 10686, 10669, 10685, 10670), not by group.
+Group 7 also holds the pxc1 pseudo-host, and Top hosts has no name pattern field (the
+API stores a `hosts.0` pattern and the widget ignores it), so a group filter showed
+pxc1 as a blank row. Changed 2026-09-25; a new node must be added here by id.
 
 **VMs** is the same merge over group 6, same twelve columns in the same
 order, so a machine reads the same way whichever table it is in. Two columns differ

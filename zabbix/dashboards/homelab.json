@@ -440,6 +440,31 @@
         {
           "fields": [
             {
+              "name": "hostids.0",
+              "type": "3",
+              "value": "10696"
+            },
+            {
+              "name": "hostids.1",
+              "type": "3",
+              "value": "10686"
+            },
+            {
+              "name": "hostids.2",
+              "type": "3",
+              "value": "10669"
+            },
+            {
+              "name": "hostids.3",
+              "type": "3",
+              "value": "10685"
+            },
+            {
+              "name": "hostids.4",
+              "type": "3",
+              "value": "10670"
+            },
+            {
               "name": "columns.0.data",
               "type": "0",
               "value": "2"
@@ -888,11 +913,6 @@
               "name": "columnsthresholds.8.threshold.1",
               "type": "1",
               "value": "10"
-            },
-            {
-              "name": "groupids.0",
-              "type": "2",
-              "value": "7"
             },
             {
               "name": "rf_rate",
@@ -2912,7 +2932,7 @@
             {
               "name": "show",
               "type": "0",
-              "value": "2"
+              "value": "3"
             },
             {
               "name": "show_tags",
