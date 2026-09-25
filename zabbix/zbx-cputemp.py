@@ -42,6 +42,7 @@ Prints what it would do and changes nothing unless --apply is given.
   python3 zbx-cputemp.py --apply     make those changes
   python3 zbx-cputemp.py --strays    show the stray copies on other hosts
   python3 zbx-cputemp.py --strays --apply   delete them
+  python3 zbx-cputemp.py --interval 1m [--apply]   set the poll interval of the five items
 
 Run from a machine that can reach the Zabbix frontend (the laptop; the dev box is
 firewalled off). Needs trigger.get and, for --apply, trigger.update on the API role.
@@ -112,6 +113,29 @@ if "--strays" in sys.argv:
     elif doomed:
         api("item.delete", [it["itemid"] for _, it, _ in doomed])
         print(f"\n{len(doomed)} items deleted, with their triggers.")
+        print("Verify with: python3 zbx-item.py --key cpuTemperature")
+    sys.exit(0)
+
+if "--interval" in sys.argv:
+    # The items poll every 5 s, and each poll runs inxi (a Perl script, about 0.2 s
+    # of CPU on pve1, 2026-09-25): 4 % of a core per node, forever, for a reading
+    # that barely moves in a minute. At 1m the 3m and 5m trigger windows still hold
+    # 3 and 5 samples, so one bad read still cannot page.
+    want = sys.argv[sys.argv.index("--interval") + 1]
+    items = api("item.get", {"output": ["itemid", "key_", "delay"],
+                             "search": {"key_": "cpuTemperature"}, "selectHosts": ["host"]})
+    todo = [it for it in items if it.get("hosts") and it["hosts"][0]["host"] in HOSTS
+            and it["key_"].split(".")[0] == it["hosts"][0]["host"] and it["delay"] != want]
+    for it in todo:
+        print(f"{it['hosts'][0]['host']}: {it['key_']} interval {it['delay']} -> {want}")
+    if not todo:
+        print(f"every item already polls at {want}")
+    elif not apply:
+        print(f"\n{len(todo)} items would change. Re-run with --interval {want} --apply.")
+    else:
+        for it in todo:
+            api("item.update", {"itemid": it["itemid"], "delay": want})
+        print(f"\n{len(todo)} items updated.")
         print("Verify with: python3 zbx-item.py --key cpuTemperature")
     sys.exit(0)
 
