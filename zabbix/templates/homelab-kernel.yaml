@@ -146,35 +146,45 @@ zabbix_export:
           type: ZABBIX_ACTIVE
           key: custom.kernel.hung_tasks
           delay: 1m
-          description: 'Count of "task ... blocked for more than N seconds" lines in the kernel journal for the current boot. Resets to 0 on reboot.'
+          description: 'Distinct tasks the kernel reported as "blocked for more than N seconds" this boot, counted by name and PID, so a task that stays stuck and is re-reported every two minutes counts once. Resets to 0 on reboot. Reads -1 when kernel.hung_task_warnings has run out (the kernel stops printing after that many reports per boot); monitoring.sh sets it to -1, unlimited.'
           tags:
             - tag: component
               value: kernel
           triggers:
             - uuid: bc9b23e8168c49fb950167172cff657e
-              expression: '(last(/Homelab kernel/custom.kernel.hung_tasks)-min(/Homelab kernel/custom.kernel.hung_tasks,30m))>=3'
+              expression: '(last(/Homelab kernel/custom.kernel.hung_tasks)-min(/Homelab kernel/custom.kernel.hung_tasks,30m))>=3 and min(/Homelab kernel/custom.kernel.hung_tasks,30m)>=0'
               recovery_mode: NONE
-              name: 'Kernel: host stalling, 3 or more tasks blocked in 30 minutes on {HOST.NAME} ({ITEM.LASTVALUE1} this boot)'
+              name: 'Kernel: host stalling, 3 or more distinct tasks blocked in 30 minutes on {HOST.NAME} ({ITEM.LASTVALUE1} this boot)'
               url: 'https://bookstack.local.cannon.dev/link/447'
               url_name: Runbook
               priority: HIGH
-              description: 'Three or more tasks stuck in uninterruptible sleep within half an hour: a disk, a USB bridge or an NFS server has stopped answering, not just slowed down. Everything waiting on that device is frozen meanwhile; on a node that hosts the firewall the LAN loses DNS and routing (pve1, 2026-09-17, Kan jk9mlmclsl9m). Read `dmesg -T | grep -A6 "blocked for more than"` for the task name (txg_sync or zvol = ZFS waiting on the disk, nfs = the NFS server, usb-storage = the enclosure) and `vmstat 1 5` for the blocked-process count. Never recovers on its own; close by hand once the cause is known. A single blocked task during a backup or a scrub on a USB pool raises the Warning below instead.'
+              description: 'Three or more distinct tasks stuck in uninterruptible sleep within half an hour (a task re-reported while it stays stuck counts once): a disk, a USB bridge or an NFS server has stopped answering, not just slowed down. Everything waiting on that device is frozen meanwhile; on a node that hosts the firewall the LAN loses DNS and routing (pve1, 2026-09-17, Kan jk9mlmclsl9m). Read `dmesg -T | grep -A6 "blocked for more than"` for the task name (txg_sync or zvol = ZFS waiting on the disk, nfs = the NFS server, usb-storage = the enclosure) and `vmstat 1 5` for the blocked-process count. Never recovers on its own; close by hand once the cause is known. A single blocked task during a backup or a scrub on a USB pool raises the Warning below instead.'
               manual_close: 'YES'
               tags:
                 - tag: scope
                   value: availability
             - uuid: fb9ada10feeb482fa5cf97f0cc591f0d
-              expression: '(last(/Homelab kernel/custom.kernel.hung_tasks)-min(/Homelab kernel/custom.kernel.hung_tasks,1h))>0'
+              expression: '(last(/Homelab kernel/custom.kernel.hung_tasks)-min(/Homelab kernel/custom.kernel.hung_tasks,1h))>0 and min(/Homelab kernel/custom.kernel.hung_tasks,1h)>=0'
               recovery_mode: RECOVERY_EXPRESSION
               recovery_expression: '(last(/Homelab kernel/custom.kernel.hung_tasks)-min(/Homelab kernel/custom.kernel.hung_tasks,1h))=0'
               name: 'Kernel: a task blocked over 2 minutes on {HOST.NAME} ({ITEM.LASTVALUE1} this boot)'
               url: 'https://bookstack.local.cannon.dev/link/447'
               url_name: Runbook
               priority: WARNING
-              description: 'One or two tasks waited over two minutes on a device in the last hour. On a USB-attached pool this is ordinary during a backup, a resync or a scrub, because usb-storage queues one command at a time; pve3 and pve4 do it most nights. Clears itself once an hour passes with no new blocked task, so it needs no manual close. It becomes the High above if three or more happen within half an hour, which is a real stall. Worth reading if it appears on a node with no heavy IO running.'
+              description: 'One or two tasks waited over two minutes on a device in the last hour. On a USB-attached pool this is ordinary during a backup, a resync or a scrub, because usb-storage queues one command at a time; pve3 and pve4 do it most nights. Clears itself once an hour passes with no NEW blocked task, so it needs no manual close; note that one task stuck for longer than that also clears it, because a task is counted once. It becomes the High above if three or more happen within half an hour, which is a real stall. Worth reading if it appears on a node with no heavy IO running.'
               dependencies:
-                - name: 'Kernel: host stalling, 3 or more tasks blocked in 30 minutes on {HOST.NAME} ({ITEM.LASTVALUE1} this boot)'
-                  expression: '(last(/Homelab kernel/custom.kernel.hung_tasks)-min(/Homelab kernel/custom.kernel.hung_tasks,30m))>=3'
+                - name: 'Kernel: host stalling, 3 or more distinct tasks blocked in 30 minutes on {HOST.NAME} ({ITEM.LASTVALUE1} this boot)'
+                  expression: '(last(/Homelab kernel/custom.kernel.hung_tasks)-min(/Homelab kernel/custom.kernel.hung_tasks,30m))>=3 and min(/Homelab kernel/custom.kernel.hung_tasks,30m)>=0'
+              tags:
+                - tag: scope
+                  value: availability
+            - uuid: cf2a3b58779649419c79b6baaec5f531
+              expression: 'last(/Homelab kernel/custom.kernel.hung_tasks)<0'
+              name: 'Kernel: hung-task reporting exhausted on {HOST.NAME}, hung-task alerts cannot fire'
+              url: 'https://bookstack.local.cannon.dev/link/447'
+              url_name: Runbook
+              priority: WARNING
+              description: 'kernel.hung_task_warnings has reached 0: the kernel prints only that many hung-task reports per boot (default 10) and then stops, so neither hung-task trigger can fire until reboot. Monitoring that silently measures nothing is what this template exists to catch. Fix: sysctl -w kernel.hung_task_warnings=-1 and make it permanent in /etc/sysctl.d/90-hung-task-warnings.conf (monitoring.sh does both). Clears on its own once the setting is back. Added 2026-09-25.'
               tags:
                 - tag: scope
                   value: availability

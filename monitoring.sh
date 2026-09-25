@@ -588,6 +588,16 @@ setup_kernel_watch() {
   if getent group systemd-journal >/dev/null 2>&1 && id zabbix >/dev/null 2>&1; then
     usermod -aG systemd-journal zabbix
   fi
+  # The kernel prints at most kernel.hung_task_warnings reports per boot (default
+  # 10) and then goes silent, which froze the hung-task count and both triggers on
+  # any host that had had a few bad backup nights. Unlimited, so the alert cannot go
+  # blind. Found in the 2026-09-25 review of the Opus change log.
+  if [[ -w /proc/sys/kernel/hung_task_warnings ]]; then
+    printf '# Unlimited hung-task reports: the Zabbix hung-task alert reads them (monitoring.sh)\nkernel.hung_task_warnings = -1\n' \
+      > /etc/sysctl.d/90-hung-task-warnings.conf
+    chmod 0644 /etc/sysctl.d/90-hung-task-warnings.conf
+    sysctl -q -w kernel.hung_task_warnings=-1 || warn "Could not set kernel.hung_task_warnings; the hung-task alert may go blind after ten reports."
+  fi
   if ! install_zbx_helper kernel-crash-json.sh 0755; then
     warn "Kernel crash helper not available — the unclean-shutdown check will be missing."
   fi
