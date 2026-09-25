@@ -127,7 +127,7 @@ zabbix_export:
             - type: JSONPATH
               parameters:
                 - '$.prev.have'
-          description: 'Whether wtmp holds any reboot record to compare against. Zero means this check cannot work on this host and is reporting nothing, which must never be mistaken for a clean result. Observed on pve2 on 2026-09-21: wtmpdb exists and begins in February but holds no reboot rows at all.'
+          description: 'Whether wtmp holds any reboot record to compare against: 1 yes, 2 only the running boot (a newly built host before its second boot, not an alarm), 0 none. Zero means this check cannot work on this host and is reporting nothing, which must never be mistaken for a clean result. Observed on pve2 on 2026-09-21: wtmpdb exists and begins in February but holds no reboot rows at all.'
           tags:
             - tag: component
               value: kernel

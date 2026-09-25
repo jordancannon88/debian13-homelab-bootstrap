@@ -45,8 +45,15 @@ prev_oops=$(count -1 "$OOPS"); prev_lock=$(count -1 "$LOCK"); prev_netwd=$(count
 # none, and that must not read as "crashed".
 # Line 1 of `last -x reboot` is the running boot; line 2 is the one before it. An end
 # field of "crash" means it stopped without a shutdown record.
+# have: 1 = a previous boot to compare against; 0 = wtmp holds no reboot rows at all,
+# so the check is blind; 2 = only the running boot is on record, which is every newly
+# built host until its second boot. 2 is not an alarm: it used to read as 0 and raise
+# "cannot work" on every fresh install (2026-09-25 review).
+reboot_rows="$(last -x reboot 2>/dev/null | grep -c '^reboot' || true)"
 prev_reboot="$(last -x reboot 2>/dev/null | sed -n 2p)"
-if [[ -n "$prev_reboot" ]]; then
+if [[ "${reboot_rows:-0}" == "1" ]]; then
+  have_prev=2; prev_unclean=0; last_line=""
+elif [[ -n "$prev_reboot" ]] && printf '%s' "$prev_reboot" | grep -q '^reboot'; then
   have_prev=1
   if printf '%s' "$prev_reboot" | grep -q 'crash'; then prev_unclean=1; else prev_unclean=0; fi
   last_line="$(journalctl -b -1 -q -o cat 2>/dev/null | tail -1)"
@@ -57,7 +64,9 @@ fi
 # One human-readable line for the alert, so the problem names the evidence instead of
 # making somebody go and find it.
 detail="clean"
-if (( have_prev == 0 )); then
+if (( have_prev == 2 )); then
+  detail="first boot on record, nothing to compare against yet"
+elif (( have_prev == 0 )); then
   # Seen on pve2 2026-09-21: wtmpdb exists but holds no reboot rows, so this check cannot
   # work there. That must read as "cannot see", never as "clean", which is why have is its
   # own item with its own trigger.
