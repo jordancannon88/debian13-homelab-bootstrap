@@ -196,13 +196,29 @@ zabbix_export:
                 - tag: disktype
                   value: '{#DISKTYPE}'
               trigger_prototypes:
+                - uuid: 72764652d4fd46c19cd473f6e0ffc844
+                  expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.reallocated_sector_ct[{#NAME}])>{$SMART.REALLOCATED.MAX:"{#SN}"}'
+                  name: 'SMART: [{#NAME}] {#MODEL} {#SN}: reallocated sectors above baseline'
+                  opdata: '5={ITEM.LASTVALUE1}, baseline {$SMART.REALLOCATED.MAX:"{#SN}"}'
+                  url: 'https://bookstack.local.cannon.dev/link/428'
+                  url_name: Runbook
+                  priority: WARNING
+                  description: 'Reallocated_Sector_Ct is above the count accepted for this drive. Default 0. A drive kept on purpose gets a host macro keyed on its serial, {$SMART.REALLOCATED.MAX:"<serial>"}. Stays open until the baseline is raised after review, so an expected remap (a pending sector rewritten) and a new one both get a look. Added 2026-09-25.'
+                  tags:
+                    - tag: scope
+                      value: availability
+                    - tag: homelab
+                      value: smart
                 - uuid: 42098b2cdcf84ac1b13fdbc68294021c
                   expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.reallocated_sector_ct[{#NAME}])>min(/SMART by Zabbix agent 2 active/smart.disk.attribute.reallocated_sector_ct[{#NAME}],24h)'
                   name: 'SMART: [{#NAME}] {#MODEL} {#SN}: reallocated sectors rising (24h)'
                   url: 'https://bookstack.local.cannon.dev/link/428'
                   url_name: Runbook
                   priority: WARNING
-                  description: 'Reallocated_Sector_Ct grew within the last 24h: the drive is remapping sectors.'
+                  description: 'Reallocated_Sector_Ct grew within the last 24h: the drive is remapping sectors. Depends on the above-baseline Warning.'
+                  dependencies:
+                    - name: 'SMART: [{#NAME}] {#MODEL} {#SN}: reallocated sectors above baseline'
+                      expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.reallocated_sector_ct[{#NAME}])>{$SMART.REALLOCATED.MAX:"{#SN}"}'
                   tags:
                     - tag: scope
                       value: availability
@@ -788,11 +804,12 @@ zabbix_export:
                   value: '{#DISKTYPE}'
               trigger_prototypes:
                 - uuid: 304bd042b7644a31bb74a1e71808d196
-                  expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.test[{#NAME}])="false"'
+                  expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.test[{#NAME}])="false" and bitand(last(/SMART by Zabbix agent 2 active/smart.disk.es[{#NAME}]),128)=128'
                   name: 'SMART: [{#NAME}]: Disk self-test is not passed'
                   url: 'https://bookstack.local.cannon.dev/link/433'
                   url_name: Runbook
                   priority: HIGH
+                  description: 'The self-test log holds a failed test that no later passing test has superseded (smartctl exit status bit 7). The test item alone reads "false" while a test is still running or was aborted, because smartctl reports no pass value for those states; it fired a minute after a long test was started on 2026-09-25. Both conditions together mean a real failure.'
                   tags:
                     - tag: scope
                       value: notice
@@ -830,6 +847,7 @@ zabbix_export:
                 - uuid: e176740425bc4a4bb1ed29a31e53e5e3
                   expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.current_pending_sector[{#NAME}])>0'
                   name: 'SMART: [{#NAME}] {#MODEL} {#SN}: pending sectors present'
+                  opdata: '197={ITEM.LASTVALUE1}'
                   url: 'https://bookstack.local.cannon.dev/link/427'
                   url_name: Runbook
                   priority: HIGH
@@ -845,7 +863,10 @@ zabbix_export:
                   url: 'https://bookstack.local.cannon.dev/link/427'
                   url_name: Runbook
                   priority: WARNING
-                  description: 'Current_Pending_Sector grew within the last 24h: the surface failure is progressing.'
+                  description: 'Current_Pending_Sector grew within the last 24h: the surface failure is progressing. Depends on pending sectors present.'
+                  dependencies:
+                    - name: 'SMART: [{#NAME}] {#MODEL} {#SN}: pending sectors present'
+                      expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.current_pending_sector[{#NAME}])>0'
                   tags:
                     - tag: scope
                       value: availability
@@ -883,13 +904,13 @@ zabbix_export:
                   value: smart
               trigger_prototypes:
                 - uuid: 1dc571105e4841f0a594ceba4e7bf9aa
-                  expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.offline_uncorrectable[{#NAME}])>0'
-                  name: 'SMART: [{#NAME}] {#MODEL} {#SN}: uncorrectable sectors present'
+                  expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.offline_uncorrectable[{#NAME}])>{$SMART.UNCORRECTABLE.MAX:"{#SN}"}'
+                  name: 'SMART: [{#NAME}] {#MODEL} {#SN}: uncorrectable sectors above baseline'
+                  opdata: '198={ITEM.LASTVALUE1}, baseline {$SMART.UNCORRECTABLE.MAX:"{#SN}"}'
                   url: 'https://bookstack.local.cannon.dev/link/427'
                   url_name: Runbook
                   priority: HIGH
-                  manual_close: 'YES'
-                  description: 'Offline_Uncorrectable is non-zero: the drive has confirmed bad sectors. Replace.'
+                  description: 'Offline_Uncorrectable is above the count accepted for this drive: the drive has more confirmed bad sectors than when it was last reviewed. Default 0, so any bad sector on a clean drive fires. A drive kept on purpose with old, stable bad sectors gets a host macro keyed on its serial, {$SMART.UNCORRECTABLE.MAX:"<serial>"}, set to its reviewed count; the override retires itself when the drive is replaced. Do not close this by hand: manual close only ends the event, and the next reading opens it again (2026-09-25). Raise the baseline on purpose after review, or replace the drive.'
                   tags:
                     - tag: scope
                       value: availability
@@ -901,8 +922,10 @@ zabbix_export:
                   url: 'https://bookstack.local.cannon.dev/link/427'
                   url_name: Runbook
                   priority: WARNING
-                  manual_close: 'YES'
-                  description: 'Offline_Uncorrectable grew within the last 24h.'
+                  description: 'Offline_Uncorrectable grew within the last 24h. Depends on the above-baseline High, so a rise past the baseline shows once.'
+                  dependencies:
+                    - name: 'SMART: [{#NAME}] {#MODEL} {#SN}: uncorrectable sectors above baseline'
+                      expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.offline_uncorrectable[{#NAME}])>{$SMART.UNCORRECTABLE.MAX:"{#SN}"}'
                   tags:
                     - tag: scope
                       value: availability
@@ -1279,6 +1302,12 @@ zabbix_export:
         - macro: '{$NVME.SPARE.WARN}'
           value: '50'
           description: 'NVMe available spare percent below which a Warning fires. Override per drive with context on the serial: {$NVME.SPARE.WARN:"<serial>"}.'
+        - macro: '{$SMART.REALLOCATED.MAX}'
+          value: '0'
+          description: 'Reallocated_Sector_Ct (5) accepted as a known baseline. Above it the reallocated sectors Warning fires and stays open. Override per drive with context on the serial: {$SMART.REALLOCATED.MAX:"<serial>"}. pve2 V9HE0KRL: 2 (2026-09-25); raise to 3 if its pending sector remaps as expected.'
+        - macro: '{$SMART.UNCORRECTABLE.MAX}'
+          value: '0'
+          description: 'Offline_Uncorrectable (198) accepted as a known baseline. Above it the uncorrectable sectors High fires and stays open until the drive is replaced or the baseline is raised on purpose. Override per drive with context on the serial: {$SMART.UNCORRECTABLE.MAX:"<serial>"}. pve2 V9HE0KRL: 4, pms0 V8GW74NR: 2 (2026-09-25).'
         - macro: '{$SMART.DISK.NAME.MATCHES}'
           value: '^.*$'
           description: 'This macro is used in the filter of attribute and disk discoveries. It can be overridden on the host or linked on the template level.'
