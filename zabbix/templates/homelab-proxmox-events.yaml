@@ -395,6 +395,35 @@ zabbix_export:
               tags:
                 - tag: scope
                   value: availability
+        - uuid: a237ae435e224e819bb274f2faeff60a
+          name: 'lxcfs processes'
+          type: ZABBIX_ACTIVE
+          key: 'proc.num[lxcfs]'
+          delay: 5m
+          description: 'Count of lxcfs processes on this node. 0 on a node without containers is normal.'
+          tags:
+            - tag: component
+              value: lxcfs
+        - uuid: cf2f3fe5d12c4b8aaa525b35d79bd060
+          name: 'lxcfs processes with per-container load average'
+          type: ZABBIX_ACTIVE
+          key: 'proc.num[lxcfs,,,"(--enable-loadavg| -l )"]'
+          delay: 5m
+          description: 'lxcfs processes whose command line carries --enable-loadavg (or -l on older builds). Without the flag, /proc/loadavg inside every container is the node''s, and the container load items and the Homelab LXC load trigger report the node''s load as the container''s. Nothing inside a container can tell the difference, so it is checked here on the node. Added 2026-09-25.'
+          tags:
+            - tag: component
+              value: lxcfs
+          triggers:
+            - uuid: 3adcfe29e6de4fada55daa1ae77efdef
+              expression: 'last(/Homelab Proxmox events/proc.num[lxcfs,,,"(--enable-loadavg| -l )"])=0 and last(/Homelab Proxmox events/proc.num[lxcfs])>0'
+              name: 'lxcfs on {HOST.NAME} runs without --enable-loadavg: container load figures are the node''s'
+              url: 'https://bookstack.local.cannon.dev/link/376'
+              url_name: Runbook
+              priority: WARNING
+              description: 'lxcfs is running but not with --enable-loadavg, so every container on this node reads the node''s load average, and the Homelab LXC load trigger can page on work the container is not doing. Usual cause: a Proxmox lxcfs package upgrade replaced the unit and the drop-in /etc/systemd/system/lxcfs.service.d/override.conf is missing or was not reloaded. Check `systemctl cat lxcfs`. Do NOT just restart lxcfs: that breaks /proc inside every running container until each is restarted. Restore the drop-in with the bootstrap''s harden.sh or zabbix/lxcfs-loadavg.sh (both leave a running node alone) and let it take effect at the next node reboot, or restart lxcfs inside a window where every container is restarted too. Added 2026-09-25.'
+              tags:
+                - tag: scope
+                  value: capacity
       discovery_rules:
         - uuid: 9f1e39ea9f514f7a95cba80847997e91
           name: 'Replication job discovery'

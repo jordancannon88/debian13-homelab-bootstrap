@@ -56,7 +56,7 @@ zabbix_export:
           key: custom.lxc.load1m
           delay: '0'
           value_type: FLOAT
-          description: 'This container''s own 1m load average, read from /proc/loadavg inside the container, which lxcfs makes honest when it runs with --enable-loadavg (bootstrap harden.sh since 2026-09-20). The stock system.cpu.load item cannot be used here: it reads the figure through a system call that lxcfs does not intercept, so it always reports the host''s load, which is why the container load trigger stays silenced against the stock item. -1 where the file is still the host''s. The dashboard column matches this item by name; VMs and nodes carry a calculated item of the same name from the Homelab uptime host template.'
+          description: 'This container''s own 1m load average, read from /proc/loadavg inside the container, which lxcfs makes honest when it runs with --enable-loadavg (bootstrap harden.sh since 2026-09-20). The stock system.cpu.load item cannot be used here: it reads the figure through a system call that lxcfs does not intercept, so it always reports the host''s load, which is why the container load trigger stays silenced against the stock item. It cannot tell from inside whether lxcfs has the flag, so without it this item silently carries the node''s load; the node-side lxcfs trigger in Homelab Proxmox events catches that. -1 only if the file cannot be read. The dashboard column matches this item by name; VMs and nodes carry a calculated item of the same name from the Homelab uptime host template.'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -72,7 +72,7 @@ zabbix_export:
           key: custom.lxc.load5m
           delay: '0'
           value_type: FLOAT
-          description: 'This container''s own 5m load average, read from /proc/loadavg inside the container, which lxcfs makes honest when it runs with --enable-loadavg (bootstrap harden.sh since 2026-09-20). The stock system.cpu.load item cannot be used here: it reads the figure through a system call that lxcfs does not intercept, so it always reports the host''s load, which is why the container load trigger stays silenced against the stock item. -1 where the file is still the host''s. The dashboard column matches this item by name; VMs and nodes carry a calculated item of the same name from the Homelab uptime host template.'
+          description: 'This container''s own 5m load average, read from /proc/loadavg inside the container, which lxcfs makes honest when it runs with --enable-loadavg (bootstrap harden.sh since 2026-09-20). The stock system.cpu.load item cannot be used here: it reads the figure through a system call that lxcfs does not intercept, so it always reports the host''s load, which is why the container load trigger stays silenced against the stock item. It cannot tell from inside whether lxcfs has the flag, so without it this item silently carries the node''s load; the node-side lxcfs trigger in Homelab Proxmox events catches that. -1 only if the file cannot be read. The dashboard column matches this item by name; VMs and nodes carry a calculated item of the same name from the Homelab uptime host template.'
           preprocessing:
             - type: JSONPATH
               parameters:
@@ -99,7 +99,7 @@ zabbix_export:
           key: custom.lxc.load15m
           delay: '0'
           value_type: FLOAT
-          description: 'This container''s own 15m load average, read from /proc/loadavg inside the container, which lxcfs makes honest when it runs with --enable-loadavg (bootstrap harden.sh since 2026-09-20). The stock system.cpu.load item cannot be used here: it reads the figure through a system call that lxcfs does not intercept, so it always reports the host''s load, which is why the container load trigger stays silenced against the stock item. -1 where the file is still the host''s. The dashboard column matches this item by name; VMs and nodes carry a calculated item of the same name from the Homelab uptime host template.'
+          description: 'This container''s own 15m load average, read from /proc/loadavg inside the container, which lxcfs makes honest when it runs with --enable-loadavg (bootstrap harden.sh since 2026-09-20). The stock system.cpu.load item cannot be used here: it reads the figure through a system call that lxcfs does not intercept, so it always reports the host''s load, which is why the container load trigger stays silenced against the stock item. It cannot tell from inside whether lxcfs has the flag, so without it this item silently carries the node''s load; the node-side lxcfs trigger in Homelab Proxmox events catches that. -1 only if the file cannot be read. The dashboard column matches this item by name; VMs and nodes carry a calculated item of the same name from the Homelab uptime host template.'
           preprocessing:
             - type: JSONPATH
               parameters:

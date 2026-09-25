@@ -785,18 +785,33 @@ fi
 # lxcfs -l gives each container its own figure from its cgroup.
 if [[ "$IS_PVE" == "1" ]] && systemctl list-unit-files lxcfs.service >/dev/null 2>&1; then
   LXCFS_DROPIN=/etc/systemd/system/lxcfs.service.d/override.conf
-  if ! grep -qs -- '--enable-loadavg' "$LXCFS_DROPIN"; then
+  # Older lxcfs builds spell the flag -l; accept either in the drop-in, or a re-run
+  # on such a node rewrites it and restarts lxcfs for nothing.
+  LXCFS_FLAG=--enable-loadavg
+  lxcfs --help 2>&1 | grep -q -- "--enable-loadavg" || LXCFS_FLAG=-l
+  if ! grep -qsE -- "(--enable-loadavg|[[:space:]]-l[[:space:]])" "$LXCFS_DROPIN"; then
     mkdir -p "$(dirname "$LXCFS_DROPIN")"
     LXCFS_BIN="$(systemctl show -p ExecStart --value lxcfs.service | sed -n 's/.*path=\([^ ;]*\).*/\1/p')"
     LXCFS_BIN="${LXCFS_BIN:-/usr/bin/lxcfs}"
     write_file "$LXCFS_DROPIN" "[Service]
 ExecStart=
-ExecStart=$LXCFS_BIN --enable-loadavg /var/lib/lxcfs
+ExecStart=$LXCFS_BIN $LXCFS_FLAG /var/lib/lxcfs
 " 0644
     run systemctl daemon-reload
-    run systemctl restart lxcfs.service || warn "lxcfs restart failed; containers keep the host load average until it restarts."
-    log "lxcfs: per-container load average enabled (--enable-loadavg)."
-    record "lxcfs loadavg" "containers report their own load, not the node's"
+    # Restarting lxcfs breaks every lxcfs file inside RUNNING containers
+    # (/proc/loadavg, meminfo, cpuinfo, stat, uptime: "Transport endpoint is not
+    # connected") until each container restarts. That took down all eight
+    # containers on 2026-09-20. So restart only when none is running; otherwise the
+    # drop-in waits for the next node reboot.
+    LXC_RUNNING="$(pct list 2>/dev/null | awk 'NR>1 && $2=="running"' | wc -l)"
+    if [[ "${LXC_RUNNING:-0}" == "0" ]]; then
+      run systemctl restart lxcfs.service || warn "lxcfs restart failed; containers keep the host load average until it restarts."
+      log "lxcfs: per-container load average enabled ($LXCFS_FLAG)."
+      record "lxcfs loadavg" "containers report their own load, not the node's"
+    else
+      warn "lxcfs: drop-in written but NOT restarted, ${LXC_RUNNING} container(s) running. A restart would break their /proc files. Takes effect at the next node reboot."
+      record "lxcfs loadavg" "pending next reboot (${LXC_RUNNING} containers were running)"
+    fi
   else
     note "lxcfs already reports per-container load averages."
   fi

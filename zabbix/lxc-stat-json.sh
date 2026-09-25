@@ -49,7 +49,12 @@ io_full10="$(psi full /sys/fs/cgroup/io.pressure)"; io_full10="${io_full10:--1}"
 # since 2026-09-20); the Zabbix agent's system.cpu.load item cannot use it, because
 # it reads the figure through a system call that lxcfs does not intercept and so
 # always reports the host's load. Reading the file here is what makes the number
-# honest in Zabbix. Falls back to -1 where the file is the host's.
+# honest in Zabbix. It CANNOT tell from inside whether lxcfs has the flag: Proxmox
+# mounts lxcfs's loadavg into the container either way, and without the flag lxcfs
+# passes the node's figure through. -1 appears only if the read itself fails. The
+# node-side check is the "lxcfs ... runs without --enable-loadavg" trigger in the
+# Homelab Proxmox events template (2026-09-25 review; this comment used to promise
+# a fallback that did not exist).
 read -r l1 l5 l15 _ < /proc/loadavg 2>/dev/null || { l1=-1; l5=-1; l15=-1; }
 l1="${l1:--1}"; l5="${l5:--1}"; l15="${l15:--1}"
 
