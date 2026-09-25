@@ -999,36 +999,42 @@ zabbix_export:
                   value: smart
               trigger_prototypes:
                 - uuid: a459c4e258544245b6fd37f4f9ddfb9b
-                  expression: 'last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}])<50'
-                  name: 'SMART: [{#NAME}] {#MODEL} {#SN}: available spare below 50%'
+                  expression: 'last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}])<{$NVME.SPARE.WARN:"{#SN}"}'
+                  name: 'SMART: [{#NAME}] {#MODEL} {#SN}: available spare below {$NVME.SPARE.WARN:"{#SN}"}%'
                   url: 'https://bookstack.local.cannon.dev/link/430'
                   url_name: Runbook
                   priority: WARNING
-                  description: 'Over half of the spare flash is consumed. Reduce writes, plan a replacement.'
+                  description: 'Spare flash is below the line in {$NVME.SPARE.WARN} (default 50). A drive already known to sit below it gets a host override keyed on its serial, {$NVME.SPARE.WARN:"<serial>"}, set a few points under its current reading, so the line becomes "fell further" and retires itself when the drive is replaced. pve3 Acer FA100 ASAD44080500416: 40 (steady at 43 since the lightning event of about 2026-08-30). Reduce writes, plan a replacement.'
+                  dependencies:
+                    - name: 'SMART: [{#NAME}] {#MODEL} {#SN}: NVMe failing (spare <20%, at threshold, or media errors above baseline)'
+                      expression: 'last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}])<20 or last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}])<=last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare_threshold[{#NAME}]) or last(/SMART by Zabbix agent 2 active/smart.disk.media_errors[{#NAME}])>{$NVME.MEDIA_ERRORS.MAX:"{#SN}"}'
                   tags:
                     - tag: scope
                       value: availability
                     - tag: homelab
                       value: smart
                 - uuid: cc18a608ab7644b8b080f14f1814d2b6
-                  expression: 'last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}])<min(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}],24h)'
-                  name: 'SMART: [{#NAME}] {#MODEL} {#SN}: available spare dropped (24h)'
+                  expression: 'last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}])<max(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}],7d)'
+                  name: 'SMART: [{#NAME}] {#MODEL} {#SN}: available spare dropped (7d)'
                   url: 'https://bookstack.local.cannon.dev/link/430'
                   url_name: Runbook
                   priority: WARNING
-                  description: 'Available spare fell within the last 24h: the SSD is actively retiring blocks.'
+                  description: 'Available spare fell within the last 7 days: the SSD is actively retiring blocks. Spare only ever falls, so any lower reading than the 7 day maximum is a drop, and a slow slide keeps this open rather than flapping. Until 2026-09-25 this read last()<min(24h), which can never be true because the window includes the latest value, so the drop detector had been dead since it was written (found by a Fable review).'
+                  dependencies:
+                    - name: 'SMART: [{#NAME}] {#MODEL} {#SN}: NVMe failing (spare <20%, at threshold, or media errors above baseline)'
+                      expression: 'last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}])<20 or last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}])<=last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare_threshold[{#NAME}]) or last(/SMART by Zabbix agent 2 active/smart.disk.media_errors[{#NAME}])>{$NVME.MEDIA_ERRORS.MAX:"{#SN}"}'
                   tags:
                     - tag: scope
                       value: availability
                     - tag: homelab
                       value: smart
                 - uuid: 96cdc398961e4fc8bc407806ffbd4aba
-                  expression: 'last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}])<20 or last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}])<=last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare_threshold[{#NAME}]) or last(/SMART by Zabbix agent 2 active/smart.disk.media_errors[{#NAME}])>min(/SMART by Zabbix agent 2 active/smart.disk.media_errors[{#NAME}],24h)'
-                  name: 'SMART: [{#NAME}] {#MODEL} {#SN}: NVMe failing (spare <20%, at threshold, or media errors rising)'
+                  expression: 'last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}])<20 or last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare[{#NAME}])<=last(/SMART by Zabbix agent 2 active/custom.nvme.available_spare_threshold[{#NAME}]) or last(/SMART by Zabbix agent 2 active/smart.disk.media_errors[{#NAME}])>{$NVME.MEDIA_ERRORS.MAX:"{#SN}"}'
+                  name: 'SMART: [{#NAME}] {#MODEL} {#SN}: NVMe failing (spare <20%, at threshold, or media errors above baseline)'
                   url: 'https://bookstack.local.cannon.dev/link/431'
                   url_name: Runbook
                   priority: HIGH
-                  description: 'Spare flash nearly gone, at the vendor threshold, or new media errors in 24h. Move data now.'
+                  description: 'Spare flash nearly gone, at the vendor threshold, or media errors above the accepted baseline {$NVME.MEDIA_ERRORS.MAX} (default 0, host override keyed on the serial). Move data now. Stays open until the errors are dealt with or the baseline is raised on purpose; the old rule, errors above their 24h minimum, closed itself a day later whether or not anyone acted. pve3 Acer FA100 ASAD44080500416 baseline: 4, from the lightning event of about 2026-08-30.'
                   tags:
                     - tag: scope
                       value: availability
@@ -1267,6 +1273,12 @@ zabbix_export:
         - tag: target
           value: ssd
       macros:
+        - macro: '{$NVME.MEDIA_ERRORS.MAX}'
+          value: '0'
+          description: 'NVMe media and data integrity errors accepted as a known baseline. Above it the NVMe failing High fires and stays open. Override per drive with context on the serial: {$NVME.MEDIA_ERRORS.MAX:"<serial>"}.'
+        - macro: '{$NVME.SPARE.WARN}'
+          value: '50'
+          description: 'NVMe available spare percent below which a Warning fires. Override per drive with context on the serial: {$NVME.SPARE.WARN:"<serial>"}.'
         - macro: '{$SMART.DISK.NAME.MATCHES}'
           value: '^.*$'
           description: 'This macro is used in the filter of attribute and disk discoveries. It can be overridden on the host or linked on the template level.'
