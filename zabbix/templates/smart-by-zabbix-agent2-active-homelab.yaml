@@ -818,7 +818,7 @@ zabbix_export:
               type: DEPENDENT
               key: 'smart.disk.attribute.current_pending_sector[{#NAME}]'
               discover: NO_DISCOVER
-              description: 'Homelab addition. Sectors the drive could not read and is waiting to remap on the next write. Any non-zero value on a single-disk pool means data under those sectors is already unreadable.'
+              description: 'Homelab addition. Sectors the drive could not read and is waiting to remap on the next write, or an entry the firmware keeps until that address is written. A non-zero value on a single-disk pool usually means data under those sectors is unreadable; see the pending-sector trigger descriptions for the case where it is not.'
               preprocessing:
                 - type: JSONPATH
                   parameters:
@@ -845,13 +845,13 @@ zabbix_export:
                   value: smart
               trigger_prototypes:
                 - uuid: e176740425bc4a4bb1ed29a31e53e5e3
-                  expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.current_pending_sector[{#NAME}])>0'
-                  name: 'SMART: [{#NAME}] {#MODEL} {#SN}: pending sectors present'
-                  opdata: '197={ITEM.LASTVALUE1}'
+                  expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.current_pending_sector[{#NAME}])>{$SMART.PENDING.MAX:"{#SN}"}'
+                  name: 'SMART: [{#NAME}] {#MODEL} {#SN}: pending sectors above baseline'
+                  opdata: '197={ITEM.LASTVALUE1}, baseline {$SMART.PENDING.MAX:"{#SN}"}'
                   url: 'https://bookstack.local.cannon.dev/link/427'
                   url_name: Runbook
                   priority: HIGH
-                  description: 'Unreadable sectors waiting for remap. On the pve2 WD Red this sat at 16 with no stock alert. Plan the replacement; do not zpool clear.'
+                  description: 'Pending sectors above the count accepted for this drive (default 0). Usually unreadable sectors waiting for remap: plan the replacement, do not zpool clear. On the pve2 WD Red this once sat at 16 with no stock alert. A count that survives a clean scrub AND a clean extended self-test is a firmware entry that only a write to that address retires: set {$SMART.PENDING.MAX:"<serial>"} to it, note it on the probation card, and set it back to 0 when the count drops (the below-baseline Warning asks for that). V9HE0KRL: 8 since the 2026-09-24 adapter pull, survived scrub, initialize and long test. Kan uc56jak9r0w4.'
                   tags:
                     - tag: scope
                       value: availability
@@ -863,10 +863,23 @@ zabbix_export:
                   url: 'https://bookstack.local.cannon.dev/link/427'
                   url_name: Runbook
                   priority: WARNING
-                  description: 'Current_Pending_Sector grew within the last 24h: the surface failure is progressing. Depends on pending sectors present.'
+                  description: 'Current_Pending_Sector grew within the last 24h: the surface failure is progressing. Depends on pending sectors above baseline.'
                   dependencies:
-                    - name: 'SMART: [{#NAME}] {#MODEL} {#SN}: pending sectors present'
-                      expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.current_pending_sector[{#NAME}])>0'
+                    - name: 'SMART: [{#NAME}] {#MODEL} {#SN}: pending sectors above baseline'
+                      expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.current_pending_sector[{#NAME}])>{$SMART.PENDING.MAX:"{#SN}"}'
+                  tags:
+                    - tag: scope
+                      value: availability
+                    - tag: homelab
+                      value: smart
+                - uuid: 63efbdcfcf644dc29c91796bbface2bc
+                  expression: 'last(/SMART by Zabbix agent 2 active/smart.disk.attribute.current_pending_sector[{#NAME}])<{$SMART.PENDING.MAX:"{#SN}"}'
+                  name: 'SMART: [{#NAME}] {#MODEL} {#SN}: pending sectors below baseline, reset the baseline'
+                  opdata: '197={ITEM.LASTVALUE1}, baseline {$SMART.PENDING.MAX:"{#SN}"}'
+                  url: 'https://bookstack.local.cannon.dev/link/427'
+                  url_name: Runbook
+                  priority: WARNING
+                  description: 'The count dropped under the accepted baseline, so the entry the baseline covered was retired by a write. Check Reallocated_Sector_Ct (unchanged: the sector was fine; up by one: it was remapped, the expected end of the V9HE0KRL entry, so raise that baseline too), then set {$SMART.PENDING.MAX:"<serial>"} back to 0 so the next pending sector fires the High. Without this, a new pending sector on a drive whose old entry cleared would stay silent under the old baseline. Inert while the baseline is 0.'
                   tags:
                     - tag: scope
                       value: availability
@@ -1302,6 +1315,9 @@ zabbix_export:
         - macro: '{$NVME.SPARE.WARN}'
           value: '50'
           description: 'NVMe available spare percent below which a Warning fires. Override per drive with context on the serial: {$NVME.SPARE.WARN:"<serial>"}.'
+        - macro: '{$SMART.PENDING.MAX}'
+          value: '0'
+          description: 'Current_Pending_Sector (197) accepted as a known baseline. Default 0: any pending sector fires High. Set an override only for an entry that has survived a clean scrub, a clean extended self-test and a zpool initialize, which means the sector reads and the firmware is waiting for a write to retire it. Override with context on the serial: {$SMART.PENDING.MAX:"<serial>"}. Reset to 0 as soon as the count drops; the below-baseline Warning nags until then. pve2 V9HE0KRL: 8 (2026-09-26).'
         - macro: '{$SMART.REALLOCATED.MAX}'
           value: '0'
           description: 'Reallocated_Sector_Ct (5) accepted as a known baseline. Above it the reallocated sectors Warning fires and stays open. Override per drive with context on the serial: {$SMART.REALLOCATED.MAX:"<serial>"}. pve2 V9HE0KRL: 2 (2026-09-25); raise to 3 if its pending sector remaps as expected.'
